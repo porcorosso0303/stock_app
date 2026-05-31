@@ -3,9 +3,6 @@
   "version": "1.0.0",
   "description": "Windows desktop application for A-share stock research with Codex CLI",
   "main": "dist/main/index.js",
-  "directories": {
-    "doc": "docs"
-  },
   "scripts": {
     "dev": "npm run build && electron .",
     "build": "npm run typecheck && npm run build:node && npm run build:renderer",
