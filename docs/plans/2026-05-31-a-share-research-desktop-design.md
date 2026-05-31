@@ -85,7 +85,7 @@ Renderer 不直接访问 Node.js API。
 使用已登录的本机 Codex CLI：
 
 ```bash
-codex exec --json --search -s read-only -a never -o <temporary-markdown-file> -
+codex --search exec --json -s read-only -a never --skip-git-repo-check -o report.md -
 ```
 
 固定 prompt 包含：
@@ -99,11 +99,12 @@ codex exec --json --search -s read-only -a never -o <temporary-markdown-file> -
 参数意图：
 
 - `exec`：以非交互模式运行，适合桌面端编排。
+- `--search`：允许调研使用实时网页搜索。该参数是 Codex 根级参数，放在 `exec` 前。
 - `--json`：stdout 输出 JSONL 事件，供界面实时展示。
-- `--search`：允许调研使用实时网页搜索。
 - `-s read-only`：限制模型生成的 shell 操作为只读。
 - `-a never`：不弹出 CLI 交互审批，失败直接返回给模型。
-- `-o`：单独输出最终回复，避免从过程事件中猜测报告正文。
+- `--skip-git-repo-check`：允许在应用创建的非 Git 任务目录内运行。
+- `-o report.md`：在任务目录中单独输出最终回复，避免从过程事件中猜测报告正文，并避免将动态路径传入 Windows wrapper。
 - `-`：从 stdin 读取 prompt，避免股票名称引发命令行转义问题。
 
 应用自身可写用户选择的报告目录和 Electron 用户数据目录。Codex 子进程不获得写文件权限。
