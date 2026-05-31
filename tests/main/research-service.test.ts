@@ -1,0 +1,174 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ResearchService } from "../../src/main/research-service";
+import { HistoryStore } from "../../src/main/history-store";
+import type { CodexRunResult } from "../../src/main/codex-runner";
+
+const directories: string[] = [];
+
+async function createHarness(options: {
+  reportDirectory?: string;
+  loggedIn?: boolean;
+  result?: CodexRunResult;
+  exportError?: Error;
+} = {}) {
+  const userData = await mkdtemp(join(tmpdir(), "stock-tool-service-"));
+  directories.push(userData);
+  const history = new HistoryStore(join(userData, "history.json"));
+  const run = vi.fn().mockResolvedValue(options.result ?? {
+    status: "success",
+    reportMarkdown: "# 贵州茅台调研"
+  });
+  const cancel = vi.fn();
+  const exportPdf = vi.fn().mockImplementation(async () => {
+    if (options.exportError) {
+      throw options.exportError;
+    }
+  });
+  const createRunner = vi.fn().mockReturnValue({ run, cancel });
+  const service = new ResearchService({
+    userDataDirectory: userData,
+    configStore: {
+      get: async () => ({ reportDirectory: options.reportDirectory })
+    },
+    historyStore: history,
+    codexLocator: {
+      detect: async () => ({
+        available: true,
+        loggedIn: options.loggedIn ?? true,
+        launcher: { kind: "native", executablePath: "codex.exe" }
+      })
+    },
+    createRunner,
+    pdfExporter: { export: exportPdf },
+    createId: () => "run-id",
+    now: () => new Date(2026, 4, 31, 14, 30, 25)
+  });
+  return { service, history, run, cancel, exportPdf, createRunner, userData };
+}
+
+afterEach(async () => {
+  await Promise.all(directories.splice(0).map((directory) => rm(directory, {
+    recursive: true,
+    force: true
+  })));
+});
+
+describe("ResearchService", () => {
+  it("requires a report directory before starting", async () => {
+    const { service } = await createHarness();
+
+    await expect(service.start("贵州茅台")).rejects.toThrow("请先选择调研报告目录");
+  });
+
+  it("requires a logged-in Codex CLI", async () => {
+    const { service } = await createHarness({
+      reportDirectory: "C:\\reports",
+      loggedIn: false
+    });
+
+    await expect(service.start("贵州茅台")).rejects.toThrow("codex login");
+  });
+
+  it("completes a research run and records its PDF", async () => {
+    const { service, history, exportPdf, createRunner } = await createHarness({
+      reportDirectory: "C:\\reports"
+    });
+
+    const result = await service.start(" 贵州茅台 ");
+
+    expect(createRunner).toHaveBeenCalledWith(expect.objectContaining({
+      launcher: { kind: "native", executablePath: "codex.exe" },
+      runDirectory: expect.stringContaining("run-id")
+    }));
+    expect(exportPdf).toHaveBeenCalledWith(
+      "# 贵州茅台调研",
+      expect.stringMatching(/贵州茅台_2026-05-31_143025\.pdf$/)
+    );
+    expect(result).toMatchObject({
+      stockName: "贵州茅台",
+      status: "completed",
+      pdfPath: expect.stringMatching(/贵州茅台_2026-05-31_143025\.pdf$/)
+    });
+    await expect(history.get("run-id")).resolves.toMatchObject({ status: "completed" });
+  });
+
+  it("does not allow two active runs", async () => {
+    let release: (value: CodexRunResult) => void = () => {};
+    const { service, run } = await createHarness({ reportDirectory: "C:\\reports" });
+    run.mockReturnValue(new Promise<CodexRunResult>((resolve) => {
+      release = resolve;
+    }));
+
+    const running = service.start("贵州茅台");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await expect(service.start("五粮液")).rejects.toThrow("已有调研任务");
+    release({ status: "cancelled" });
+    await running;
+  });
+
+  it("marks a CLI failure without exporting a PDF", async () => {
+    const { service, exportPdf } = await createHarness({
+      reportDirectory: "C:\\reports",
+      result: { status: "failed", errorMessage: "network error" }
+    });
+
+    await expect(service.start("贵州茅台")).resolves.toMatchObject({
+      status: "failed",
+      errorMessage: "network error"
+    });
+    expect(exportPdf).not.toHaveBeenCalled();
+  });
+
+  it("marks an unexpected runner exception as failed", async () => {
+    const { service, run, history } = await createHarness({
+      reportDirectory: "C:\\reports"
+    });
+    run.mockRejectedValue(new Error("spawn failed"));
+
+    await expect(service.start("贵州茅台")).resolves.toMatchObject({
+      status: "failed",
+      errorMessage: "spawn failed"
+    });
+    await expect(history.get("run-id")).resolves.toMatchObject({
+      status: "failed",
+      errorMessage: "spawn failed"
+    });
+  });
+
+  it("cancels the active runner", async () => {
+    let release: (value: CodexRunResult) => void = () => {};
+    const { service, run, cancel } = await createHarness({ reportDirectory: "C:\\reports" });
+    run.mockReturnValue(new Promise<CodexRunResult>((resolve) => {
+      release = resolve;
+    }));
+    const running = service.start("贵州茅台");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    service.cancel();
+    release({ status: "cancelled" });
+
+    expect(cancel).toHaveBeenCalledOnce();
+    await expect(running).resolves.toMatchObject({ status: "cancelled" });
+  });
+
+  it("keeps Markdown when PDF export fails and can retry later", async () => {
+    const { service, exportPdf } = await createHarness({
+      reportDirectory: "C:\\reports",
+      exportError: new Error("print failed")
+    });
+
+    const failed = await service.start("贵州茅台");
+    expect(failed).toMatchObject({
+      status: "completed_pdf_failed",
+      errorMessage: "print failed"
+    });
+    exportPdf.mockResolvedValue(undefined);
+
+    await expect(service.retryPdfExport("run-id")).resolves.toMatchObject({
+      status: "completed"
+    });
+  });
+});
