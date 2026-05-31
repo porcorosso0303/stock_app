@@ -1,0 +1,143 @@
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { createWriteStream } from "node:fs";
+import { mkdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { finished } from "node:stream/promises";
+import type { CodexLauncher } from "../shared/types";
+import { CodexJsonlParser, type CodexDisplayEvent } from "./codex-events";
+import { CODEX_EXEC_ARGS } from "./codex-prompt";
+
+export type CodexRunResult =
+  | { status: "success"; reportMarkdown: string }
+  | { status: "failed"; errorMessage: string }
+  | { status: "cancelled" };
+
+interface CodexRunnerOptions {
+  launcher: CodexLauncher;
+  runDirectory: string;
+  onEvent?: (text: string, event: CodexDisplayEvent) => void;
+  platform?: NodeJS.Platform;
+  env?: NodeJS.ProcessEnv;
+}
+
+export class CodexRunner {
+  private readonly platform: NodeJS.Platform;
+  private readonly env: NodeJS.ProcessEnv;
+  private activeProcess?: ChildProcessWithoutNullStreams;
+  private cancelRequested = false;
+
+  constructor(private readonly options: CodexRunnerOptions) {
+    this.platform = options.platform ?? process.platform;
+    this.env = options.env ?? process.env;
+  }
+
+  async run(prompt: string): Promise<CodexRunResult> {
+    if (this.activeProcess) {
+      throw new Error("已有 Codex 调研任务正在运行");
+    }
+
+    await mkdir(this.options.runDirectory, { recursive: true });
+    const eventsPath = join(this.options.runDirectory, "events.jsonl");
+    const stderrPath = join(this.options.runDirectory, "stderr.log");
+    const eventsStream = createWriteStream(eventsPath, { encoding: "utf8" });
+    const stderrStream = createWriteStream(stderrPath, { encoding: "utf8" });
+    const parser = new CodexJsonlParser();
+    const child = this.spawnCodex();
+    this.activeProcess = child;
+    this.cancelRequested = false;
+
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      eventsStream.write(chunk);
+      for (const event of parser.push(chunk)) {
+        this.options.onEvent?.(event.text, event);
+      }
+    });
+    child.stderr.on("data", (chunk: string) => {
+      stderrStream.write(chunk);
+    });
+    child.stdin.end(prompt);
+
+    const exitCode = await new Promise<number>((resolve) => {
+      child.once("error", () => resolve(1));
+      child.once("close", (code) => resolve(code ?? 1));
+    });
+
+    for (const event of parser.flush()) {
+      this.options.onEvent?.(event.text, event);
+    }
+    eventsStream.end();
+    stderrStream.end();
+    await Promise.all([finished(eventsStream), finished(stderrStream)]);
+    this.activeProcess = undefined;
+
+    if (this.cancelRequested) {
+      return { status: "cancelled" };
+    }
+    if (exitCode !== 0) {
+      const stderr = (await readFile(stderrPath, "utf8")).trim();
+      return {
+        status: "failed",
+        errorMessage: stderr || `Codex CLI 退出码：${exitCode}`
+      };
+    }
+
+    try {
+      const reportMarkdown = await readFile(join(this.options.runDirectory, "report.md"), "utf8");
+      return { status: "success", reportMarkdown };
+    } catch {
+      return {
+        status: "failed",
+        errorMessage: "Codex CLI 已结束，但没有生成 report.md。"
+      };
+    }
+  }
+
+  cancel(): void {
+    if (!this.activeProcess) {
+      return;
+    }
+    this.cancelRequested = true;
+    this.activeProcess.kill();
+  }
+
+  private spawnCodex(): ChildProcessWithoutNullStreams {
+    if (this.options.launcher.kind === "cmd-wrapper" && this.platform === "win32") {
+      return spawn(this.env.ComSpec ?? "cmd.exe", [
+        "/d",
+        "/s",
+        "/c",
+        buildTrustedCmdWrapperInvocation(
+          this.options.launcher.executablePath,
+          CODEX_EXEC_ARGS
+        )
+      ], this.spawnOptions());
+    }
+
+    return spawn(
+      this.options.launcher.executablePath,
+      [...CODEX_EXEC_ARGS],
+      this.spawnOptions()
+    );
+  }
+
+  private spawnOptions() {
+    return {
+      cwd: this.options.runDirectory,
+      env: this.env,
+      shell: false,
+      windowsHide: true
+    } as const;
+  }
+}
+
+export function buildTrustedCmdWrapperInvocation(
+  executablePath: string,
+  args: readonly string[]
+): string {
+  if (executablePath.includes('"') || args.some((arg) => /[\s"&|<>^]/.test(arg))) {
+    throw new Error("Codex wrapper 路径或固定参数包含不支持的 cmd.exe 字符");
+  }
+  return `"${executablePath}" ${args.join(" ")}`;
+}
