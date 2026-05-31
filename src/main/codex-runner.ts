@@ -6,6 +6,7 @@ import { finished } from "node:stream/promises";
 import type { CodexLauncher } from "../shared/types";
 import { CodexJsonlParser, type CodexDisplayEvent } from "./codex-events";
 import { CODEX_EXEC_ARGS } from "./codex-prompt";
+import { buildCmdWrapperCommand } from "./windows-command";
 
 export type CodexRunResult =
   | { status: "success"; reportMarkdown: string }
@@ -104,15 +105,12 @@ export class CodexRunner {
 
   private spawnCodex(): ChildProcessWithoutNullStreams {
     if (this.options.launcher.kind === "cmd-wrapper" && this.platform === "win32") {
-      return spawn(this.env.ComSpec ?? "cmd.exe", [
-        "/d",
-        "/s",
-        "/c",
-        buildTrustedCmdWrapperInvocation(
-          this.options.launcher.executablePath,
-          CODEX_EXEC_ARGS
-        )
-      ], this.spawnOptions());
+      const command = buildCmdWrapperCommand(
+        this.options.launcher.executablePath,
+        CODEX_EXEC_ARGS,
+        this.env.ComSpec
+      );
+      return spawn(command.file, command.args, this.spawnOptions());
     }
 
     return spawn(
@@ -130,14 +128,4 @@ export class CodexRunner {
       windowsHide: true
     } as const;
   }
-}
-
-export function buildTrustedCmdWrapperInvocation(
-  executablePath: string,
-  args: readonly string[]
-): string {
-  if (executablePath.includes('"') || args.some((arg) => /[\s"&|<>^]/.test(arg))) {
-    throw new Error("Codex wrapper 路径或固定参数包含不支持的 cmd.exe 字符");
-  }
-  return `"${executablePath}" ${args.join(" ")}`;
 }

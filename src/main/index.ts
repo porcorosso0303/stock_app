@@ -7,12 +7,14 @@ import {
 } from "electron";
 import { join } from "node:path";
 import { CodexLocator } from "./codex-locator";
+import { getCodexLauncherOverride } from "./codex-launcher-override";
 import { CodexRunner } from "./codex-runner";
 import { ConfigStore } from "./config-store";
 import { HistoryStore } from "./history-store";
 import { registerIpcHandlers } from "./ipc";
 import { PdfExporter } from "./pdf-exporter";
 import { ResearchService } from "./research-service";
+import { IPC } from "../shared/ipc";
 
 let mainWindow: BrowserWindow | undefined;
 
@@ -43,7 +45,17 @@ void app.whenReady().then(() => {
   const userData = app.getPath("userData");
   const configStore = new ConfigStore(join(userData, "config.json"));
   const historyStore = new HistoryStore(join(userData, "history.json"));
-  const codexLocator = new CodexLocator();
+  const launcherOverride = getCodexLauncherOverride();
+  const codexLocator = launcherOverride
+    ? {
+        detect: async () => ({
+          available: true,
+          loggedIn: true,
+          launcher: launcherOverride,
+          version: "development override"
+        })
+      }
+    : new CodexLocator();
   const pdfExporter = new PdfExporter({
     createWindow: () => new BrowserWindow({ show: false })
   });
@@ -55,7 +67,7 @@ void app.whenReady().then(() => {
     createRunner: (options) => new CodexRunner(options),
     pdfExporter,
     onProgress: (event) => {
-      mainWindow?.webContents.send("research:event", event);
+      mainWindow?.webContents.send(IPC.researchEvent, event);
     }
   });
   registerIpcHandlers({

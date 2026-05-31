@@ -46,7 +46,7 @@ describe("CodexLocator", () => {
 
   it("finds codex.cmd in the roaming npm directory and repairs the user PATH", async () => {
     const wrapper = "C:\\Users\\demo\\AppData\\Roaming\\npm\\codex.cmd";
-    const { locator, writeUserPath } = createHarness([wrapper]);
+    const { locator, run, writeUserPath } = createHarness([wrapper]);
 
     await expect(locator.detect()).resolves.toMatchObject({
       available: true,
@@ -54,6 +54,10 @@ describe("CodexLocator", () => {
       repairedUserPath: true
     });
     expect(writeUserPath).toHaveBeenCalledWith("C:\\Users\\demo\\AppData\\Roaming\\npm");
+    expect(run).toHaveBeenCalledWith(
+      "cmd.exe",
+      expect.arrayContaining(["/c", expect.stringContaining("codex.cmd")])
+    );
   });
 
   it("prefers the npm package native executable over its wrapper", async () => {

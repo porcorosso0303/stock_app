@@ -10,6 +10,7 @@ import {
   runFileCommand,
   type RunCommand
 } from "./windows-user-path";
+import { buildCmdWrapperCommand } from "./windows-command";
 
 interface UserPathStore {
   read(): Promise<string>;
@@ -49,7 +50,7 @@ export class CodexLocator {
     }
 
     const repairedUserPath = await this.repairUserPathIfNeeded(located.directory);
-    const version = await this.run(located.launcher.executablePath, ["--version"]);
+    const version = await this.runLauncher(located.launcher, ["--version"]);
     if (version.exitCode !== 0) {
       return {
         available: false,
@@ -59,7 +60,7 @@ export class CodexLocator {
       };
     }
 
-    const login = await this.run(located.launcher.executablePath, ["login", "status"]);
+    const login = await this.runLauncher(located.launcher, ["login", "status"]);
     return {
       available: true,
       launcher: located.launcher,
@@ -155,6 +156,21 @@ export class CodexLocator {
     await this.userPathStore.write(appendPathEntry(userPath, directory));
     this.env.PATH = updatedProcessPath;
     return true;
+  }
+
+  private async runLauncher(
+    launcher: CodexLauncher,
+    args: string[]
+  ) {
+    if (launcher.kind === "cmd-wrapper" && this.platform === "win32") {
+      const command = buildCmdWrapperCommand(
+        launcher.executablePath,
+        args,
+        this.env.ComSpec
+      );
+      return await this.run(command.file, command.args);
+    }
+    return await this.run(launcher.executablePath, args);
   }
 }
 
