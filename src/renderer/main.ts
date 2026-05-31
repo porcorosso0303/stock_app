@@ -8,6 +8,7 @@ import type {
 import {
   canRetryPdf,
   codexStatusMessage,
+  initializationErrorMessage,
   primaryActionLabel,
   researchStatusLabel,
   sortHistory
@@ -35,7 +36,11 @@ let state: AppBootstrap;
 let running = false;
 let selectedRecord: ResearchRecord | undefined;
 
-void initialize();
+void initialize().catch((error: unknown) => {
+  const message = initializationErrorMessage(error);
+  elements.codexStatus.textContent = message;
+  elements.taskStatus.textContent = message;
+});
 
 async function initialize(): Promise<void> {
   bindEvents();

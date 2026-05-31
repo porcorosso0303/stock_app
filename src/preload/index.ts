@@ -1,6 +1,19 @@
 import { contextBridge, ipcRenderer } from "electron";
-import { IPC, type StockResearchApi } from "../shared/ipc";
+import type { StockResearchApi } from "../shared/ipc";
 import type { ResearchProgressEvent } from "../shared/types";
+
+const IPC = {
+  getBootstrap: "app:get-bootstrap",
+  chooseReportDirectory: "config:choose-report-directory",
+  startResearch: "research:start",
+  cancelResearch: "research:cancel",
+  listHistory: "history:list",
+  readReport: "history:read-report",
+  openPdf: "history:open-pdf",
+  retryPdf: "history:retry-pdf",
+  redetectCodex: "codex:redetect",
+  researchEvent: "research:event"
+} as const satisfies typeof import("../shared/ipc").IPC;
 
 const api: StockResearchApi = {
   getBootstrap: async () => await ipcRenderer.invoke(IPC.getBootstrap),

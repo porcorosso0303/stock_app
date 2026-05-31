@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canRetryPdf,
   codexStatusMessage,
+  initializationErrorMessage,
   primaryActionLabel,
   sortHistory
 } from "../../src/renderer/view-model";
@@ -52,5 +53,11 @@ describe("codexStatusMessage", () => {
       loggedIn: true,
       version: "codex-cli 0.135.0"
     })).toContain("0.135.0");
+  });
+});
+
+describe("initializationErrorMessage", () => {
+  it("turns preload and bootstrap failures into visible messages", () => {
+    expect(initializationErrorMessage(new Error("preload failed"))).toContain("preload failed");
   });
 });

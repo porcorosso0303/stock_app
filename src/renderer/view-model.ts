@@ -27,6 +27,11 @@ export function codexStatusMessage(status: CodexEnvironmentStatus): string {
   return `Codex 已就绪：${status.version ?? "版本未知"}${repaired}`;
 }
 
+export function initializationErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return `应用初始化失败：${message}`;
+}
+
 export function researchStatusLabel(status: ResearchStatus): string {
   return {
     running: "调研中",
