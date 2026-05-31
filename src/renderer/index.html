@@ -6,8 +6,66 @@
     <title>A股调研助手</title>
   </head>
   <body>
-    <main>
-      <h1>A股调研助手</h1>
+    <main class="app-shell">
+      <aside class="sidebar">
+        <div>
+          <p class="eyebrow">CODEX RESEARCH</p>
+          <h1>A股调研助手</h1>
+          <p class="subtitle">输入单只 A 股标的，生成带来源的深度调研报告。</p>
+        </div>
+
+        <section class="research-form">
+          <label for="stock-name">A股标的名称</label>
+          <input id="stock-name" autocomplete="off" placeholder="例如：贵州茅台" />
+          <button id="primary-action" class="primary" type="button">调研</button>
+          <p id="task-status" class="status-line">等待开始调研</p>
+        </section>
+
+        <section class="environment-card">
+          <div class="section-heading">
+            <h2>Codex 环境</h2>
+            <button id="redetect-codex" class="link-button" type="button">重新检测</button>
+          </div>
+          <p id="codex-status" class="muted">正在检测 Codex CLI...</p>
+        </section>
+
+        <section class="history-section">
+          <div class="section-heading">
+            <h2>历史记录</h2>
+            <button id="refresh-history" class="link-button" type="button">刷新</button>
+          </div>
+          <div id="history-list" class="history-list"></div>
+        </section>
+      </aside>
+
+      <section class="workspace">
+        <header class="toolbar">
+          <div>
+            <span class="toolbar-label">PDF 报告目录</span>
+            <strong id="report-directory">尚未配置</strong>
+          </div>
+          <div class="toolbar-actions">
+            <button id="configure-directory" type="button">配置目录</button>
+            <button id="open-pdf" type="button" hidden>打开 PDF</button>
+            <button id="retry-pdf" type="button" hidden>重新导出 PDF</button>
+          </div>
+        </header>
+
+        <nav class="tabs" aria-label="报告视图">
+          <button class="tab active" data-tab="report" type="button">调研报告</button>
+          <button class="tab" data-tab="output" type="button">实时输出</button>
+        </nav>
+
+        <section id="report-panel" class="panel report-panel">
+          <div class="empty-state">
+            <h2>尚无调研报告</h2>
+            <p>输入标的名称并点击“调研”，完成后报告会显示在这里。</p>
+          </div>
+        </section>
+        <section id="output-panel" class="panel output-panel" hidden>
+          <pre id="live-output">等待调研任务启动...</pre>
+        </section>
+      </section>
     </main>
     <script type="module" src="/main.ts"></script>
   </body>
