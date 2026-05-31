@@ -1,0 +1,10 @@
+:root {
+  color: #17202a;
+  font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+}
+
+body {
+  margin: 0;
+  padding: 32px;
+  background: #f4f6f8;
+}
