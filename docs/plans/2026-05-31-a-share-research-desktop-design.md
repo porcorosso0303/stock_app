@@ -125,6 +125,8 @@ codex exec --json --search -s read-only -a never -o <temporary-markdown-file> -
 
 应用不自动安装 Codex CLI，不修改系统级 `PATH`。
 
+在 Windows 上，npm 全局安装通常会暴露 `codex.cmd` wrapper。任务启动时优先解析并直接执行底层 `codex.exe`。若只能使用 `codex.cmd`，则显式调用 `ComSpec` 执行 wrapper，并对固定参数和应用生成的文件路径做 Windows quoting。股票名称始终仅通过 stdin 传递，不进入命令行。
+
 ## 界面
 
 主窗口采用左右布局。
@@ -217,7 +219,7 @@ codex exec --json --search -s read-only -a never -o <temporary-markdown-file> -
 - Renderer 启用上下文隔离，不启用 Node.js integration。
 - IPC 参数在 Main Process 中再次校验。
 - 股票名称通过 stdin 进入 Codex，不拼接 shell 字符串。
-- 使用 `spawn()` 且禁用 shell，避免命令注入。
+- 优先使用 `spawn()` 直接执行 `codex.exe` 且禁用 shell。仅在 Windows 上只能找到 `codex.cmd` 时显式调用 `ComSpec`，并使用经过测试的 quoting；股票名称始终只通过 stdin 传递。
 - Codex 使用 `read-only` sandbox。
 - 应用不读取 credential 文件。
 - 报告 HTML 渲染时执行 Markdown 转义和消毒，不允许注入脚本。
