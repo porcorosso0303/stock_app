@@ -8,6 +8,7 @@ export interface CommandResult {
 
 export interface CommandOptions {
   env?: NodeJS.ProcessEnv;
+  timeoutMs?: number;
 }
 
 export type RunCommand = (
@@ -78,6 +79,7 @@ export function runFileCommand(
       args,
       {
         env: options.env,
+        timeout: options.timeoutMs ?? 10_000,
         windowsHide: true
       },
       (error, stdout, stderr) => {

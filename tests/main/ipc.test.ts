@@ -21,6 +21,7 @@ function createHarness(options: {
   dialogResult?: string;
   openPathResult?: string;
   record?: ResearchRecord;
+  codexDetectError?: Error;
 } = {}) {
   const handlers = new Map<string, (_event: unknown, value?: unknown) => unknown>();
   const setReportDirectory = vi.fn().mockResolvedValue({});
@@ -53,7 +54,12 @@ function createHarness(options: {
       retryPdfExport: vi.fn()
     },
     codexLocator: {
-      detect: async () => ({ available: false })
+      detect: async () => {
+        if (options.codexDetectError) {
+          throw options.codexDetectError;
+        }
+        return { available: false };
+      }
     }
   });
 
@@ -105,5 +111,18 @@ describe("registerIpcHandlers", () => {
     const { invoke } = createHarness({ record, openPathResult: "not found" });
 
     await expect(invoke(IPC.openPdf, { id: record.id })).rejects.toThrow("not found");
+  });
+
+  it("returns a visible Codex status when detection fails", async () => {
+    const { invoke } = createHarness({
+      codexDetectError: new Error("PowerShell blocked")
+    });
+
+    await expect(invoke(IPC.getBootstrap)).resolves.toMatchObject({
+      codex: {
+        available: false,
+        message: expect.stringContaining("PowerShell blocked")
+      }
+    });
   });
 });

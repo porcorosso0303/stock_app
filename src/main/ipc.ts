@@ -67,7 +67,7 @@ export function registerIpcHandlers(dependencies: IpcDependencies): void {
   ipcMain.handle(IPC.getBootstrap, async () => ({
     config: await configStore.get(),
     history: await historyStore.list(),
-    codex: await codexLocator.detect()
+    codex: await detectCodexSafely(codexLocator)
   }));
 
   ipcMain.handle(IPC.chooseReportDirectory, async () => {
@@ -114,7 +114,20 @@ export function registerIpcHandlers(dependencies: IpcDependencies): void {
     return await researchService.retryPdfExport(requireString(input.id, "id"));
   });
 
-  ipcMain.handle(IPC.redetectCodex, async () => await codexLocator.detect());
+  ipcMain.handle(IPC.redetectCodex, async () => await detectCodexSafely(codexLocator));
+}
+
+async function detectCodexSafely(
+  codexLocator: CodexLocatorLike
+): Promise<CodexEnvironmentStatus> {
+  try {
+    return await codexLocator.detect();
+  } catch (error) {
+    return {
+      available: false,
+      message: `检测 Codex CLI 失败：${getErrorMessage(error)}`
+    };
+  }
 }
 
 function requireObject(value: unknown): Record<string, unknown> {
@@ -129,4 +142,8 @@ function requireString(value: unknown, name: string): string {
     throw new Error(`IPC 参数 ${name} 必须是字符串`);
   }
   return value;
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

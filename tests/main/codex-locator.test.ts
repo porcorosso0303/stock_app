@@ -2,7 +2,13 @@ import { win32 } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { CodexLocator } from "../../src/main/codex-locator";
 
-function createHarness(existingPaths: string[], path = "") {
+function createHarness(existingPaths: string[], options: {
+  processPath?: string;
+  userPath?: string;
+  readUserPathError?: Error;
+} = {}) {
+  const processPath = options.processPath ?? "";
+  const userPath = options.userPath ?? processPath;
   const files = new Set(existingPaths.map((value) => win32.normalize(value).toLowerCase()));
   const writeUserPath = vi.fn().mockResolvedValue(undefined);
   const run = vi.fn().mockImplementation(async (_file: string, args: string[]) => {
@@ -18,13 +24,18 @@ function createHarness(existingPaths: string[], path = "") {
   const locator = new CodexLocator({
     platform: "win32",
     env: {
-      PATH: path,
+      PATH: processPath,
       APPDATA: "C:\\Users\\demo\\AppData\\Roaming"
     },
     fileExists: async (value) => files.has(win32.normalize(value).toLowerCase()),
     run,
     userPathStore: {
-      read: async () => path,
+      read: async () => {
+        if (options.readUserPathError) {
+          throw options.readUserPathError;
+        }
+        return userPath;
+      },
       write: writeUserPath
     }
   });
@@ -34,7 +45,9 @@ function createHarness(existingPaths: string[], path = "") {
 
 describe("CodexLocator", () => {
   it("prefers codex.exe found in the current PATH", async () => {
-    const { locator } = createHarness(["C:\\tools\\codex.exe"], "C:\\tools");
+    const { locator } = createHarness(["C:\\tools\\codex.exe"], {
+      processPath: "C:\\tools"
+    });
 
     await expect(locator.detect()).resolves.toMatchObject({
       available: true,
@@ -68,6 +81,35 @@ describe("CodexLocator", () => {
 
     await expect(locator.detect()).resolves.toMatchObject({
       launcher: { kind: "native", executablePath: native }
+    });
+  });
+
+  it("does not rewrite the persisted user PATH when only the app process PATH is stale", async () => {
+    const npm = "C:\\Users\\demo\\AppData\\Roaming\\npm";
+    const wrapper = `${npm}\\codex.cmd`;
+    const { locator, writeUserPath } = createHarness([wrapper], {
+      processPath: "C:\\Windows",
+      userPath: `C:\\Windows;${npm}`
+    });
+
+    await expect(locator.detect()).resolves.toMatchObject({
+      available: true,
+      repairedUserPath: true
+    });
+    expect(writeUserPath).not.toHaveBeenCalled();
+  });
+
+  it("continues using Codex when persisting the user PATH fails", async () => {
+    const wrapper = "C:\\Users\\demo\\AppData\\Roaming\\npm\\codex.cmd";
+    const { locator } = createHarness([wrapper], {
+      processPath: "C:\\Windows",
+      readUserPathError: new Error("PowerShell blocked")
+    });
+
+    await expect(locator.detect()).resolves.toMatchObject({
+      available: true,
+      loggedIn: true,
+      message: expect.stringContaining("PATH")
     });
   });
 

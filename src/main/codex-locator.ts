@@ -49,7 +49,13 @@ export class CodexLocator {
       };
     }
 
-    const repairedUserPath = await this.repairUserPathIfNeeded(located.directory);
+    let repairedUserPath = false;
+    let pathRepairWarning: string | undefined;
+    try {
+      repairedUserPath = await this.repairUserPathIfNeeded(located.directory);
+    } catch (error) {
+      pathRepairWarning = `Codex CLI 已找到，但自动更新 Windows 用户 PATH 失败：${getErrorMessage(error)}`;
+    }
     const version = await this.runLauncher(located.launcher, ["--version"]);
     if (version.exitCode !== 0) {
       return {
@@ -68,7 +74,7 @@ export class CodexLocator {
       loggedIn: login.exitCode === 0,
       repairedUserPath,
       message: login.exitCode === 0
-        ? undefined
+        ? pathRepairWarning
         : "Codex CLI 尚未登录，请在终端执行 codex login。"
     };
   }
@@ -152,9 +158,12 @@ export class CodexLocator {
       return false;
     }
 
-    const userPath = await this.userPathStore.read();
-    await this.userPathStore.write(appendPathEntry(userPath, directory));
     this.env.PATH = updatedProcessPath;
+    const userPath = await this.userPathStore.read();
+    const updatedUserPath = appendPathEntry(userPath, directory);
+    if (updatedUserPath !== userPath) {
+      await this.userPathStore.write(updatedUserPath);
+    }
     return true;
   }
 
@@ -197,4 +206,8 @@ function uniqueCaseInsensitive(values: string[]): string[] {
     seen.add(normalized);
     return true;
   });
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
