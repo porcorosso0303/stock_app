@@ -122,6 +122,22 @@ describe("ResearchService", () => {
     expect(exportPdf).not.toHaveBeenCalled();
   });
 
+  it("marks an unexpected runner exception as failed", async () => {
+    const { service, run, history } = await createHarness({
+      reportDirectory: "C:\\reports"
+    });
+    run.mockRejectedValue(new Error("spawn failed"));
+
+    await expect(service.start("贵州茅台")).resolves.toMatchObject({
+      status: "failed",
+      errorMessage: "spawn failed"
+    });
+    await expect(history.get("run-id")).resolves.toMatchObject({
+      status: "failed",
+      errorMessage: "spawn failed"
+    });
+  });
+
   it("cancels the active runner", async () => {
     let release: (value: CodexRunResult) => void = () => {};
     const { service, run, cancel } = await createHarness({ reportDirectory: "C:\\reports" });

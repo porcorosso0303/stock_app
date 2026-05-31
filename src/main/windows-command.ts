@@ -23,3 +23,12 @@ export function buildCmdWrapperCommand(
     ]
   };
 }
+
+export function buildWindowsTaskkillCommand(
+  pid: number
+): { file: string; args: string[] } {
+  return {
+    file: "taskkill.exe",
+    args: ["/pid", String(pid), "/t", "/f"]
+  };
+}

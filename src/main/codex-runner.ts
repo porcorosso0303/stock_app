@@ -6,7 +6,10 @@ import { finished } from "node:stream/promises";
 import type { CodexLauncher } from "../shared/types";
 import { CodexJsonlParser, type CodexDisplayEvent } from "./codex-events";
 import { CODEX_EXEC_ARGS } from "./codex-prompt";
-import { buildCmdWrapperCommand } from "./windows-command";
+import {
+  buildCmdWrapperCommand,
+  buildWindowsTaskkillCommand
+} from "./windows-command";
 
 export type CodexRunResult =
   | { status: "success"; reportMarkdown: string }
@@ -100,7 +103,17 @@ export class CodexRunner {
       return;
     }
     this.cancelRequested = true;
-    this.activeProcess.kill();
+    const child = this.activeProcess;
+    if (this.platform === "win32" && child.pid) {
+      const command = buildWindowsTaskkillCommand(child.pid);
+      const killer = spawn(command.file, command.args, {
+        shell: false,
+        windowsHide: true
+      });
+      killer.once("error", () => child.kill());
+      return;
+    }
+    child.kill();
   }
 
   private spawnCodex(): ChildProcessWithoutNullStreams {

@@ -134,6 +134,11 @@ export class ResearchService {
           errorMessage: getErrorMessage(error)
         });
       }
+    } catch (error) {
+      return await this.updateStatus(id, {
+        status: "failed",
+        errorMessage: getErrorMessage(error)
+      });
     } finally {
       this.active = undefined;
     }

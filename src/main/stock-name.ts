@@ -10,6 +10,9 @@ export function validateStockName(value: string): string {
   if (stockName.length > MAX_STOCK_NAME_LENGTH) {
     throw new Error("A股标的名称不能超过80个字符");
   }
+  if (/[\u0000-\u001f\u007f]/.test(stockName)) {
+    throw new Error("A股标的名称只能包含单行文本");
+  }
   return stockName;
 }
 
