@@ -1,0 +1,4 @@
+interface:
+  display_name: "Research A-share Stock"
+  short_description: "Research one stock using the saved spec"
+  default_prompt: "Use $research-a-share-stock to research a specified stock according to the saved research spec and give a sourced judgment."
