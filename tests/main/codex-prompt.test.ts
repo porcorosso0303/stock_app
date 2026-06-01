@@ -19,12 +19,12 @@ describe("CODEX_EXEC_ARGS", () => {
   it("enables search and enforces a non-interactive read-only run", () => {
     expect(CODEX_EXEC_ARGS).toEqual([
       "--search",
-      "exec",
-      "--json",
       "-s",
       "read-only",
       "-a",
       "never",
+      "exec",
+      "--json",
       "--skip-git-repo-check",
       "-o",
       "report.md",

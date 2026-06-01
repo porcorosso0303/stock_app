@@ -10,6 +10,7 @@ import {
   codexStatusMessage,
   initializationErrorMessage,
   primaryActionLabel,
+  researchRecordStatusMessage,
   researchStatusLabel,
   sortHistory
 } from "./view-model";
@@ -95,7 +96,7 @@ async function handlePrimaryAction(): Promise<void> {
 
   try {
     const record = await api.startResearch(elements.input.value);
-    elements.taskStatus.textContent = researchStatusLabel(record.status);
+    elements.taskStatus.textContent = researchRecordStatusMessage(record);
     await refreshHistory(record.id);
   } catch (error) {
     elements.taskStatus.textContent = getErrorMessage(error);
@@ -159,6 +160,7 @@ async function selectHistory(id: string): Promise<void> {
     selectTab("report");
   } else {
     elements.reportPanel.innerHTML = `<div class="empty-state"><h2>${researchStatusLabel(selectedRecord.status)}</h2><p>${escapeHtml(selectedRecord.errorMessage ?? "该记录没有可显示的报告。")}</p></div>`;
+    selectTab("report");
   }
 }
 

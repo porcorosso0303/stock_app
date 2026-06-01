@@ -41,3 +41,8 @@ export function researchStatusLabel(status: ResearchStatus): string {
     cancelled: "已取消"
   }[status];
 }
+
+export function researchRecordStatusMessage(record: ResearchRecord): string {
+  const label = researchStatusLabel(record.status);
+  return record.errorMessage ? `${label}：${record.errorMessage}` : label;
+}

@@ -4,6 +4,7 @@ import {
   codexStatusMessage,
   initializationErrorMessage,
   primaryActionLabel,
+  researchRecordStatusMessage,
   sortHistory
 } from "../../src/renderer/view-model";
 import type { ResearchRecord } from "../../src/shared/types";
@@ -59,5 +60,15 @@ describe("codexStatusMessage", () => {
 describe("initializationErrorMessage", () => {
   it("turns preload and bootstrap failures into visible messages", () => {
     expect(initializationErrorMessage(new Error("preload failed"))).toContain("preload failed");
+  });
+});
+
+describe("researchRecordStatusMessage", () => {
+  it("includes the CLI error for failed research records", () => {
+    expect(researchRecordStatusMessage({
+      ...record("failed", ""),
+      status: "failed",
+      errorMessage: "unexpected argument '-a'"
+    })).toContain("unexpected argument '-a'");
   });
 });

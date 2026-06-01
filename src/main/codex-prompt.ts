@@ -1,11 +1,11 @@
 export const CODEX_EXEC_ARGS = [
   "--search",
-  "exec",
-  "--json",
   "-s",
   "read-only",
   "-a",
   "never",
+  "exec",
+  "--json",
   "--skip-git-repo-check",
   "-o",
   "report.md",
