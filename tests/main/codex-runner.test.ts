@@ -62,14 +62,13 @@ describe("CodexRunner", () => {
     });
   });
 
-  it("keeps running after an invalid JSONL line", async () => {
+  it("hides an invalid JSONL line and keeps running", async () => {
     process.env.FAKE_CODEX_MODE = "invalid-jsonl";
     const events: string[] = [];
     const { runner } = await createRunner((text) => events.push(text));
 
     await expect(runner.run("研究坏行")).resolves.toMatchObject({ status: "success" });
-    expect(events[0]).toContain("无法解析");
-    expect(events).toContain("完成调研");
+    expect(events).toEqual(["开始调研", "完成调研"]);
   });
 
   it("cancels an active run", async () => {

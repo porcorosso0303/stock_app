@@ -5,6 +5,9 @@ import type { ResearchProgressEvent } from "../shared/types";
 const IPC = {
   getBootstrap: "app:get-bootstrap",
   chooseReportDirectory: "config:choose-report-directory",
+  getResearchSpec: "research-spec:get",
+  saveResearchSpec: "research-spec:save",
+  resetResearchSpec: "research-spec:reset",
   startResearch: "research:start",
   cancelResearch: "research:cancel",
   listHistory: "history:list",
@@ -18,6 +21,9 @@ const IPC = {
 const api: StockResearchApi = {
   getBootstrap: async () => await ipcRenderer.invoke(IPC.getBootstrap),
   chooseReportDirectory: async () => await ipcRenderer.invoke(IPC.chooseReportDirectory),
+  getResearchSpec: async () => await ipcRenderer.invoke(IPC.getResearchSpec),
+  saveResearchSpec: async (spec) => await ipcRenderer.invoke(IPC.saveResearchSpec, { spec }),
+  resetResearchSpec: async () => await ipcRenderer.invoke(IPC.resetResearchSpec),
   startResearch: async (stockName) => await ipcRenderer.invoke(IPC.startResearch, { stockName }),
   cancelResearch: async () => await ipcRenderer.invoke(IPC.cancelResearch),
   listHistory: async () => await ipcRenderer.invoke(IPC.listHistory),

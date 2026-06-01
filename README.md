@@ -1,6 +1,6 @@
 # A股调研助手
 
-Windows Electron 桌面软件。输入一个 A 股标的名称后，应用调用本机已登录的 Codex CLI，并要求 Codex 使用 `$research-a-share-stock` skill 完成深度调研。界面实时展示过程输出，保存历史记录，并导出 PDF 报告。
+Windows Electron 桌面软件。输入一个 A 股标的名称后，应用调用本机已登录的 Codex CLI，并要求 Codex 使用应用内嵌的 `$research-a-share-stock` skill 完成深度调研。界面实时展示经过筛选的中文进展，保存历史记录，并导出 PDF 报告。
 
 本软件用于研究信息整理，不构成个性化投资建议或买卖指令。
 
@@ -20,9 +20,9 @@ Windows Electron 桌面软件。输入一个 A 股标的名称后，应用调用
    codex login status
    ```
 
-4. 确保 Codex 环境中已安装 `$research-a-share-stock` skill。
-
 若 Codex 已安装但 npm 全局目录尚未加入 `PATH`，应用首次检测时会尝试定位 `codex.cmd`，自动追加当前 Windows 用户的 `PATH`，并让本次应用运行立即生效。应用不会修改系统级 `PATH`，也不会读取或复制 Codex credential 文件。
+
+应用已内嵌 `$research-a-share-stock` skill，不需要单独安装。每次调研启动前，应用会在独立任务目录中生成该 skill 的副本，并注入用户保存的最新调研规范。
 
 ## 开发
 
@@ -60,10 +60,14 @@ NSIS 安装包输出到 `release/`。
 2. 输入 A 股标的名称。
 3. 点击“调研”。
 4. 首次使用时选择 PDF 报告目录。
-5. 在“实时输出”标签页查看 Codex 过程输出。
+5. 在“实时输出”标签页查看经过筛选的中文调研进展。运行时顶部会固定显示动态 `working` 状态和耗时，只有日志区域自动滚动到最新进展。
 6. 完成后在“调研报告”标签页阅读报告，并可打开 PDF。
 
-左侧历史记录可以重新打开已完成报告。若 Markdown 报告已完成但 PDF 导出失败，界面会显示“重新导出 PDF”。
+左侧历史记录可以重新打开已完成报告。若调研失败，界面会显示 Codex CLI 返回的错误；点击失败记录后，可在“调研报告”标签页查看失败原因。若 Markdown 报告已完成但 PDF 导出失败，界面会显示“重新导出 PDF”。
+
+在“调研规范”标签页可以编辑并保存 `stock_research_spec.md`。保存后的内容从下一次调研开始生效。应用内嵌的初始规范会永久保留；点击“恢复初始版本”可以立即将用户规范回滚到内嵌初始文本。
+
+调研报告中的网页来源链接会使用系统默认浏览器打开，应用窗口会保留在当前报告页面。
 
 ## 文件位置
 
@@ -71,9 +75,11 @@ Electron 用户数据目录中保存：
 
 - `config.json`
 - `history.json`
+- `stock_research_spec.md`
 - `runs/<run-id>/report.md`
 - `runs/<run-id>/events.jsonl`
 - `runs/<run-id>/stderr.log`
+- `runs/<run-id>/.agents/skills/research-a-share-stock/`
 
 用户选择的报告目录中保存：
 
@@ -88,5 +94,7 @@ Electron 用户数据目录中保存：
 - Renderer 启用上下文隔离，禁用 Node.js integration。
 - Preload 仅暴露受限 IPC 方法。
 - 股票名称只通过 stdin 传给 Codex CLI。
+- 内嵌 skill 只复制到当前任务目录，不修改用户全局 Codex skill。
+- 报告中的网页链接只允许通过系统默认浏览器打开，不在 Electron 窗口内导航。
 - Codex 使用联网搜索、`read-only` sandbox 和非交互审批策略。
 - 应用不读取 Codex credential 文件。

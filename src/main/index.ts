@@ -10,10 +10,14 @@ import { CodexLocator } from "./codex-locator";
 import { getCodexLauncherOverride } from "./codex-launcher-override";
 import { CodexRunner } from "./codex-runner";
 import { ConfigStore } from "./config-store";
+import { resolveEmbeddedSkillDirectory } from "./embedded-skill";
+import { configureExternalLinks } from "./external-links";
 import { HistoryStore } from "./history-store";
 import { registerIpcHandlers } from "./ipc";
 import { PdfExporter } from "./pdf-exporter";
 import { ResearchService } from "./research-service";
+import { ResearchSkillPreparer } from "./research-skill-preparer";
+import { ResearchSpecStore } from "./research-spec-store";
 import { IPC } from "../shared/ipc";
 
 let mainWindow: BrowserWindow | undefined;
@@ -31,6 +35,7 @@ function createMainWindow(): BrowserWindow {
     }
   });
 
+  configureExternalLinks(window, (url) => shell.openExternal(url));
   void window.loadFile(join(__dirname, "../renderer/index.html"));
   window.on("closed", () => {
     if (mainWindow === window) {
@@ -45,6 +50,19 @@ void app.whenReady().then(() => {
   const userData = app.getPath("userData");
   const configStore = new ConfigStore(join(userData, "config.json"));
   const historyStore = new HistoryStore(join(userData, "history.json"));
+  const embeddedSkillDirectory = resolveEmbeddedSkillDirectory({
+    isPackaged: app.isPackaged,
+    appPath: app.getAppPath(),
+    resourcesPath: process.resourcesPath
+  });
+  const researchSpecStore = new ResearchSpecStore(
+    join(userData, "stock_research_spec.md"),
+    join(embeddedSkillDirectory, "references", "stock_research_spec.md")
+  );
+  const researchSkillPreparer = new ResearchSkillPreparer(
+    embeddedSkillDirectory,
+    researchSpecStore
+  );
   const launcherOverride = getCodexLauncherOverride();
   const codexLocator = launcherOverride
     ? {
@@ -66,6 +84,7 @@ void app.whenReady().then(() => {
     codexLocator,
     createRunner: (options) => new CodexRunner(options),
     pdfExporter,
+    researchSkillPreparer,
     onProgress: (event) => {
       mainWindow?.webContents.send(IPC.researchEvent, event);
     }
@@ -75,6 +94,7 @@ void app.whenReady().then(() => {
     dialog,
     shell,
     configStore,
+    researchSpecStore,
     historyStore,
     researchService,
     codexLocator

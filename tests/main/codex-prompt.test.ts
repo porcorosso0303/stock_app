@@ -9,6 +9,8 @@ describe("buildResearchPrompt", () => {
     const prompt = buildResearchPrompt("贵州茅台");
 
     expect(prompt).toContain("$research-a-share-stock");
+    expect(prompt).toContain(".agents/skills/research-a-share-stock");
+    expect(prompt).toContain("references/stock_research_spec.md");
     expect(prompt).toContain("贵州茅台");
     expect(prompt).toContain("完整 Markdown");
     expect(prompt).toContain("不要修改");

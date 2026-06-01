@@ -41,6 +41,10 @@ interface PdfExporterLike {
   export(markdown: string, targetPath: string): Promise<void>;
 }
 
+interface ResearchSkillPreparerLike {
+  prepare(runDirectory: string): Promise<void>;
+}
+
 export interface ResearchServiceDependencies {
   userDataDirectory: string;
   configStore: ConfigStoreLike;
@@ -48,6 +52,7 @@ export interface ResearchServiceDependencies {
   codexLocator: CodexLocatorLike;
   createRunner: (options: RunnerOptions) => CodexRunnerLike;
   pdfExporter: PdfExporterLike;
+  researchSkillPreparer: ResearchSkillPreparerLike;
   createId?: () => string;
   now?: () => Date;
   onProgress?: (event: ResearchProgressEvent) => void;
@@ -86,6 +91,7 @@ export class ResearchService {
     const createdAt = this.now();
     const runDirectory = join(this.dependencies.userDataDirectory, "runs", id);
     await mkdir(runDirectory, { recursive: true });
+    await this.dependencies.researchSkillPreparer.prepare(runDirectory);
     const record: ResearchRecord = {
       id,
       stockName,

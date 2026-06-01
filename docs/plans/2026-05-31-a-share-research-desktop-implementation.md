@@ -396,7 +396,7 @@ git commit -m "feat: detect Codex CLI and repair Windows user PATH"
 - Prompt 包含输入标的。
 - Prompt 明确禁止写文件并要求完整 Markdown 最终报告。
 - 分块输入可以正确拼接完整 JSONL 行。
-- 无法解析的行生成 warning 事件，但不会让 parser 崩溃。
+- 无法解析的行保留在原始日志中，但不发送到界面，也不会让 parser 崩溃。
 - 常见 Codex JSON 事件提取可读文本；未知事件保留紧凑 JSON。
 
 示例：
@@ -425,10 +425,10 @@ Expected: FAIL。
 ```ts
 export const CODEX_EXEC_ARGS = [
   "--search",
-  "exec",
-  "--json",
   "-s", "read-only",
   "-a", "never",
+  "exec",
+  "--json",
   "--skip-git-repo-check",
   "-o", "report.md",
   "-"
@@ -814,7 +814,7 @@ Expected: FAIL。
 - 右侧顶部：报告目录摘要、“配置报告目录”、“打开 PDF”和按需显示的“重新导出 PDF”。
 - 右侧标签：`调研报告`、`实时输出`。
 - 报告使用 `renderMarkdown()` 输出。
-- 实时输出追加文本并自动滚动。
+- 实时输出只追加筛选后的重要中文进展，只有日志区域自动滚动；调研期间在顶部固定展示动态 `working` 状态和耗时。
 - 点击“调研”且目录未配置时，先调用目录选择 IPC；取消后保持空闲。
 - 运行中点击主按钮调用 cancel。
 - 启动失败、PDF 失败、Codex 缺失和未登录使用明确中文提示。
@@ -925,7 +925,7 @@ git commit -m "test: cover fake Codex end-to-end flow"
 说明：
 
 - 目标用途和非投资建议声明。
-- Windows 前提：安装并登录 Codex CLI，安装 `$research-a-share-stock` skill。
+- Windows 前提：安装并登录 Codex CLI。应用内嵌 `$research-a-share-stock` skill，不要求用户单独安装。
 - 开发命令：`npm install`、`npm run dev`、`npm test`、`npm run build`。
 - Windows 打包命令：`npm run dist:win`。
 - 首次使用流程。
@@ -1002,6 +1002,7 @@ codex login status
 - 应用不读取 credential 文件。
 - Codex prompt 使用 `$research-a-share-stock`。
 - Codex 运行参数包含 `--search`、`read-only` sandbox 和 `never` approval。
+- Codex 根级参数 `--search`、`-s read-only` 和 `-a never` 位于 `exec` 前。
 - 标的名称仅通过 stdin 传入。
 - 首次调研可引导选择报告目录。
 - PDF 文件名为 `<标的名称>_YYYY-MM-DD_HHmmss.pdf`。

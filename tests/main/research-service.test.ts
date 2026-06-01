@@ -28,6 +28,7 @@ async function createHarness(options: {
     }
   });
   const createRunner = vi.fn().mockReturnValue({ run, cancel });
+  const prepareSkill = vi.fn().mockResolvedValue(undefined);
   const service = new ResearchService({
     userDataDirectory: userData,
     configStore: {
@@ -43,10 +44,11 @@ async function createHarness(options: {
     },
     createRunner,
     pdfExporter: { export: exportPdf },
+    researchSkillPreparer: { prepare: prepareSkill },
     createId: () => "run-id",
     now: () => new Date(2026, 4, 31, 14, 30, 25)
   });
-  return { service, history, run, cancel, exportPdf, createRunner, userData };
+  return { service, history, run, cancel, exportPdf, createRunner, prepareSkill, userData };
 }
 
 afterEach(async () => {
@@ -73,7 +75,7 @@ describe("ResearchService", () => {
   });
 
   it("completes a research run and records its PDF", async () => {
-    const { service, history, exportPdf, createRunner } = await createHarness({
+    const { service, history, exportPdf, createRunner, prepareSkill } = await createHarness({
       reportDirectory: "C:\\reports"
     });
 
@@ -83,6 +85,7 @@ describe("ResearchService", () => {
       launcher: { kind: "native", executablePath: "codex.exe" },
       runDirectory: expect.stringContaining("run-id")
     }));
+    expect(prepareSkill).toHaveBeenCalledWith(expect.stringContaining("run-id"));
     expect(exportPdf).toHaveBeenCalledWith(
       "# 贵州茅台调研",
       expect.stringMatching(/贵州茅台_2026-05-31_143025\.pdf$/)

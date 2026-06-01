@@ -39,6 +39,12 @@
       "dist/**/*",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "assets/research-a-share-stock",
+        "to": "research-a-share-stock"
+      }
+    ],
     "win": {
       "target": "nsis"
     },

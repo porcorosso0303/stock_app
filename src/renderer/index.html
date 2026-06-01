@@ -54,6 +54,7 @@
         <nav class="tabs" aria-label="报告视图">
           <button class="tab active" data-tab="report" type="button">调研报告</button>
           <button class="tab" data-tab="output" type="button">实时输出</button>
+          <button class="tab" data-tab="spec" type="button">调研规范</button>
         </nav>
 
         <section id="report-panel" class="panel report-panel">
@@ -63,7 +64,28 @@
           </div>
         </section>
         <section id="output-panel" class="panel output-panel" hidden>
-          <pre id="live-output">等待调研任务启动...</pre>
+          <div id="working-indicator" class="working-indicator" hidden>
+            <span class="working-spinner" aria-hidden="true"></span>
+            <span>working</span>
+            <span id="working-elapsed" class="working-elapsed">00:00</span>
+          </div>
+          <div id="live-output-scroll" class="live-output-scroll">
+            <pre id="live-output">等待调研任务启动...</pre>
+          </div>
+        </section>
+        <section id="spec-panel" class="panel spec-panel" hidden>
+          <div class="spec-heading">
+            <div>
+              <h2>调研规范</h2>
+              <p>修改后保存。新规范会从下一次调研开始生效。</p>
+            </div>
+            <div class="spec-actions">
+              <button id="reset-spec" type="button">恢复初始版本</button>
+              <button id="save-spec" type="button">保存规范</button>
+            </div>
+          </div>
+          <textarea id="research-spec" spellcheck="false" aria-label="调研规范"></textarea>
+          <p id="spec-status" class="spec-status"></p>
         </section>
       </section>
     </main>

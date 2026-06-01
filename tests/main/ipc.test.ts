@@ -25,6 +25,8 @@ function createHarness(options: {
 } = {}) {
   const handlers = new Map<string, (_event: unknown, value?: unknown) => unknown>();
   const setReportDirectory = vi.fn().mockResolvedValue({});
+  const setResearchSpec = vi.fn().mockResolvedValue(undefined);
+  const resetResearchSpec = vi.fn().mockResolvedValue("default spec");
   const openPath = vi.fn().mockResolvedValue(options.openPathResult ?? "");
   const start = vi.fn().mockResolvedValue(createRecord());
   registerIpcHandlers({
@@ -42,6 +44,11 @@ function createHarness(options: {
     configStore: {
       get: async () => ({}),
       setReportDirectory
+    },
+    researchSpecStore: {
+      get: async () => "current spec",
+      set: setResearchSpec,
+      reset: resetResearchSpec
     },
     historyStore: {
       list: async () => [],
@@ -70,7 +77,7 @@ function createHarness(options: {
     }
     return await handler({}, value);
   };
-  return { invoke, setReportDirectory, openPath, start };
+  return { invoke, setReportDirectory, setResearchSpec, resetResearchSpec, openPath, start };
 }
 
 describe("registerIpcHandlers", () => {
@@ -95,6 +102,21 @@ describe("registerIpcHandlers", () => {
 
     await expect(invoke(IPC.startResearch, { stockName: 123 })).rejects.toThrow("stockName");
     expect(start).not.toHaveBeenCalled();
+  });
+
+  it("reads and saves the user-maintained research spec", async () => {
+    const { invoke, setResearchSpec } = createHarness();
+
+    await expect(invoke(IPC.getResearchSpec)).resolves.toBe("current spec");
+    await expect(invoke(IPC.saveResearchSpec, { spec: "updated spec" })).resolves.toBeUndefined();
+    expect(setResearchSpec).toHaveBeenCalledWith("updated spec");
+  });
+
+  it("resets the user-maintained research spec to the embedded default", async () => {
+    const { invoke, resetResearchSpec } = createHarness();
+
+    await expect(invoke(IPC.resetResearchSpec)).resolves.toBe("default spec");
+    expect(resetResearchSpec).toHaveBeenCalledOnce();
   });
 
   it("opens only a PDF from a known history record", async () => {

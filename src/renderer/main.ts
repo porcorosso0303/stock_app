@@ -8,6 +8,7 @@ import type {
 import {
   canRetryPdf,
   codexStatusMessage,
+  formatElapsedTime,
   initializationErrorMessage,
   primaryActionLabel,
   researchRecordStatusMessage,
@@ -30,12 +31,22 @@ const elements = {
   retryPdf: getElement<HTMLButtonElement>("retry-pdf"),
   reportPanel: getElement<HTMLElement>("report-panel"),
   outputPanel: getElement<HTMLElement>("output-panel"),
-  liveOutput: getElement<HTMLElement>("live-output")
+  liveOutputScroll: getElement<HTMLElement>("live-output-scroll"),
+  liveOutput: getElement<HTMLElement>("live-output"),
+  workingIndicator: getElement<HTMLElement>("working-indicator"),
+  workingElapsed: getElement<HTMLElement>("working-elapsed"),
+  specPanel: getElement<HTMLElement>("spec-panel"),
+  researchSpec: getElement<HTMLTextAreaElement>("research-spec"),
+  saveSpec: getElement<HTMLButtonElement>("save-spec"),
+  resetSpec: getElement<HTMLButtonElement>("reset-spec"),
+  specStatus: getElement<HTMLElement>("spec-status")
 };
 
 let state: AppBootstrap;
 let running = false;
 let selectedRecord: ResearchRecord | undefined;
+let workingStartedAt: number | undefined;
+let workingTimer: number | undefined;
 
 void initialize().catch((error: unknown) => {
   const message = initializationErrorMessage(error);
@@ -46,6 +57,7 @@ void initialize().catch((error: unknown) => {
 async function initialize(): Promise<void> {
   bindEvents();
   state = await api.getBootstrap();
+  elements.researchSpec.value = await api.getResearchSpec();
   renderBootstrap();
   api.onResearchEvent(handleProgress);
 }
@@ -57,8 +69,13 @@ function bindEvents(): void {
   elements.refreshHistory.addEventListener("click", () => void refreshHistory());
   elements.openPdf.addEventListener("click", () => void openSelectedPdf());
   elements.retryPdf.addEventListener("click", () => void retrySelectedPdf());
+  elements.saveSpec.addEventListener("click", () => void saveResearchSpec());
+  elements.resetSpec.addEventListener("click", () => void resetResearchSpec());
   document.querySelectorAll<HTMLButtonElement>(".tab").forEach((tab) => {
-    tab.addEventListener("click", () => selectTab(tab.dataset.tab === "output" ? "output" : "report"));
+    tab.addEventListener("click", () => {
+      const name = tab.dataset.tab;
+      selectTab(name === "output" || name === "spec" ? name : "report");
+    });
   });
 }
 
@@ -90,9 +107,10 @@ async function handlePrimaryAction(): Promise<void> {
   running = true;
   selectedRecord = undefined;
   elements.liveOutput.textContent = "";
-  elements.reportPanel.innerHTML = '<div class="empty-state"><h2>正在调研</h2><p>过程输出可在“实时输出”标签页查看。</p></div>';
+  elements.reportPanel.innerHTML = '<div class="empty-state"><h2>正在调研</h2><p>筛选后的中文进展可在“实时输出”标签页查看。</p></div>';
   selectTab("output");
   renderPrimaryAction();
+  startWorkingIndicator();
 
   try {
     const record = await api.startResearch(elements.input.value);
@@ -103,6 +121,7 @@ async function handlePrimaryAction(): Promise<void> {
   } finally {
     running = false;
     renderPrimaryAction();
+    stopWorkingIndicator();
   }
 }
 
@@ -183,10 +202,28 @@ async function retrySelectedPdf(): Promise<void> {
   }
 }
 
+async function saveResearchSpec(): Promise<void> {
+  try {
+    await api.saveResearchSpec(elements.researchSpec.value);
+    elements.specStatus.textContent = "调研规范已保存，将从下一次调研开始生效。";
+  } catch (error) {
+    elements.specStatus.textContent = getErrorMessage(error);
+  }
+}
+
+async function resetResearchSpec(): Promise<void> {
+  try {
+    elements.researchSpec.value = await api.resetResearchSpec();
+    elements.specStatus.textContent = "已恢复初始调研规范，将从下一次调研开始生效。";
+  } catch (error) {
+    elements.specStatus.textContent = getErrorMessage(error);
+  }
+}
+
 function handleProgress(event: ResearchProgressEvent): void {
   if (event.type === "output" && event.text) {
     elements.liveOutput.textContent += `${event.text}\n`;
-    elements.outputPanel.scrollTop = elements.outputPanel.scrollHeight;
+    scrollLiveOutputToBottom();
   }
   if (event.type === "status" && event.status) {
     elements.taskStatus.textContent = researchStatusLabel(event.status);
@@ -198,9 +235,38 @@ function renderPrimaryAction(): void {
   elements.primaryAction.classList.toggle("danger", running);
 }
 
-function selectTab(name: "report" | "output"): void {
+function startWorkingIndicator(): void {
+  workingStartedAt = Date.now();
+  elements.workingIndicator.hidden = false;
+  renderElapsedTime();
+  workingTimer = window.setInterval(renderElapsedTime, 1_000);
+}
+
+function stopWorkingIndicator(): void {
+  if (workingTimer !== undefined) {
+    window.clearInterval(workingTimer);
+  }
+  workingTimer = undefined;
+  workingStartedAt = undefined;
+  elements.workingIndicator.hidden = true;
+}
+
+function renderElapsedTime(): void {
+  elements.workingElapsed.textContent = formatElapsedTime(
+    workingStartedAt === undefined ? 0 : Date.now() - workingStartedAt
+  );
+}
+
+function scrollLiveOutputToBottom(): void {
+  requestAnimationFrame(() => {
+    elements.liveOutputScroll.scrollTop = elements.liveOutputScroll.scrollHeight;
+  });
+}
+
+function selectTab(name: "report" | "output" | "spec"): void {
   elements.reportPanel.hidden = name !== "report";
   elements.outputPanel.hidden = name !== "output";
+  elements.specPanel.hidden = name !== "spec";
   document.querySelectorAll<HTMLButtonElement>(".tab").forEach((tab) => {
     tab.classList.toggle("active", tab.dataset.tab === name);
   });

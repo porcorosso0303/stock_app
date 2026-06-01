@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canRetryPdf,
   codexStatusMessage,
+  formatElapsedTime,
   initializationErrorMessage,
   primaryActionLabel,
   researchRecordStatusMessage,
@@ -70,5 +71,12 @@ describe("researchRecordStatusMessage", () => {
       status: "failed",
       errorMessage: "unexpected argument '-a'"
     })).toContain("unexpected argument '-a'");
+  });
+});
+
+describe("formatElapsedTime", () => {
+  it("formats elapsed research time as minutes and seconds", () => {
+    expect(formatElapsedTime(0)).toBe("00:00");
+    expect(formatElapsedTime(65_900)).toBe("01:05");
   });
 });

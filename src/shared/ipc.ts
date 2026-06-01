@@ -8,6 +8,9 @@ import type {
 export const IPC = {
   getBootstrap: "app:get-bootstrap",
   chooseReportDirectory: "config:choose-report-directory",
+  getResearchSpec: "research-spec:get",
+  saveResearchSpec: "research-spec:save",
+  resetResearchSpec: "research-spec:reset",
   startResearch: "research:start",
   cancelResearch: "research:cancel",
   listHistory: "history:list",
@@ -21,6 +24,9 @@ export const IPC = {
 export interface StockResearchApi {
   getBootstrap(): Promise<AppBootstrap>;
   chooseReportDirectory(): Promise<string | undefined>;
+  getResearchSpec(): Promise<string>;
+  saveResearchSpec(spec: string): Promise<void>;
+  resetResearchSpec(): Promise<string>;
   startResearch(stockName: string): Promise<ResearchRecord>;
   cancelResearch(): Promise<void>;
   listHistory(): Promise<ResearchRecord[]>;

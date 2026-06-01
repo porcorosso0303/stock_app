@@ -27,6 +27,12 @@ interface ConfigStoreLike {
   setReportDirectory(path: string): Promise<AppConfig>;
 }
 
+interface ResearchSpecStoreLike {
+  get(): Promise<string>;
+  set(spec: string): Promise<void>;
+  reset(): Promise<string>;
+}
+
 interface HistoryStoreLike {
   list(): Promise<ResearchRecord[]>;
   get(id: string): Promise<ResearchRecord | undefined>;
@@ -48,6 +54,7 @@ interface IpcDependencies {
   dialog: DialogLike;
   shell: ShellLike;
   configStore: ConfigStoreLike;
+  researchSpecStore: ResearchSpecStoreLike;
   historyStore: HistoryStoreLike;
   researchService: ResearchServiceLike;
   codexLocator: CodexLocatorLike;
@@ -59,6 +66,7 @@ export function registerIpcHandlers(dependencies: IpcDependencies): void {
     dialog,
     shell,
     configStore,
+    researchSpecStore,
     historyStore,
     researchService,
     codexLocator
@@ -79,6 +87,15 @@ export function registerIpcHandlers(dependencies: IpcDependencies): void {
     await configStore.setReportDirectory(path);
     return path;
   });
+
+  ipcMain.handle(IPC.getResearchSpec, async () => await researchSpecStore.get());
+
+  ipcMain.handle(IPC.saveResearchSpec, async (_event, value) => {
+    const input = requireObject(value);
+    await researchSpecStore.set(requireString(input.spec, "spec"));
+  });
+
+  ipcMain.handle(IPC.resetResearchSpec, async () => await researchSpecStore.reset());
 
   ipcMain.handle(IPC.startResearch, async (_event, value) => {
     const input = requireObject(value);

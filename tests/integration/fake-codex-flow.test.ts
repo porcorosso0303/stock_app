@@ -60,6 +60,9 @@ describe("fake Codex integration", () => {
           await writeFile(targetPath, "%PDF-FAKE", "utf8");
         }
       },
+      researchSkillPreparer: {
+        prepare: async () => {}
+      },
       createId: () => "integration-run",
       now: () => new Date(2026, 4, 31, 14, 30, 25),
       onProgress: (event) => {
