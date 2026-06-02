@@ -2,7 +2,10 @@ import type {
   AppBootstrap,
   CodexEnvironmentStatus,
   ResearchProgressEvent,
-  ResearchRecord
+  ResearchRecord,
+  StockQuote,
+  StockSearchResult,
+  WatchTreeConfig
 } from "./types";
 
 export const IPC = {
@@ -18,6 +21,10 @@ export const IPC = {
   openPdf: "history:open-pdf",
   retryPdf: "history:retry-pdf",
   redetectCodex: "codex:redetect",
+  getWatchTree: "watch-tree:get",
+  saveWatchTree: "watch-tree:save",
+  getWatchQuotes: "watch-quotes:get",
+  searchStocks: "watch-stocks:search",
   researchEvent: "research:event"
 } as const;
 
@@ -34,5 +41,9 @@ export interface StockResearchApi {
   openPdf(id: string): Promise<void>;
   retryPdf(id: string): Promise<ResearchRecord>;
   redetectCodex(): Promise<CodexEnvironmentStatus>;
+  getWatchTree(): Promise<WatchTreeConfig>;
+  saveWatchTree(config: WatchTreeConfig): Promise<WatchTreeConfig>;
+  getWatchQuotes(secids: string[]): Promise<StockQuote[]>;
+  searchStocks(query: string): Promise<StockSearchResult[]>;
   onResearchEvent(callback: (event: ResearchProgressEvent) => void): () => void;
 }

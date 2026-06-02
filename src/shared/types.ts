@@ -48,3 +48,39 @@ export interface AppBootstrap {
   history: ResearchRecord[];
   codex: CodexEnvironmentStatus;
 }
+
+export interface WatchTreeCategoryNode {
+  id: string;
+  type: "category";
+  name: string;
+  children: WatchTreeNode[];
+}
+
+export interface WatchTreeStockNode {
+  id: string;
+  type: "stock";
+  name: string;
+  secid: string;
+}
+
+export type WatchTreeNode = WatchTreeCategoryNode | WatchTreeStockNode;
+
+export interface WatchTreeConfig {
+  root?: WatchTreeCategoryNode;
+}
+
+export interface StockQuote {
+  secid: string;
+  stockName?: string;
+  price?: number;
+  changePercent?: number;
+  fetchedAt: string;
+  errorMessage?: string;
+}
+
+export interface StockSearchResult {
+  secid: string;
+  code: string;
+  name: string;
+  marketName?: string;
+}

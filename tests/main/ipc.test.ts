@@ -29,6 +29,9 @@ function createHarness(options: {
   const resetResearchSpec = vi.fn().mockResolvedValue("default spec");
   const openPath = vi.fn().mockResolvedValue(options.openPathResult ?? "");
   const start = vi.fn().mockResolvedValue(createRecord());
+  const setWatchTree = vi.fn().mockImplementation(async (value) => value);
+  const listQuotes = vi.fn().mockResolvedValue([]);
+  const searchStocks = vi.fn().mockResolvedValue([]);
   registerIpcHandlers({
     ipcMain: {
       handle: (channel, handler) => {
@@ -67,6 +70,14 @@ function createHarness(options: {
         }
         return { available: false };
       }
+    },
+    watchTreeStore: {
+      get: async () => ({}),
+      set: setWatchTree
+    },
+    quoteService: {
+      list: listQuotes,
+      search: searchStocks
     }
   });
 
@@ -77,7 +88,17 @@ function createHarness(options: {
     }
     return await handler({}, value);
   };
-  return { invoke, setReportDirectory, setResearchSpec, resetResearchSpec, openPath, start };
+  return {
+    invoke,
+    setReportDirectory,
+    setResearchSpec,
+    resetResearchSpec,
+    openPath,
+    start,
+    setWatchTree,
+    listQuotes,
+    searchStocks
+  };
 }
 
 describe("registerIpcHandlers", () => {
@@ -146,5 +167,31 @@ describe("registerIpcHandlers", () => {
         message: expect.stringContaining("PowerShell blocked")
       }
     });
+  });
+
+  it("saves the user-maintained watch tree", async () => {
+    const { invoke, setWatchTree } = createHarness();
+    const config = {
+      root: { id: "root", type: "category", name: "科技股", children: [] }
+    };
+
+    await expect(invoke(IPC.saveWatchTree, { config })).resolves.toEqual(config);
+    expect(setWatchTree).toHaveBeenCalledWith(config);
+  });
+
+  it("rejects invalid quote arguments", async () => {
+    const { invoke, listQuotes } = createHarness();
+
+    await expect(invoke(IPC.getWatchQuotes, { secids: "1.600519" }))
+      .rejects.toThrow("secids");
+    expect(listQuotes).not.toHaveBeenCalled();
+  });
+
+  it("searches stocks by a validated string argument", async () => {
+    const { invoke, searchStocks } = createHarness();
+
+    await expect(invoke(IPC.searchStocks, { query: "贵州茅台" })).resolves.toEqual([]);
+    expect(searchStocks).toHaveBeenCalledWith("贵州茅台");
+    await expect(invoke(IPC.searchStocks, { query: 123 })).rejects.toThrow("query");
   });
 });

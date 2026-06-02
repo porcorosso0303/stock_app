@@ -15,6 +15,10 @@ const IPC = {
   openPdf: "history:open-pdf",
   retryPdf: "history:retry-pdf",
   redetectCodex: "codex:redetect",
+  getWatchTree: "watch-tree:get",
+  saveWatchTree: "watch-tree:save",
+  getWatchQuotes: "watch-quotes:get",
+  searchStocks: "watch-stocks:search",
   researchEvent: "research:event"
 } as const satisfies typeof import("../shared/ipc").IPC;
 
@@ -31,6 +35,10 @@ const api: StockResearchApi = {
   openPdf: async (id) => await ipcRenderer.invoke(IPC.openPdf, { id }),
   retryPdf: async (id) => await ipcRenderer.invoke(IPC.retryPdf, { id }),
   redetectCodex: async () => await ipcRenderer.invoke(IPC.redetectCodex),
+  getWatchTree: async () => await ipcRenderer.invoke(IPC.getWatchTree),
+  saveWatchTree: async (config) => await ipcRenderer.invoke(IPC.saveWatchTree, { config }),
+  getWatchQuotes: async (secids) => await ipcRenderer.invoke(IPC.getWatchQuotes, { secids }),
+  searchStocks: async (query) => await ipcRenderer.invoke(IPC.searchStocks, { query }),
   onResearchEvent: (callback) => {
     const listener = (_event: unknown, progress: ResearchProgressEvent) => callback(progress);
     ipcRenderer.on(IPC.researchEvent, listener);

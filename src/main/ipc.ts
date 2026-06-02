@@ -2,7 +2,10 @@ import { IPC } from "../shared/ipc";
 import type {
   AppConfig,
   CodexEnvironmentStatus,
-  ResearchRecord
+  ResearchRecord,
+  StockQuote,
+  StockSearchResult,
+  WatchTreeConfig
 } from "../shared/types";
 
 interface IpcMainLike {
@@ -49,6 +52,16 @@ interface CodexLocatorLike {
   detect(): Promise<CodexEnvironmentStatus>;
 }
 
+interface WatchTreeStoreLike {
+  get(): Promise<WatchTreeConfig>;
+  set(value: unknown): Promise<WatchTreeConfig>;
+}
+
+interface QuoteServiceLike {
+  list(secids: string[]): Promise<StockQuote[]>;
+  search(query: string): Promise<StockSearchResult[]>;
+}
+
 interface IpcDependencies {
   ipcMain: IpcMainLike;
   dialog: DialogLike;
@@ -58,6 +71,8 @@ interface IpcDependencies {
   historyStore: HistoryStoreLike;
   researchService: ResearchServiceLike;
   codexLocator: CodexLocatorLike;
+  watchTreeStore: WatchTreeStoreLike;
+  quoteService: QuoteServiceLike;
 }
 
 export function registerIpcHandlers(dependencies: IpcDependencies): void {
@@ -69,7 +84,9 @@ export function registerIpcHandlers(dependencies: IpcDependencies): void {
     researchSpecStore,
     historyStore,
     researchService,
-    codexLocator
+    codexLocator,
+    watchTreeStore,
+    quoteService
   } = dependencies;
 
   ipcMain.handle(IPC.getBootstrap, async () => ({
@@ -132,6 +149,23 @@ export function registerIpcHandlers(dependencies: IpcDependencies): void {
   });
 
   ipcMain.handle(IPC.redetectCodex, async () => await detectCodexSafely(codexLocator));
+
+  ipcMain.handle(IPC.getWatchTree, async () => await watchTreeStore.get());
+
+  ipcMain.handle(IPC.saveWatchTree, async (_event, value) => {
+    const input = requireObject(value);
+    return await watchTreeStore.set(input.config);
+  });
+
+  ipcMain.handle(IPC.getWatchQuotes, async (_event, value) => {
+    const input = requireObject(value);
+    return await quoteService.list(requireStringArray(input.secids, "secids"));
+  });
+
+  ipcMain.handle(IPC.searchStocks, async (_event, value) => {
+    const input = requireObject(value);
+    return await quoteService.search(requireString(input.query, "query"));
+  });
 }
 
 async function detectCodexSafely(
@@ -157,6 +191,13 @@ function requireObject(value: unknown): Record<string, unknown> {
 function requireString(value: unknown, name: string): string {
   if (typeof value !== "string") {
     throw new Error(`IPC 参数 ${name} 必须是字符串`);
+  }
+  return value;
+}
+
+function requireStringArray(value: unknown, name: string): string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw new Error(`IPC 参数 ${name} 必须是字符串数组`);
   }
   return value;
 }

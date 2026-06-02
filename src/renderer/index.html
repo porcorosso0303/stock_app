@@ -11,34 +11,41 @@
         <div>
           <p class="eyebrow">CODEX RESEARCH</p>
           <h1>A股调研助手</h1>
-          <p class="subtitle">输入单只 A 股标的，生成带来源的深度调研报告。</p>
+          <p class="subtitle">单股深度调研与自定义盯盘脑图。</p>
         </div>
 
-        <section class="research-form">
-          <label for="stock-name">A股标的名称</label>
-          <input id="stock-name" autocomplete="off" placeholder="例如：贵州茅台" />
-          <button id="primary-action" class="primary" type="button">调研</button>
-          <p id="task-status" class="status-line">等待开始调研</p>
-        </section>
+        <nav class="feature-nav" aria-label="功能">
+          <button class="feature-button active" data-feature="research" type="button">单股调研</button>
+          <button class="feature-button" data-feature="watch" type="button">盯盘脑图</button>
+        </nav>
 
-        <section class="environment-card">
-          <div class="section-heading">
-            <h2>Codex 环境</h2>
-            <button id="redetect-codex" class="link-button" type="button">重新检测</button>
-          </div>
-          <p id="codex-status" class="muted">正在检测 Codex CLI...</p>
-        </section>
+        <div id="research-sidebar-content" class="research-sidebar-content">
+          <section class="research-form">
+            <label for="stock-name">A股标的名称</label>
+            <input id="stock-name" autocomplete="off" placeholder="例如：贵州茅台" />
+            <button id="primary-action" class="primary" type="button">调研</button>
+            <p id="task-status" class="status-line">等待开始调研</p>
+          </section>
 
-        <section class="history-section">
-          <div class="section-heading">
-            <h2>历史记录</h2>
-            <button id="refresh-history" class="link-button" type="button">刷新</button>
-          </div>
-          <div id="history-list" class="history-list"></div>
-        </section>
+          <section class="environment-card">
+            <div class="section-heading">
+              <h2>Codex 环境</h2>
+              <button id="redetect-codex" class="link-button" type="button">重新检测</button>
+            </div>
+            <p id="codex-status" class="muted">正在检测 Codex CLI...</p>
+          </section>
+
+          <section class="history-section">
+            <div class="section-heading">
+              <h2>历史记录</h2>
+              <button id="refresh-history" class="link-button" type="button">刷新</button>
+            </div>
+            <div id="history-list" class="history-list"></div>
+          </section>
+        </div>
       </aside>
 
-      <section class="workspace">
+      <section id="research-workspace" class="workspace">
         <header class="toolbar">
           <div>
             <span class="toolbar-label">PDF 报告目录</span>
@@ -88,7 +95,51 @@
           <p id="spec-status" class="spec-status"></p>
         </section>
       </section>
+
+      <section id="watch-workspace" class="workspace watch-workspace" hidden>
+        <header class="toolbar">
+          <div>
+            <span class="toolbar-label">盯盘脑图</span>
+            <strong id="watch-status">打开后自动刷新行情</strong>
+          </div>
+          <div class="toolbar-actions">
+            <button id="refresh-watch-quotes" type="button">刷新行情</button>
+            <button id="toggle-watch-config" type="button">配置脑图</button>
+          </div>
+        </header>
+
+        <section id="watch-panel" class="watch-panel">
+          <div id="watch-config-bar" class="watch-config-bar" hidden>
+            <p>右键点击节点可以添加、编辑或删除。左键点击分类节点可以展开或回缩。按住空白区域拖动可以平移脑图。</p>
+            <button id="create-watch-root" type="button">创建根分类</button>
+          </div>
+          <div id="watch-tree" class="watch-tree"></div>
+        </section>
+        <div id="watch-context-menu" class="watch-context-menu" hidden></div>
+      </section>
     </main>
+
+    <dialog id="watch-node-dialog" class="watch-node-dialog">
+      <form id="watch-node-form">
+        <h2 id="watch-node-dialog-title">配置节点</h2>
+        <label for="watch-node-type">节点类型</label>
+        <select id="watch-node-type">
+          <option value="category">分类</option>
+          <option value="stock">股票</option>
+        </select>
+        <label for="watch-node-name">名称</label>
+        <input id="watch-node-name" autocomplete="off" />
+        <button id="search-watch-stock" type="button">按名称搜索股票</button>
+        <div id="watch-stock-results" class="watch-stock-results" hidden></div>
+        <label id="watch-node-secid-label" for="watch-node-secid">已选股票 secid</label>
+        <input id="watch-node-secid" readonly placeholder="请先搜索并选择股票" />
+        <p id="watch-node-error" class="dialog-error"></p>
+        <div class="dialog-actions">
+          <button id="cancel-watch-node" type="button">取消</button>
+          <button class="primary" type="submit">保存</button>
+        </div>
+      </form>
+    </dialog>
     <script type="module" src="/main.ts"></script>
   </body>
 </html>

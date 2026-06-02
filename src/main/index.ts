@@ -10,6 +10,7 @@ import { CodexLocator } from "./codex-locator";
 import { getCodexLauncherOverride } from "./codex-launcher-override";
 import { CodexRunner } from "./codex-runner";
 import { ConfigStore } from "./config-store";
+import { EastMoneyQuoteService } from "./east-money-quote-service";
 import { resolveEmbeddedSkillDirectory } from "./embedded-skill";
 import { configureExternalLinks } from "./external-links";
 import { HistoryStore } from "./history-store";
@@ -18,6 +19,7 @@ import { PdfExporter } from "./pdf-exporter";
 import { ResearchService } from "./research-service";
 import { ResearchSkillPreparer } from "./research-skill-preparer";
 import { ResearchSpecStore } from "./research-spec-store";
+import { WatchTreeStore } from "./watch-tree-store";
 import { IPC } from "../shared/ipc";
 
 let mainWindow: BrowserWindow | undefined;
@@ -50,6 +52,7 @@ void app.whenReady().then(() => {
   const userData = app.getPath("userData");
   const configStore = new ConfigStore(join(userData, "config.json"));
   const historyStore = new HistoryStore(join(userData, "history.json"));
+  const watchTreeStore = new WatchTreeStore(join(userData, "watch-tree.json"));
   const embeddedSkillDirectory = resolveEmbeddedSkillDirectory({
     isPackaged: app.isPackaged,
     appPath: app.getAppPath(),
@@ -89,6 +92,7 @@ void app.whenReady().then(() => {
       mainWindow?.webContents.send(IPC.researchEvent, event);
     }
   });
+  const quoteService = new EastMoneyQuoteService();
   registerIpcHandlers({
     ipcMain,
     dialog,
@@ -97,7 +101,9 @@ void app.whenReady().then(() => {
     researchSpecStore,
     historyStore,
     researchService,
-    codexLocator
+    codexLocator,
+    watchTreeStore,
+    quoteService
   });
 
   createMainWindow();
