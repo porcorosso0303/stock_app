@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { WatchMarketService } from "../../src/main/watch-market-service";
 import type { StockQuote, StockTrend, WatchMarketCache } from "../../src/shared/types";
 
-function quote(changePercent: number, fetchedAt = "2026-06-04T09:31:00.000Z"): StockQuote {
+function quote(changePercent: number, fetchedAt = "2026-06-04T01:31:00.000Z"): StockQuote {
   return {
     secid: "1.600519",
     fetchedAt,
@@ -10,7 +10,7 @@ function quote(changePercent: number, fetchedAt = "2026-06-04T09:31:00.000Z"): S
   };
 }
 
-function trend(changePercent: number, fetchedAt = "2026-06-04T09:31:00.000Z"): StockTrend {
+function trend(changePercent: number, fetchedAt = "2026-06-04T01:31:00.000Z"): StockTrend {
   return {
     secid: "1.600519",
     fetchedAt,
@@ -22,7 +22,7 @@ describe("WatchMarketService", () => {
   it("returns same-day cache without calling quote service", async () => {
     const cache: WatchMarketCache = {
       tradingDate: "2026-06-04",
-      updatedAt: "2026-06-04T09:31:00.000Z",
+      updatedAt: "2026-06-04T01:31:00.000Z",
       quotes: [quote(1.2)],
       trends: [trend(1.2)]
     };
@@ -81,11 +81,11 @@ describe("WatchMarketService", () => {
     const cacheStore = {
       getForDate: vi.fn().mockResolvedValue({
         tradingDate: "2026-06-04",
-        updatedAt: "2026-06-04T09:31:00.000Z",
+        updatedAt: "2026-06-04T01:31:00.000Z",
         quotes: [quote(1.2)],
         trends: [{
           secid: "1.600519",
-          fetchedAt: "2026-06-04T09:31:00.000Z",
+          fetchedAt: "2026-06-04T01:31:00.000Z",
           points: [{ time: "09:31", changePercent: 48 }]
         }]
       }),
@@ -154,7 +154,7 @@ describe("WatchMarketService", () => {
     const cacheStore = {
       getForDate: vi.fn().mockResolvedValue({
         tradingDate: "2026-06-04",
-        updatedAt: "2026-06-04T09:31:00.000Z",
+        updatedAt: "2026-06-04T01:31:00.000Z",
         quotes: [quote(1.2)],
         trends: [trend(1.2)]
       }),
@@ -162,12 +162,12 @@ describe("WatchMarketService", () => {
     };
     const secondQuote: StockQuote = {
       secid: "0.300750",
-      fetchedAt: "2026-06-04T09:32:00.000Z",
+      fetchedAt: "2026-06-04T01:32:00.000Z",
       changePercent: -0.8
     };
     const secondTrend: StockTrend = {
       secid: "0.300750",
-      fetchedAt: "2026-06-04T09:32:00.000Z",
+      fetchedAt: "2026-06-04T01:32:00.000Z",
       points: [{ time: "09:32", changePercent: -0.8 }]
     };
     const quoteService = {
@@ -177,7 +177,7 @@ describe("WatchMarketService", () => {
     const service = new WatchMarketService(
       cacheStore,
       quoteService,
-      () => new Date("2026-06-04T09:32:00.000Z")
+      () => new Date("2026-06-04T01:32:00.000Z")
     );
 
     await expect(service.get(["1.600519", "0.300750"])).resolves.toMatchObject({
@@ -192,7 +192,7 @@ describe("WatchMarketService", () => {
     const cacheStore = {
       getForDate: vi.fn().mockResolvedValue({
         tradingDate: "2026-06-04",
-        updatedAt: "2026-06-04T09:31:00.000Z",
+        updatedAt: "2026-06-04T01:31:00.000Z",
         quotes: [quote(-0.5)],
         trends: [trend(-0.5)]
       }),
@@ -200,24 +200,24 @@ describe("WatchMarketService", () => {
     };
     const secondQuote: StockQuote = {
       secid: "0.300750",
-      fetchedAt: "2026-06-04T09:32:00.000Z",
+      fetchedAt: "2026-06-04T01:32:00.000Z",
       changePercent: -0.8
     };
     const quoteService = {
       list: vi.fn().mockResolvedValue([
-        quote(1.2, "2026-06-04T09:32:00.000Z"),
+        quote(1.2, "2026-06-04T01:32:00.000Z"),
         secondQuote
       ]),
       trends: vi.fn().mockResolvedValue([{
         secid: "0.300750",
-        fetchedAt: "2026-06-04T09:32:00.000Z",
+        fetchedAt: "2026-06-04T01:32:00.000Z",
         points: [{ time: "09:31", changePercent: -0.9 }]
       }])
     };
     const service = new WatchMarketService(
       cacheStore,
       quoteService,
-      () => new Date("2026-06-04T09:32:00.000Z")
+      () => new Date("2026-06-04T01:32:00.000Z")
     );
 
     await expect(service.refresh(["1.600519", "0.300750"])).resolves.toMatchObject({
@@ -239,24 +239,24 @@ describe("WatchMarketService", () => {
     const cacheStore = {
       getForDate: vi.fn().mockResolvedValue({
         tradingDate: "2026-06-04",
-        updatedAt: "2026-06-04T09:31:00.000Z",
+        updatedAt: "2026-06-04T01:31:00.000Z",
         quotes: [quote(-0.5)],
         trends: [trend(-0.5)]
       }),
       write: vi.fn()
     };
     const quoteService = {
-      list: vi.fn().mockResolvedValue([quote(1.2, "2026-06-04T09:32:00.000Z")]),
+      list: vi.fn().mockResolvedValue([quote(1.2, "2026-06-04T01:32:00.000Z")]),
       trends: vi.fn()
     };
     const service = new WatchMarketService(
       cacheStore,
       quoteService,
-      () => new Date("2026-06-04T09:32:00.000Z")
+      () => new Date("2026-06-04T01:32:00.000Z")
     );
 
     await expect(service.refresh(["1.600519"])).resolves.toMatchObject({
-      quotes: [quote(1.2, "2026-06-04T09:32:00.000Z")],
+      quotes: [quote(1.2, "2026-06-04T01:32:00.000Z")],
       trends: [{
         secid: "1.600519",
         points: [

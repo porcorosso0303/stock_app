@@ -96,15 +96,30 @@ describe("watch tree", () => {
       fetchedAt: "2026-06-04T01:31:00.000Z",
       points: [
         { time: "09:30", changePercent: -0.5 },
-        { time: "01:31", changePercent: 1.2 }
+        { time: "09:31", changePercent: 1.2 }
       ]
     });
 
     expect(mergeQuoteIntoTrend(trend, {
       secid: "1.600519",
-      fetchedAt: "2026-06-04T09:30:20.000Z",
+      fetchedAt: "2026-06-04T01:30:20.000Z",
       changePercent: 0.8
     }).points).toEqual([{ time: "09:30", changePercent: 0.8 }]);
+  });
+
+  it("does not append quote points outside China trading hours", () => {
+    const trend = {
+      secid: "1.600519",
+      fetchedAt: "2026-06-04T07:00:00.000Z",
+      points: [{ time: "15:00", price: 529.31, changePercent: 7.53 }]
+    };
+
+    expect(mergeQuoteIntoTrend(trend, {
+      secid: "1.600519",
+      fetchedAt: "2026-06-04T10:31:00.000Z",
+      price: 529.31,
+      changePercent: 7.53
+    }).points).toEqual([{ time: "15:00", price: 529.31, changePercent: 7.53 }]);
   });
 
   it("normalizes positive and negative trend segments around the zero axis", () => {

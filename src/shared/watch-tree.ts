@@ -73,15 +73,20 @@ export function mergeQuoteIntoTrend(
   }
 
   const time = formatTrendPointTime(quote.fetchedAt);
+  if (!isTradingMinute(time)) {
+    return { ...base, fetchedAt: quote.fetchedAt };
+  }
   const nextPoint: StockTrendPoint = {
     time,
-    price: quote.price,
     changePercent: quote.changePercent
   };
+  if (quote.price !== undefined) {
+    nextPoint.price = quote.price;
+  }
   const points = [
     ...base.points.filter((point) => point.time !== time),
     nextPoint
-  ];
+  ].sort((left, right) => trendMinute(left.time) - trendMinute(right.time));
   return {
     secid: quote.secid,
     fetchedAt: quote.fetchedAt,
@@ -267,7 +272,29 @@ function requireNonEmptyString(value: unknown, name: string): string {
 }
 
 function formatTrendPointTime(value: string): string {
-  return value.includes("T") ? value.slice(11, 16) : value.slice(0, 5);
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value.includes("T") ? value.slice(11, 16) : value.slice(0, 5);
+  }
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Shanghai",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).formatToParts(date);
+  const byType = new Map(parts.map((part) => [part.type, part.value]));
+  return `${byType.get("hour")}:${byType.get("minute")}`;
+}
+
+function isTradingMinute(time: string): boolean {
+  const minute = trendMinute(time);
+  return (minute >= trendMinute("09:30") && minute <= trendMinute("11:30")) ||
+    (minute >= trendMinute("13:00") && minute <= trendMinute("15:00"));
+}
+
+function trendMinute(time: string): number {
+  const [hour = "0", minute = "0"] = time.split(":");
+  return Number(hour) * 60 + Number(minute);
 }
 
 function formatSvgNumber(value: number): string {
