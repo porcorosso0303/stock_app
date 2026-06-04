@@ -6,6 +6,7 @@ import type {
   ResearchRecord,
   StockQuote,
   StockSearchResult,
+  StockTrend,
   WatchTreeConfig,
   WatchTreeNode
 } from "../shared/types";
@@ -14,8 +15,10 @@ import {
   averageChangePercent,
   collectStockSecids,
   findWatchTreeNode,
+  formatTrendPercentClass,
   removeWatchTreeNode,
   replaceWatchTreeNode,
+  renderTrendSparklineSvg,
   validateSecid
 } from "../shared/watch-tree";
 import {
@@ -88,6 +91,7 @@ let watchTreeLoaded = false;
 let watchConfiguring = false;
 let watchQuoteTimer: number | undefined;
 let watchQuotes = new Map<string, StockQuote>();
+let watchTrends = new Map<string, StockTrend>();
 let watchDialogAction: WatchDialogAction | undefined;
 let watchConnectorFrame: number | undefined;
 let selectedWatchStock: StockSearchResult | undefined;
@@ -179,7 +183,7 @@ async function activateFeature(feature: "research" | "watch"): Promise<void> {
       await loadWatchTree();
     }
     startWatchQuotePolling();
-    await refreshWatchQuotes();
+    await loadWatchMarketData();
   } else {
     stopWatchQuotePolling();
   }
@@ -247,11 +251,26 @@ function renderWatchNode(
         data-watch-depth="${depth}"
         title="${escapeHtml(renderWatchNodeTooltip(node, isCollapsed))}"
       >
-        <strong>${escapeHtml(node.name)}</strong>
+        ${renderWatchNodeContent(node)}
       </div>
       ${collapsedMarker}
     </div>
     ${children}
+  `;
+}
+
+function renderWatchNodeContent(node: WatchTreeNode): string {
+  if (node.type === "category") {
+    return `<strong>${escapeHtml(node.name)}</strong>`;
+  }
+  const quote = watchQuotes.get(node.secid);
+  const trend = watchTrends.get(node.secid);
+  return `
+    <strong>${escapeHtml(node.name)}</strong>
+    <span class="watch-trend-inline">
+      ${renderTrendSparklineSvg(trend?.points ?? [])}
+      <span class="${formatTrendPercentClass(quote?.changePercent)}">${escapeHtml(formatChangePercent(quote?.changePercent))}</span>
+    </span>
   `;
 }
 
@@ -594,28 +613,44 @@ async function deleteWatchNode(id: string): Promise<void> {
 async function persistWatchTree(): Promise<void> {
   watchConfig = await api.saveWatchTree(watchConfig);
   renderWatchTree();
-  await refreshWatchQuotes();
+  await loadWatchMarketData();
+}
+
+async function loadWatchMarketData(): Promise<void> {
+  await updateWatchMarketData((secids) => api.getWatchMarketData(secids), "正在加载行情...");
 }
 
 async function refreshWatchQuotes(): Promise<void> {
+  await updateWatchMarketData((secids) => api.refreshWatchMarketData(secids), "正在刷新行情...");
+}
+
+async function updateWatchMarketData(
+  load: (secids: string[]) => ReturnType<typeof api.getWatchMarketData>,
+  loadingMessage: string
+): Promise<void> {
   if (activeFeature !== "watch") {
     return;
   }
   const secids = collectStockSecids(watchConfig.root);
   if (secids.length === 0) {
     watchQuotes = new Map();
+    watchTrends = new Map();
     elements.watchStatus.textContent = "尚未配置股票叶子节点";
     renderWatchTree();
     return;
   }
-  elements.watchStatus.textContent = "正在刷新行情...";
+  elements.watchStatus.textContent = loadingMessage;
   try {
-    const quotes = await api.getWatchQuotes(secids);
-    watchQuotes = new Map(quotes.map((quote) => [quote.secid, quote]));
+    const marketData = await load(secids);
+    watchQuotes = new Map(marketData.quotes.map((quote) => [quote.secid, quote]));
+    watchTrends = new Map(marketData.trends.map((trend) => [trend.secid, trend]));
+    const quotes = marketData.quotes;
     const unavailable = quotes.filter((quote) => quote.errorMessage).length;
+    const timeText = marketData.updatedAt ? formatDate(marketData.updatedAt) : formatDate(quotes[0].fetchedAt);
+    const sourceText = marketData.fromCache ? "缓存行情时间" : "行情更新时间";
     elements.watchStatus.textContent = unavailable === 0
-      ? `行情更新时间：${formatDate(quotes[0].fetchedAt)}`
-      : `行情更新时间：${formatDate(quotes[0].fetchedAt)}，${unavailable} 只股票暂无行情`;
+      ? `${sourceText}：${timeText}`
+      : `${sourceText}：${timeText}，${unavailable} 只股票暂无行情`;
     renderWatchTree();
   } catch (error) {
     elements.watchStatus.textContent = getErrorMessage(error);

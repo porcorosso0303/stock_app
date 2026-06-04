@@ -115,6 +115,33 @@ export function normalizeTrendSegments(
   });
 }
 
+export function renderTrendSparklineSvg(
+  points: StockTrendPoint[],
+  width = 96,
+  height = 36
+): string {
+  const centerY = height / 2;
+  const segments = normalizeTrendSegments(points, width, height);
+  const paths = segments.map((segment) => (
+    `<path class="watch-trend-line watch-trend-${segment.kind}" d="${segment.path}" />`
+  )).join("");
+  return [
+    `<svg class="watch-trend-sparkline" viewBox="0 0 ${width} ${height}" aria-hidden="true">`,
+    `<line class="watch-trend-zero-axis" x1="0" y1="${centerY}" x2="${width}" y2="${centerY}" />`,
+    paths,
+    "</svg>"
+  ].join("");
+}
+
+export function formatTrendPercentClass(value: number | undefined): string {
+  if (value === undefined || value === 0) {
+    return "watch-change-percent neutral";
+  }
+  return value > 0
+    ? "watch-change-percent positive"
+    : "watch-change-percent negative";
+}
+
 export function findWatchTreeNode(
   root: WatchTreeNode | undefined,
   id: string

@@ -95,9 +95,20 @@ h2 { margin: 0; font-size: 15px; }
 .watch-connectors { position: absolute; z-index: 0; top: 0; left: 0; overflow: visible; pointer-events: none; }
 .watch-connector { fill: none; stroke-linecap: round; stroke-width: 4; opacity: .86; }
 .watch-node-wrap { position: relative; z-index: 1; display: flex; align-items: center; gap: 3px; }
-.watch-node { position: relative; z-index: 1; width: fit-content; min-width: 72px; max-width: 150px; overflow: hidden; border: 1px solid #cad8d0; border-radius: 16px; padding: 5px 10px; background: #fff; color: #26434b; text-align: center; text-overflow: ellipsis; white-space: nowrap; box-shadow: 0 2px 8px #17343d0d; }
+.watch-node { position: relative; z-index: 1; display: flex; align-items: center; gap: 8px; width: fit-content; min-width: 72px; max-width: 280px; overflow: hidden; border: 1px solid #cad8d0; border-radius: 16px; padding: 5px 10px; background: #fff; color: #26434b; text-align: center; text-overflow: ellipsis; white-space: nowrap; box-shadow: 0 2px 8px #17343d0d; }
 .watch-node.category { background: #f8fbf5; cursor: pointer; }
 .watch-node strong { font-size: 13px; }
+.watch-node.stock strong { max-width: 86px; overflow: hidden; text-overflow: ellipsis; }
+.watch-trend-inline { display: inline-flex; align-items: center; gap: 6px; }
+.watch-trend-sparkline { width: 96px; height: 36px; flex: 0 0 auto; overflow: visible; border-radius: 4px; background: linear-gradient(180deg, #fff 0%, #f7f9f7 100%); }
+.watch-trend-zero-axis { stroke: #9aa4a7; stroke-width: 1; stroke-dasharray: 4 4; }
+.watch-trend-line { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.watch-trend-positive { stroke: #e3483b; }
+.watch-trend-negative { stroke: #169b62; }
+.watch-change-percent { min-width: 52px; text-align: right; font-size: 12px; font-weight: 700; }
+.watch-change-percent.positive { color: #e3483b; }
+.watch-change-percent.negative { color: #169b62; }
+.watch-change-percent.neutral { color: #789095; }
 .watch-collapsed-marker { display: grid; width: 15px; height: 15px; place-content: center; border: 1px solid #9db1a7; border-radius: 50%; background: #fff; color: #527078; font-size: 12px; font-weight: 700; line-height: 1; }
 .watch-context-menu { position: fixed; z-index: 20; display: grid; min-width: 130px; overflow: hidden; border: 1px solid #cad8d0; border-radius: 7px; background: #fff; box-shadow: 0 8px 30px #17343d33; }
 .watch-context-menu[hidden] { display: none; }

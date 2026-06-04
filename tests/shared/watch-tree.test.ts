@@ -4,8 +4,10 @@ import {
   appendWatchTreeChild,
   averageChangePercent,
   collectStockSecids,
+  formatTrendPercentClass,
   mergeQuoteIntoTrend,
   normalizeTrendSegments,
+  renderTrendSparklineSvg,
   removeWatchTreeNode,
   validateWatchTreeConfig
 } from "../../src/shared/watch-tree";
@@ -115,5 +117,24 @@ describe("watch tree", () => {
     expect(segments.some((segment) => segment.kind === "negative")).toBe(true);
     expect(segments.some((segment) => segment.kind === "positive")).toBe(true);
     expect(segments.every((segment) => segment.path.startsWith("M "))).toBe(true);
+  });
+
+  it("renders a sparkline SVG with zero axis and red-green segment classes", () => {
+    const svg = renderTrendSparklineSvg([
+      { time: "09:30", changePercent: -1 },
+      { time: "10:00", changePercent: 0.5 },
+      { time: "10:30", changePercent: 1 }
+    ]);
+
+    expect(svg).toContain("watch-trend-zero-axis");
+    expect(svg).toContain("watch-trend-negative");
+    expect(svg).toContain("watch-trend-positive");
+  });
+
+  it("formats trend percentage classes by sign", () => {
+    expect(formatTrendPercentClass(1)).toBe("watch-change-percent positive");
+    expect(formatTrendPercentClass(-1)).toBe("watch-change-percent negative");
+    expect(formatTrendPercentClass(0)).toBe("watch-change-percent neutral");
+    expect(formatTrendPercentClass(undefined)).toBe("watch-change-percent neutral");
   });
 });

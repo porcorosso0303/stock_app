@@ -26,7 +26,7 @@ export class WatchMarketService {
   async get(secids: string[]): Promise<WatchMarketData> {
     const tradingDate = formatChinaDate(this.now());
     const cache = await this.cacheStore.getForDate(tradingDate);
-    if (cache) {
+    if (cache && coversSecids(cache, secids)) {
       return {
         quotes: cache.quotes,
         trends: cache.trends,
@@ -63,6 +63,15 @@ export class WatchMarketService {
 
     const quotes = await this.quoteService.list(secids);
     const trendsBySecid = new Map(cache.trends.map((trend) => [trend.secid, trend]));
+    const missingTrendSecids = quotes
+      .map((quote) => quote.secid)
+      .filter((secid) => !trendsBySecid.has(secid));
+    if (missingTrendSecids.length > 0) {
+      const missingTrends = await this.quoteService.trends(missingTrendSecids);
+      for (const trend of missingTrends) {
+        trendsBySecid.set(trend.secid, trend);
+      }
+    }
     const trends = quotes.map((quote) => mergeQuoteIntoTrend(trendsBySecid.get(quote.secid), quote));
     const updatedAt = this.now().toISOString();
     await this.cacheStore.write({
@@ -78,6 +87,12 @@ export class WatchMarketService {
       fromCache: false
     };
   }
+}
+
+function coversSecids(cache: WatchMarketCache, secids: string[]): boolean {
+  const quoteSecids = new Set(cache.quotes.map((quote) => quote.secid));
+  const trendSecids = new Set(cache.trends.map((trend) => trend.secid));
+  return secids.every((secid) => quoteSecids.has(secid) && trendSecids.has(secid));
 }
 
 function formatChinaDate(date: Date): string {
