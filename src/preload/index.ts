@@ -18,6 +18,8 @@ const IPC = {
   getWatchTree: "watch-tree:get",
   saveWatchTree: "watch-tree:save",
   getWatchQuotes: "watch-quotes:get",
+  getWatchMarketData: "watch-market:get",
+  refreshWatchMarketData: "watch-market:refresh",
   searchStocks: "watch-stocks:search",
   researchEvent: "research:event"
 } as const satisfies typeof import("../shared/ipc").IPC;
@@ -38,6 +40,8 @@ const api: StockResearchApi = {
   getWatchTree: async () => await ipcRenderer.invoke(IPC.getWatchTree),
   saveWatchTree: async (config) => await ipcRenderer.invoke(IPC.saveWatchTree, { config }),
   getWatchQuotes: async (secids) => await ipcRenderer.invoke(IPC.getWatchQuotes, { secids }),
+  getWatchMarketData: async (secids) => await ipcRenderer.invoke(IPC.getWatchMarketData, { secids }),
+  refreshWatchMarketData: async (secids) => await ipcRenderer.invoke(IPC.refreshWatchMarketData, { secids }),
   searchStocks: async (query) => await ipcRenderer.invoke(IPC.searchStocks, { query }),
   onResearchEvent: (callback) => {
     const listener = (_event: unknown, progress: ResearchProgressEvent) => callback(progress);

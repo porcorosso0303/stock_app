@@ -5,6 +5,7 @@ import type {
   ResearchRecord,
   StockQuote,
   StockSearchResult,
+  WatchMarketData,
   WatchTreeConfig
 } from "../shared/types";
 
@@ -62,6 +63,11 @@ interface QuoteServiceLike {
   search(query: string): Promise<StockSearchResult[]>;
 }
 
+interface WatchMarketServiceLike {
+  get(secids: string[]): Promise<WatchMarketData>;
+  refresh(secids: string[]): Promise<WatchMarketData>;
+}
+
 interface IpcDependencies {
   ipcMain: IpcMainLike;
   dialog: DialogLike;
@@ -73,6 +79,7 @@ interface IpcDependencies {
   codexLocator: CodexLocatorLike;
   watchTreeStore: WatchTreeStoreLike;
   quoteService: QuoteServiceLike;
+  watchMarketService: WatchMarketServiceLike;
 }
 
 export function registerIpcHandlers(dependencies: IpcDependencies): void {
@@ -86,7 +93,8 @@ export function registerIpcHandlers(dependencies: IpcDependencies): void {
     researchService,
     codexLocator,
     watchTreeStore,
-    quoteService
+    quoteService,
+    watchMarketService
   } = dependencies;
 
   ipcMain.handle(IPC.getBootstrap, async () => ({
@@ -160,6 +168,16 @@ export function registerIpcHandlers(dependencies: IpcDependencies): void {
   ipcMain.handle(IPC.getWatchQuotes, async (_event, value) => {
     const input = requireObject(value);
     return await quoteService.list(requireStringArray(input.secids, "secids"));
+  });
+
+  ipcMain.handle(IPC.getWatchMarketData, async (_event, value) => {
+    const input = requireObject(value);
+    return await watchMarketService.get(requireStringArray(input.secids, "secids"));
+  });
+
+  ipcMain.handle(IPC.refreshWatchMarketData, async (_event, value) => {
+    const input = requireObject(value);
+    return await watchMarketService.refresh(requireStringArray(input.secids, "secids"));
   });
 
   ipcMain.handle(IPC.searchStocks, async (_event, value) => {

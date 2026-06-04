@@ -20,6 +20,8 @@ import { PdfExporter } from "./pdf-exporter";
 import { ResearchService } from "./research-service";
 import { ResearchSkillPreparer } from "./research-skill-preparer";
 import { ResearchSpecStore } from "./research-spec-store";
+import { WatchMarketCacheStore } from "./watch-market-cache-store";
+import { WatchMarketService } from "./watch-market-service";
 import { WatchTreeStore } from "./watch-tree-store";
 import { IPC } from "../shared/ipc";
 
@@ -98,6 +100,10 @@ void app.whenReady().then(() => {
     }
   });
   const quoteService = new EastMoneyQuoteService();
+  const watchMarketService = new WatchMarketService(
+    new WatchMarketCacheStore(join(userData, "watch-quotes-cache.json")),
+    quoteService
+  );
   registerIpcHandlers({
     ipcMain,
     dialog,
@@ -108,7 +114,8 @@ void app.whenReady().then(() => {
     researchService,
     codexLocator,
     watchTreeStore,
-    quoteService
+    quoteService,
+    watchMarketService
   });
 
   createMainWindow();

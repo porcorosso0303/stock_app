@@ -31,6 +31,18 @@ function createHarness(options: {
   const start = vi.fn().mockResolvedValue(createRecord());
   const setWatchTree = vi.fn().mockImplementation(async (value) => value);
   const listQuotes = vi.fn().mockResolvedValue([]);
+  const getWatchMarketData = vi.fn().mockResolvedValue({
+    quotes: [],
+    trends: [],
+    updatedAt: "2026-06-04T00:00:00.000Z",
+    fromCache: true
+  });
+  const refreshWatchMarketData = vi.fn().mockResolvedValue({
+    quotes: [],
+    trends: [],
+    updatedAt: "2026-06-04T00:00:00.000Z",
+    fromCache: false
+  });
   const searchStocks = vi.fn().mockResolvedValue([]);
   registerIpcHandlers({
     ipcMain: {
@@ -78,6 +90,10 @@ function createHarness(options: {
     quoteService: {
       list: listQuotes,
       search: searchStocks
+    },
+    watchMarketService: {
+      get: getWatchMarketData,
+      refresh: refreshWatchMarketData
     }
   });
 
@@ -97,6 +113,8 @@ function createHarness(options: {
     start,
     setWatchTree,
     listQuotes,
+    getWatchMarketData,
+    refreshWatchMarketData,
     searchStocks
   };
 }
@@ -185,6 +203,26 @@ describe("registerIpcHandlers", () => {
     await expect(invoke(IPC.getWatchQuotes, { secids: "1.600519" }))
       .rejects.toThrow("secids");
     expect(listQuotes).not.toHaveBeenCalled();
+  });
+
+  it("gets cached watch market data through validated secids", async () => {
+    const { invoke, getWatchMarketData } = createHarness();
+
+    await expect(invoke(IPC.getWatchMarketData, { secids: ["1.600519"] }))
+      .resolves.toMatchObject({ fromCache: true });
+    expect(getWatchMarketData).toHaveBeenCalledWith(["1.600519"]);
+    await expect(invoke(IPC.getWatchMarketData, { secids: "1.600519" }))
+      .rejects.toThrow("secids");
+  });
+
+  it("refreshes watch market data through validated secids", async () => {
+    const { invoke, refreshWatchMarketData } = createHarness();
+
+    await expect(invoke(IPC.refreshWatchMarketData, { secids: ["1.600519"] }))
+      .resolves.toMatchObject({ fromCache: false });
+    expect(refreshWatchMarketData).toHaveBeenCalledWith(["1.600519"]);
+    await expect(invoke(IPC.refreshWatchMarketData, { secids: [123] }))
+      .rejects.toThrow("secids");
   });
 
   it("searches stocks by a validated string argument", async () => {
