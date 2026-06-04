@@ -6,6 +6,7 @@ import {
   shell
 } from "electron";
 import { join } from "node:path";
+import { resolveAppDataDirectory } from "./app-data-directory";
 import { CodexLocator } from "./codex-locator";
 import { getCodexLauncherOverride } from "./codex-launcher-override";
 import { CodexRunner } from "./codex-runner";
@@ -49,7 +50,11 @@ function createMainWindow(): BrowserWindow {
 }
 
 void app.whenReady().then(() => {
-  const userData = app.getPath("userData");
+  const userData = resolveAppDataDirectory({
+    isPackaged: app.isPackaged,
+    appPath: app.getAppPath(),
+    executablePath: process.execPath
+  });
   const configStore = new ConfigStore(join(userData, "config.json"));
   const historyStore = new HistoryStore(join(userData, "history.json"));
   const watchTreeStore = new WatchTreeStore(join(userData, "watch-tree.json"));
