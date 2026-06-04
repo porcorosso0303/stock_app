@@ -78,6 +78,32 @@ export interface StockQuote {
   errorMessage?: string;
 }
 
+export interface StockTrendPoint {
+  time: string;
+  changePercent: number;
+}
+
+export interface StockTrend {
+  secid: string;
+  points: StockTrendPoint[];
+  fetchedAt: string;
+  errorMessage?: string;
+}
+
+export interface WatchMarketData {
+  quotes: StockQuote[];
+  trends: StockTrend[];
+  updatedAt: string;
+  fromCache: boolean;
+}
+
+export interface WatchMarketCache {
+  tradingDate: string;
+  quotes: StockQuote[];
+  trends: StockTrend[];
+  updatedAt: string;
+}
+
 export interface StockSearchResult {
   secid: string;
   code: string;
