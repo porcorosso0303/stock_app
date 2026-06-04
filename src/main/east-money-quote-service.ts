@@ -161,9 +161,9 @@ function readTrendPoints(value: unknown): StockTrend["points"] {
     }
     const fields = item.split(",");
     const time = readTrendTime(fields[0]);
-    const changePercent = readTrendChangePercent(fields.slice(1));
-    return time && changePercent !== undefined
-      ? [{ time, changePercent }]
+    const price = readTrendPrice(fields[2]);
+    return time && price !== undefined
+      ? [{ time, price, changePercent: 0 }]
       : [];
   });
 }
@@ -176,14 +176,9 @@ function readTrendTime(value: string | undefined): string | undefined {
   return match?.[1];
 }
 
-function readTrendChangePercent(fields: string[]): number | undefined {
-  for (const field of [...fields].reverse()) {
-    const value = Number(field);
-    if (Number.isFinite(value) && Math.abs(value) <= 100) {
-      return value;
-    }
-  }
-  return undefined;
+function readTrendPrice(value: string | undefined): number | undefined {
+  const price = Number(value);
+  return Number.isFinite(price) && price > 0 ? price : undefined;
 }
 
 function readString(value: unknown): string | undefined {

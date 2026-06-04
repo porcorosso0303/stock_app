@@ -80,6 +80,7 @@ export interface StockQuote {
 
 export interface StockTrendPoint {
   time: string;
+  price?: number;
   changePercent: number;
 }
 

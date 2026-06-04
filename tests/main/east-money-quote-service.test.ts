@@ -37,14 +37,14 @@ describe("EastMoneyQuoteService", () => {
     }]);
   });
 
-  it("maps intraday trend points from EastMoney trend records", async () => {
+  it("maps intraday trend prices without treating volume as change percent", async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
         data: {
           trends: [
-            "2026-06-04 09:30,1300,1300,1,2,3,4,-0.50",
-            "2026-06-04 09:31,1305,1301,1,2,3,4,0.25"
+            "2026-06-04 14:58,529.00,529.20,529.20,528.88,48,2539680.00,529.150",
+            "2026-06-04 14:59,529.31,529.31,529.31,529.31,0,0.00,529.151"
           ]
         }
       })
@@ -58,8 +58,8 @@ describe("EastMoneyQuoteService", () => {
       secid: "1.600519",
       fetchedAt: "2026-06-04T09:32:00.000Z",
       points: [
-        { time: "09:30", changePercent: -0.5 },
-        { time: "09:31", changePercent: 0.25 }
+        { time: "14:58", price: 529.2, changePercent: 0 },
+        { time: "14:59", price: 529.31, changePercent: 0 }
       ]
     }]);
     expect(fetchImpl).toHaveBeenCalledOnce();

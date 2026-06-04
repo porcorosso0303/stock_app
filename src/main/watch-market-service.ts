@@ -39,16 +39,17 @@ export class WatchMarketService {
       this.quoteService.list(secids),
       this.quoteService.trends(secids)
     ]);
+    const normalizedTrends = normalizeTrendChangePercents(trends, quotes);
     const updatedAt = this.now().toISOString();
     await this.cacheStore.write({
       tradingDate,
       quotes,
-      trends,
+      trends: normalizedTrends,
       updatedAt
     });
     return {
       quotes,
-      trends,
+      trends: normalizedTrends,
       updatedAt,
       fromCache: false
     };
@@ -68,7 +69,7 @@ export class WatchMarketService {
       .filter((secid) => !trendsBySecid.has(secid));
     if (missingTrendSecids.length > 0) {
       const missingTrends = await this.quoteService.trends(missingTrendSecids);
-      for (const trend of missingTrends) {
+      for (const trend of normalizeTrendChangePercents(missingTrends, quotes)) {
         trendsBySecid.set(trend.secid, trend);
       }
     }
@@ -91,8 +92,47 @@ export class WatchMarketService {
 
 function coversSecids(cache: WatchMarketCache, secids: string[]): boolean {
   const quoteSecids = new Set(cache.quotes.map((quote) => quote.secid));
-  const trendSecids = new Set(cache.trends.map((trend) => trend.secid));
+  const trendSecids = new Set(
+    cache.trends
+      .filter((trend) => trend.points.every((point) => typeof point.price === "number"))
+      .map((trend) => trend.secid)
+  );
   return secids.every((secid) => quoteSecids.has(secid) && trendSecids.has(secid));
+}
+
+function normalizeTrendChangePercents(
+  trends: StockTrend[],
+  quotes: StockQuote[]
+): StockTrend[] {
+  const quotesBySecid = new Map(quotes.map((quote) => [quote.secid, quote]));
+  return trends.map((trend) => {
+    const quote = quotesBySecid.get(trend.secid);
+    const previousClose = derivePreviousClose(quote);
+    if (previousClose === undefined) {
+      return trend;
+    }
+    return {
+      ...trend,
+      points: trend.points.map((point) => ({
+        ...point,
+        changePercent: point.price === undefined
+          ? point.changePercent
+          : ((point.price - previousClose) / previousClose) * 100
+      }))
+    };
+  });
+}
+
+function derivePreviousClose(quote: StockQuote | undefined): number | undefined {
+  if (
+    quote?.price === undefined ||
+    quote.changePercent === undefined ||
+    quote.changePercent <= -100
+  ) {
+    return undefined;
+  }
+  const previousClose = quote.price / (1 + quote.changePercent / 100);
+  return Number.isFinite(previousClose) && previousClose > 0 ? previousClose : undefined;
 }
 
 function formatChinaDate(date: Date): string {

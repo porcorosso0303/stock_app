@@ -75,6 +75,7 @@ export function mergeQuoteIntoTrend(
   const time = formatTrendPointTime(quote.fetchedAt);
   const nextPoint: StockTrendPoint = {
     time,
+    price: quote.price,
     changePercent: quote.changePercent
   };
   const points = [
