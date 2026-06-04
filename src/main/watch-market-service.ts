@@ -95,9 +95,19 @@ function coversSecids(cache: WatchMarketCache, secids: string[]): boolean {
   const trendSecids = new Set(
     cache.trends
       .filter((trend) => trend.points.every((point) => typeof point.price === "number"))
+      .filter((trend) => hasOrderedTrendPoints(trend))
       .map((trend) => trend.secid)
   );
   return secids.every((secid) => quoteSecids.has(secid) && trendSecids.has(secid));
+}
+
+function hasOrderedTrendPoints(trend: StockTrend): boolean {
+  return trend.points.every((point, index) => {
+    if (index === 0) {
+      return true;
+    }
+    return trendMinute(point.time) >= trendMinute(trend.points[index - 1].time);
+  });
 }
 
 function normalizeTrendChangePercents(
@@ -133,6 +143,11 @@ function derivePreviousClose(quote: StockQuote | undefined): number | undefined 
   }
   const previousClose = quote.price / (1 + quote.changePercent / 100);
   return Number.isFinite(previousClose) && previousClose > 0 ? previousClose : undefined;
+}
+
+function trendMinute(time: string): number {
+  const [hour = "0", minute = "0"] = time.split(":");
+  return Number(hour) * 60 + Number(minute);
 }
 
 function formatChinaDate(date: Date): string {

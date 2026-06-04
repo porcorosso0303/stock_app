@@ -108,6 +108,40 @@ describe("WatchMarketService", () => {
     expect(quoteService.trends).toHaveBeenCalledWith(["1.600519"]);
   });
 
+  it("refetches same-day cache with out-of-order trend points from older builds", async () => {
+    const cacheStore = {
+      getForDate: vi.fn().mockResolvedValue({
+        tradingDate: "2026-06-04",
+        updatedAt: "2026-06-04T10:31:00.000Z",
+        quotes: [quote(1.2)],
+        trends: [{
+          secid: "1.600519",
+          fetchedAt: "2026-06-04T10:31:00.000Z",
+          points: [
+            { time: "15:00", price: 529.31, changePercent: 7.53 },
+            { time: "10:31", price: 529.31, changePercent: 7.53 }
+          ]
+        }]
+      }),
+      write: vi.fn()
+    };
+    const quoteService = {
+      list: vi.fn().mockResolvedValue([quote(1.2)]),
+      trends: vi.fn().mockResolvedValue([trend(1.2)])
+    };
+    const service = new WatchMarketService(
+      cacheStore,
+      quoteService,
+      () => new Date("2026-06-04T10:32:00.000Z")
+    );
+
+    await expect(service.get(["1.600519"])).resolves.toMatchObject({
+      fromCache: false,
+      trends: [{ points: [expect.objectContaining({ time: "09:31" })] }]
+    });
+    expect(quoteService.trends).toHaveBeenCalledWith(["1.600519"]);
+  });
+
   it("derives trend change percent from trend prices and the latest quote", async () => {
     const cacheStore = {
       getForDate: vi.fn().mockResolvedValue(undefined),
