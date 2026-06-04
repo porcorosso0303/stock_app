@@ -1,4 +1,4 @@
-import type { StockQuote, StockSearchResult } from "../shared/types";
+import type { StockQuote, StockSearchResult, StockTrend } from "../shared/types";
 import { validateSecid } from "../shared/watch-tree";
 
 interface FetchResponseLike {
@@ -16,6 +16,10 @@ export class EastMoneyQuoteService {
 
   async list(secids: string[]): Promise<StockQuote[]> {
     return await Promise.all([...new Set(secids)].map((secid) => this.get(secid)));
+  }
+
+  async trends(secids: string[]): Promise<StockTrend[]> {
+    return await Promise.all([...new Set(secids)].map((secid) => this.getTrend(secid)));
   }
 
   async search(input: string): Promise<StockSearchResult[]> {
@@ -57,6 +61,35 @@ export class EastMoneyQuoteService {
       return {
         secid,
         fetchedAt,
+        errorMessage: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+
+  private async getTrend(input: string): Promise<StockTrend> {
+    const secid = validateSecid(input);
+    const fetchedAt = this.now().toISOString();
+    try {
+      const url = new URL("https://push2his.eastmoney.com/api/qt/stock/trends2/get");
+      url.searchParams.set("secid", secid);
+      url.searchParams.set("ndays", "1");
+      url.searchParams.set("iscr", "0");
+      url.searchParams.set("fields1", "f1,f2,f3");
+      url.searchParams.set("fields2", "f51,f52,f53,f54,f55,f56,f57,f58");
+      const response = await this.fetchImpl(url.toString());
+      if (!response.ok) {
+        throw new Error("分时走势请求失败");
+      }
+      return {
+        secid,
+        fetchedAt,
+        points: readTrendPoints(await response.json())
+      };
+    } catch (error) {
+      return {
+        secid,
+        fetchedAt,
+        points: [],
         errorMessage: error instanceof Error ? error.message : String(error)
       };
     }
@@ -108,6 +141,49 @@ function requireQuoteData(value: unknown): Record<string, unknown> {
     throw new Error("未找到股票行情");
   }
   return data as Record<string, unknown>;
+}
+
+function readTrendPoints(value: unknown): StockTrend["points"] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("分时走势返回格式错误");
+  }
+  const data = (value as Record<string, unknown>).data;
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error("未找到分时走势");
+  }
+  const trends = (data as Record<string, unknown>).trends;
+  if (!Array.isArray(trends)) {
+    throw new Error("分时走势返回格式错误");
+  }
+  return trends.flatMap((item) => {
+    if (typeof item !== "string") {
+      return [];
+    }
+    const fields = item.split(",");
+    const time = readTrendTime(fields[0]);
+    const changePercent = readTrendChangePercent(fields.slice(1));
+    return time && changePercent !== undefined
+      ? [{ time, changePercent }]
+      : [];
+  });
+}
+
+function readTrendTime(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const match = /\b(\d{2}:\d{2})\b/.exec(value);
+  return match?.[1];
+}
+
+function readTrendChangePercent(fields: string[]): number | undefined {
+  for (const field of [...fields].reverse()) {
+    const value = Number(field);
+    if (Number.isFinite(value) && Math.abs(value) <= 100) {
+      return value;
+    }
+  }
+  return undefined;
 }
 
 function readString(value: unknown): string | undefined {

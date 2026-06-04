@@ -37,6 +37,34 @@ describe("EastMoneyQuoteService", () => {
     }]);
   });
 
+  it("maps intraday trend points from EastMoney trend records", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          trends: [
+            "2026-06-04 09:30,1300,1300,1,2,3,4,-0.50",
+            "2026-06-04 09:31,1305,1301,1,2,3,4,0.25"
+          ]
+        }
+      })
+    });
+    const service = new EastMoneyQuoteService(
+      fetchImpl,
+      () => new Date("2026-06-04T09:32:00.000Z")
+    );
+
+    await expect(service.trends(["1.600519"])).resolves.toEqual([{
+      secid: "1.600519",
+      fetchedAt: "2026-06-04T09:32:00.000Z",
+      points: [
+        { time: "09:30", changePercent: -0.5 },
+        { time: "09:31", changePercent: 0.25 }
+      ]
+    }]);
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
   it("searches A-share stocks by name and maps the standard secid", async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,
