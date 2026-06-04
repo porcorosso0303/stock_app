@@ -73,22 +73,23 @@ NSIS 安装包输出到 `release/`。
 
 点击左侧“盯盘脑图”打开脑图面板。点击“配置脑图”后可以创建根分类。已有节点通过右键菜单增加子分类或股票，并编辑或删除。添加股票时输入股票名称，点击“按名称搜索股票”，再从 A 股候选中选择。
 
-节点图标只显示名称，以便同时容纳更多节点。鼠标悬停节点时会显示行情摘要：股票节点包含价格和涨跌幅，分类节点包含其下可用股票叶子的平均涨跌幅。脑图打开后会立即刷新行情，并每 15 秒自动刷新。左键点击展开状态的分类节点会回缩，回缩后节点右侧紧贴显示一个小加号；再次左键点击会展开。按住脑图展示区域并拖动，可以向任意方向平移。行情拉取失败时显示“暂无行情”，不会使用虚构数据。简化走势曲线留待后续版本增加。
+节点图标显示名称、当日走势曲线和实时涨跌幅。走势曲线中间是零轴虚线，高于零轴显示红色，低于零轴显示绿色；右侧涨跌幅数字同样按涨跌显示红色或绿色。鼠标悬停节点时会显示行情摘要：股票节点包含价格和涨跌幅，分类节点包含其下可用股票叶子的平均涨跌幅。脑图打开后优先读取同日本地缓存，隔日再打开会重新拉取新一天数据；运行期间每 15 秒自动刷新并写回当天缓存。左键点击展开状态的分类节点会回缩，回缩后节点右侧紧贴显示一个小加号；再次左键点击会展开。按住脑图展示区域并拖动，可以向任意方向平移。行情拉取失败时显示“暂无行情”，不会使用虚构数据。
 
 行情来自无需密钥的公开行情快照端点，不属于交易所认证行情。本软件不提供交易功能。
 
 ## 文件位置
 
-Electron 用户数据目录中保存：
+软件根目录下的 `user_data/` 保存用户业务数据：
 
-- `config.json`
-- `history.json`
-- `stock_research_spec.md`
-- `watch-tree.json`
-- `runs/<run-id>/report.md`
-- `runs/<run-id>/events.jsonl`
-- `runs/<run-id>/stderr.log`
-- `runs/<run-id>/.agents/skills/research-a-share-stock/`
+- `user_data/config.json`
+- `user_data/history.json`
+- `user_data/stock_research_spec.md`
+- `user_data/watch-tree.json`
+- `user_data/watch-quotes-cache.json`
+- `user_data/runs/<run-id>/report.md`
+- `user_data/runs/<run-id>/events.jsonl`
+- `user_data/runs/<run-id>/stderr.log`
+- `user_data/runs/<run-id>/.agents/skills/research-a-share-stock/`
 
 用户选择的报告目录中保存：
 
