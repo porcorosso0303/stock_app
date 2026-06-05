@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { describe, expect, it, vi } from "vitest";
 import { registerIpcHandlers } from "../../src/main/ipc";
 import { IPC } from "../../src/shared/ipc";
@@ -121,6 +122,17 @@ function createHarness(options: {
 }
 
 describe("registerIpcHandlers", () => {
+  it("delegates IPC registration to app, research and watch modules", async () => {
+    const source = await readFile("src/main/ipc.ts", "utf8");
+
+    expect(source).toContain("registerAppIpc");
+    expect(source).toContain("registerResearchIpc");
+    expect(source).toContain("registerWatchIpc");
+    expect(source).not.toContain("IPC.startResearch");
+    expect(source).not.toContain("IPC.saveWatchTree");
+    expect(source).not.toContain("IPC.getWatchMarketData");
+  });
+
   it("persists a directory selected through an openDirectory dialog", async () => {
     const { invoke, setReportDirectory } = createHarness({
       dialogResult: "C:\\reports"
