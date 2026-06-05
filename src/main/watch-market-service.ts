@@ -94,6 +94,7 @@ function coversSecids(cache: WatchMarketCache, secids: string[]): boolean {
     cache.trends
       .filter((trend) => trend.points.every((point) => typeof point.price === "number"))
       .filter((trend) => hasOrderedTrendPoints(trend))
+      .filter((trend) => hasUsableTrendChangePercents(trend))
       .map((trend) => trend.secid)
   );
   return secids.every((secid) => quoteSecids.has(secid) && trendSecids.has(secid));
@@ -106,6 +107,15 @@ function hasOrderedTrendPoints(trend: StockTrend): boolean {
     }
     return trendMinute(point.time) >= trendMinute(trend.points[index - 1].time);
   });
+}
+
+function hasUsableTrendChangePercents(trend: StockTrend): boolean {
+  if (trend.points.length < 2) {
+    return true;
+  }
+  const hasMovingPrice = trend.points.some((point) => point.price !== trend.points[0].price);
+  const allZeroChangePercent = trend.points.every((point) => point.changePercent === 0);
+  return !hasMovingPrice || !allZeroChangePercent;
 }
 
 function normalizeTrendChangePercents(

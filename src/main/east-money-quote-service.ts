@@ -44,17 +44,18 @@ export class EastMoneyQuoteService {
     try {
       const url = new URL("https://push2.eastmoney.com/api/qt/stock/get");
       url.searchParams.set("secid", secid);
-      url.searchParams.set("fields", "f43,f57,f58,f170");
+      url.searchParams.set("fields", "f43,f57,f58,f60,f170");
       const response = await this.fetchImpl(url.toString());
       if (!response.ok) {
         throw new Error("行情服务请求失败");
       }
       const data = requireQuoteData(await response.json());
+      const price = readScaledNumber(data.f43);
       return {
         secid,
         stockName: readString(data.f58),
-        price: readScaledNumber(data.f43),
-        changePercent: readScaledNumber(data.f170),
+        price,
+        changePercent: readQuoteChangePercent(data, price),
         fetchedAt
       };
     } catch (error) {
@@ -74,7 +75,7 @@ export class EastMoneyQuoteService {
       url.searchParams.set("secid", secid);
       url.searchParams.set("ndays", "1");
       url.searchParams.set("iscr", "0");
-      url.searchParams.set("fields1", "f1,f2,f3");
+      url.searchParams.set("fields1", "f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13");
       url.searchParams.set("fields2", "f51,f52,f53,f54,f55,f56,f57,f58");
       const response = await this.fetchImpl(url.toString());
       if (!response.ok) {
@@ -190,6 +191,21 @@ function readTrendTime(value: string | undefined): string | undefined {
 function readTrendPrice(value: unknown): number | undefined {
   const price = Number(value);
   return Number.isFinite(price) && price > 0 ? price : undefined;
+}
+
+function readQuoteChangePercent(
+  data: Record<string, unknown>,
+  price: number | undefined
+): number | undefined {
+  const rawChangePercent = readScaledNumber(data.f170);
+  if (rawChangePercent !== undefined && rawChangePercent !== 0) {
+    return rawChangePercent;
+  }
+  const previousClose = readScaledNumber(data.f60);
+  if (price !== undefined && previousClose !== undefined) {
+    return ((price - previousClose) / previousClose) * 100;
+  }
+  return rawChangePercent;
 }
 
 function readString(value: unknown): string | undefined {

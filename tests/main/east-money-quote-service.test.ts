@@ -85,6 +85,8 @@ describe("EastMoneyQuoteService", () => {
 
     const [trend] = await service.listTrends(["1.603986"]);
 
+    const requestUrl = new URL(fetchImpl.mock.calls[0][0]);
+    expect(requestUrl.searchParams.get("fields1")).toBe("f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13");
     expect(trend.points[0]).toMatchObject({
       time: "09:30",
       price: 487.05,

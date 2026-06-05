@@ -559,8 +559,8 @@ src/main/east-money-quote-service.ts
 `EastMoneyMarketDataProvider` 是 provider 适配器。`EastMoneyQuoteService` 负责东方财富公开接口：
 
 - 股票搜索。
-- 行情快照。
-- 当日分时走势。
+- 行情快照。快照请求包含最新价、昨收价和涨跌幅；当接口返回的涨跌幅为 0 但最新价和昨收价不一致时，适配器用最新价和昨收价重算涨跌幅。
+- 当日分时走势。分时请求必须包含完整 `fields1=f1...f13`，确保返回中带有 `prePrice` 昨收价；适配器用每个分时价格相对昨收价计算 `StockTrendPoint.changePercent`。
 - 东方财富返回格式解析。
 - 失败时返回可展示的 error message。
 
@@ -590,6 +590,8 @@ shell-controller activates watch
   -> watch-view render
   -> watch-connectors schedule
 ```
+
+同日缓存命中前，`WatchMarketService` 会校验股票和分时走势是否覆盖当前脑图股票。如果缓存中的分时价格有波动、但所有分时涨跌幅都是 `0`，说明上一轮数据缺少昨收价导致归一化失败，这类缓存会被判为不可用并重新拉取。
 
 保存脑图：
 

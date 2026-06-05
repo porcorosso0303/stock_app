@@ -297,6 +297,57 @@ describe("WatchMarketService", () => {
     expect(cacheStore.write).toHaveBeenCalledOnce();
   });
 
+  it("refetches when cached trend prices move but change percents are all zero", async () => {
+    const cacheStore = {
+      getForDate: vi.fn().mockResolvedValue({
+        tradingDate: "2026-06-04",
+        updatedAt: "2026-06-04T07:00:00.000Z",
+        quotes: [{
+          secid: "1.603986",
+          fetchedAt: "2026-06-04T07:00:00.000Z",
+          price: 488,
+          changePercent: 0
+        }],
+        trends: [{
+          secid: "1.603986",
+          fetchedAt: "2026-06-04T07:00:00.000Z",
+          points: [
+            { time: "09:30", price: 507, changePercent: 0 },
+            { time: "15:00", price: 488, changePercent: 0 }
+          ]
+        }]
+      }),
+      write: vi.fn()
+    };
+    const quoteService = marketDataProvider({
+      listQuotes: vi.fn().mockResolvedValue([{
+        secid: "1.603986",
+        fetchedAt: "2026-06-04T08:00:00.000Z",
+        price: 488,
+        changePercent: 0
+      }]),
+      listTrends: vi.fn().mockResolvedValue([{
+        secid: "1.603986",
+        fetchedAt: "2026-06-04T08:00:00.000Z",
+        points: [
+          { time: "09:30", price: 507, changePercent: 3.89 },
+          { time: "15:00", price: 488, changePercent: 0 }
+        ]
+      }])
+    });
+    const service = new WatchMarketService(
+      cacheStore,
+      quoteService,
+      () => new Date("2026-06-04T08:00:00.000Z")
+    );
+
+    const result = await service.get(["1.603986"]);
+
+    expect(result.fromCache).toBe(false);
+    expect(quoteService.listQuotes).toHaveBeenCalledWith(["1.603986"]);
+    expect(result.trends[0].points[0].changePercent).toBeCloseTo(3.89);
+  });
+
   it("fetches missing trends during refresh for newly added stocks", async () => {
     const cacheStore = {
       getForDate: vi.fn().mockResolvedValue({
