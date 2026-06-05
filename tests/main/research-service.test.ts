@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ResearchService } from "../../src/main/research-service";
 import { HistoryStore } from "../../src/main/history-store";
 import type { CodexRunResult } from "../../src/main/codex-runner";
+import { CodexCliResearchProvider } from "../../src/main/modules/research/providers/codex-cli-provider";
+import type { ResearchProvider } from "../../src/main/modules/research/providers/research-provider";
 
 const directories: string[] = [];
 
@@ -13,6 +15,7 @@ async function createHarness(options: {
   loggedIn?: boolean;
   result?: CodexRunResult;
   exportError?: Error;
+  researchProvider?: ResearchProvider;
 } = {}) {
   const userData = await mkdtemp(join(tmpdir(), "stock-tool-service-"));
   directories.push(userData);
@@ -29,22 +32,26 @@ async function createHarness(options: {
   });
   const createRunner = vi.fn().mockReturnValue({ run, cancel });
   const prepareSkill = vi.fn().mockResolvedValue(undefined);
+  const codexLocator = {
+    detect: async () => ({
+      available: true,
+      loggedIn: options.loggedIn ?? true,
+      launcher: { kind: "native" as const, executablePath: "codex.exe" }
+    })
+  };
+  const researchProvider = options.researchProvider ?? new CodexCliResearchProvider({
+    codexLocator,
+    createRunner,
+    researchSkillPreparer: { prepare: prepareSkill }
+  });
   const service = new ResearchService({
     userDataDirectory: userData,
     configStore: {
       get: async () => ({ reportDirectory: options.reportDirectory })
     },
     historyStore: history,
-    codexLocator: {
-      detect: async () => ({
-        available: true,
-        loggedIn: options.loggedIn ?? true,
-        launcher: { kind: "native", executablePath: "codex.exe" }
-      })
-    },
-    createRunner,
+    researchProvider,
     pdfExporter: { export: exportPdf },
-    researchSkillPreparer: { prepare: prepareSkill },
     createId: () => "run-id",
     now: () => new Date(2026, 4, 31, 14, 30, 25)
   });
@@ -59,6 +66,38 @@ afterEach(async () => {
 });
 
 describe("ResearchService", () => {
+  it("runs research through an injected provider instead of constructing a Codex runner", async () => {
+    const provider = {
+      id: "fake",
+      label: "Fake Provider",
+      detect: vi.fn().mockResolvedValue({ available: true, loggedIn: true }),
+      run: vi.fn().mockResolvedValue({
+        status: "success",
+        reportMarkdown: "# Provider report"
+      } satisfies CodexRunResult),
+      cancel: vi.fn()
+    };
+    const { service, createRunner, prepareSkill, exportPdf } = await createHarness({
+      reportDirectory: "C:\\reports",
+      researchProvider: provider
+    });
+
+    await expect(service.start("贵州茅台")).resolves.toMatchObject({
+      status: "completed"
+    });
+
+    expect(provider.run).toHaveBeenCalledWith(expect.objectContaining({
+      stockName: "贵州茅台",
+      runDirectory: expect.stringContaining("run-id")
+    }));
+    expect(createRunner).not.toHaveBeenCalled();
+    expect(prepareSkill).not.toHaveBeenCalled();
+    expect(exportPdf).toHaveBeenCalledWith(
+      "# Provider report",
+      expect.stringMatching(/贵州茅台_2026-05-31_143025\.pdf$/)
+    );
+  });
+
   it("requires a report directory before starting", async () => {
     const { service } = await createHarness();
 

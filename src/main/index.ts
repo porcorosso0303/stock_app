@@ -11,6 +11,7 @@ import { CodexLocator } from "./codex-locator";
 import { getCodexLauncherOverride } from "./codex-launcher-override";
 import { CodexRunner } from "./codex-runner";
 import { ConfigStore } from "./config-store";
+import { CodexCliResearchProvider } from "./modules/research/providers/codex-cli-provider";
 import { EastMoneyMarketDataProvider } from "./modules/watch/market-data/east-money-provider";
 import { resolveEmbeddedSkillDirectory } from "./embedded-skill";
 import { configureExternalLinks } from "./external-links";
@@ -87,14 +88,17 @@ void app.whenReady().then(() => {
   const pdfExporter = new PdfExporter({
     createWindow: () => new BrowserWindow({ show: false })
   });
+  const researchProvider = new CodexCliResearchProvider({
+    codexLocator,
+    createRunner: (options) => new CodexRunner(options),
+    researchSkillPreparer
+  });
   const researchService = new ResearchService({
     userDataDirectory: userData,
     configStore,
     historyStore,
-    codexLocator,
-    createRunner: (options) => new CodexRunner(options),
+    researchProvider,
     pdfExporter,
-    researchSkillPreparer,
     onProgress: (event) => {
       mainWindow?.webContents.send(IPC.researchEvent, event);
     }

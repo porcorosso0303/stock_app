@@ -3,13 +3,10 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
   AppConfig,
-  CodexEnvironmentStatus,
-  CodexLauncher,
   ResearchProgressEvent,
   ResearchRecord
 } from "../shared/types";
-import type { CodexRunResult } from "./codex-runner";
-import { buildResearchPrompt } from "./codex-prompt";
+import type { ResearchProvider } from "./modules/research/providers/research-provider";
 import { buildPdfFileName, validateStockName } from "./stock-name";
 
 interface ConfigStoreLike {
@@ -22,37 +19,16 @@ interface HistoryStoreLike {
   update(id: string, patch: Partial<ResearchRecord>): Promise<ResearchRecord>;
 }
 
-interface CodexLocatorLike {
-  detect(): Promise<CodexEnvironmentStatus>;
-}
-
-interface CodexRunnerLike {
-  run(prompt: string): Promise<CodexRunResult>;
-  cancel(): void;
-}
-
-interface RunnerOptions {
-  launcher: CodexLauncher;
-  runDirectory: string;
-  onEvent: (text: string) => void;
-}
-
 interface PdfExporterLike {
   export(markdown: string, targetPath: string): Promise<void>;
-}
-
-interface ResearchSkillPreparerLike {
-  prepare(runDirectory: string): Promise<void>;
 }
 
 export interface ResearchServiceDependencies {
   userDataDirectory: string;
   configStore: ConfigStoreLike;
   historyStore: HistoryStoreLike;
-  codexLocator: CodexLocatorLike;
-  createRunner: (options: RunnerOptions) => CodexRunnerLike;
+  researchProvider: ResearchProvider;
   pdfExporter: PdfExporterLike;
-  researchSkillPreparer: ResearchSkillPreparerLike;
   createId?: () => string;
   now?: () => Date;
   onProgress?: (event: ResearchProgressEvent) => void;
@@ -61,7 +37,7 @@ export interface ResearchServiceDependencies {
 export class ResearchService {
   private readonly createId: () => string;
   private readonly now: () => Date;
-  private active?: { record: ResearchRecord; runner: CodexRunnerLike };
+  private active?: { record: ResearchRecord; provider: ResearchProvider };
 
   constructor(public readonly dependencies: ResearchServiceDependencies) {
     this.createId = dependencies.createId ?? randomUUID;
@@ -79,19 +55,21 @@ export class ResearchService {
       throw new Error("请先选择调研报告目录");
     }
 
-    const codex = await this.dependencies.codexLocator.detect();
-    if (!codex.available || !codex.launcher) {
-      throw new Error(codex.message ?? "Codex CLI 不可用");
+    const providerStatus = await this.dependencies.researchProvider.detect();
+    if (!providerStatus.available) {
+      throw new Error(providerStatus.message ?? `${this.dependencies.researchProvider.label} 不可用`);
     }
-    if (!codex.loggedIn) {
-      throw new Error(codex.message ?? "Codex CLI 尚未登录，请在终端执行 codex login。");
+    if (providerStatus.loggedIn === false) {
+      throw new Error(
+        providerStatus.message
+          ?? `${this.dependencies.researchProvider.label} 尚未登录，请先完成登录配置。`
+      );
     }
 
     const id = this.createId();
     const createdAt = this.now();
     const runDirectory = join(this.dependencies.userDataDirectory, "runs", id);
     await mkdir(runDirectory, { recursive: true });
-    await this.dependencies.researchSkillPreparer.prepare(runDirectory);
     const record: ResearchRecord = {
       id,
       stockName,
@@ -104,18 +82,18 @@ export class ResearchService {
     };
     await this.dependencies.historyStore.create(record);
 
-    const runner = this.dependencies.createRunner({
-      launcher: codex.launcher,
-      runDirectory,
-      onEvent: (text) => {
-        this.emit({ type: "output", recordId: id, text });
-      }
-    });
-    this.active = { record, runner };
+    const provider = this.dependencies.researchProvider;
+    this.active = { record, provider };
     this.emit({ type: "status", recordId: id, status: "running" });
 
     try {
-      const result = await runner.run(buildResearchPrompt(stockName));
+      const result = await provider.run({
+        stockName,
+        runDirectory,
+        onOutput: (text) => {
+          this.emit({ type: "output", recordId: id, text });
+        }
+      });
       if (result.status === "cancelled") {
         return await this.updateStatus(id, { status: "cancelled" });
       }
@@ -151,7 +129,7 @@ export class ResearchService {
   }
 
   cancel(): void {
-    this.active?.runner.cancel();
+    this.active?.provider.cancel();
   }
 
   async retryPdfExport(id: string): Promise<ResearchRecord> {

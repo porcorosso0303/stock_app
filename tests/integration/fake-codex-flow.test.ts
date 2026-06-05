@@ -6,6 +6,7 @@ import { getCodexLauncherOverride } from "../../src/main/codex-launcher-override
 import { CodexRunner } from "../../src/main/codex-runner";
 import { ConfigStore } from "../../src/main/config-store";
 import { HistoryStore } from "../../src/main/history-store";
+import { CodexCliResearchProvider } from "../../src/main/modules/research/providers/codex-cli-provider";
 import { ResearchService } from "../../src/main/research-service";
 
 const fixture = resolve("tests/fixtures/fake-codex.cjs");
@@ -43,10 +44,7 @@ describe("fake Codex integration", () => {
     const history = new HistoryStore(join(userData, "history.json"));
     await config.setReportDirectory(reports);
     const events: string[] = [];
-    const service = new ResearchService({
-      userDataDirectory: userData,
-      configStore: config,
-      historyStore: history,
+    const researchProvider = new CodexCliResearchProvider({
       codexLocator: {
         detect: async () => ({
           available: true,
@@ -55,13 +53,19 @@ describe("fake Codex integration", () => {
         })
       },
       createRunner: (options) => new CodexRunner(options),
+      researchSkillPreparer: {
+        prepare: async () => {}
+      }
+    });
+    const service = new ResearchService({
+      userDataDirectory: userData,
+      configStore: config,
+      historyStore: history,
+      researchProvider,
       pdfExporter: {
         export: async (_markdown, targetPath) => {
           await writeFile(targetPath, "%PDF-FAKE", "utf8");
         }
-      },
-      researchSkillPreparer: {
-        prepare: async () => {}
       },
       createId: () => "integration-run",
       now: () => new Date(2026, 4, 31, 14, 30, 25),
