@@ -65,6 +65,38 @@ describe("EastMoneyQuoteService", () => {
     expect(fetchImpl).toHaveBeenCalledOnce();
   });
 
+  it("derives intraday trend change percent from EastMoney previous close", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          prePrice: 492.22,
+          trends: [
+            "2026-06-04 09:30,487.05,487.05,487.05,487.05,0,0.00,487.050",
+            "2026-06-04 15:00,529.31,529.31,529.31,529.31,0,0.00,529.310"
+          ]
+        }
+      })
+    });
+    const service = new EastMoneyQuoteService(
+      fetchImpl,
+      () => new Date("2026-06-04T15:01:00.000Z")
+    );
+
+    const [trend] = await service.listTrends(["1.603986"]);
+
+    expect(trend.points[0]).toMatchObject({
+      time: "09:30",
+      price: 487.05,
+      changePercent: expect.closeTo(-1.050, 3)
+    });
+    expect(trend.points[1]).toMatchObject({
+      time: "15:00",
+      price: 529.31,
+      changePercent: expect.closeTo(7.535, 3)
+    });
+  });
+
   it("searches A-share stocks by name and maps the standard secid", async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,

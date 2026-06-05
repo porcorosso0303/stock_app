@@ -21,6 +21,8 @@ const IPC = {
   getWatchMarketData: "watch-market:get",
   refreshWatchMarketData: "watch-market:refresh",
   searchStocks: "watch-stocks:search",
+  exportWatchData: "watch-data:export",
+  importWatchData: "watch-data:import",
   researchEvent: "research:event"
 } as const satisfies typeof import("../shared/ipc").IPC;
 
@@ -43,6 +45,8 @@ const api: StockResearchApi = {
   getWatchMarketData: async (secids) => await ipcRenderer.invoke(IPC.getWatchMarketData, { secids }),
   refreshWatchMarketData: async (secids) => await ipcRenderer.invoke(IPC.refreshWatchMarketData, { secids }),
   searchStocks: async (query) => await ipcRenderer.invoke(IPC.searchStocks, { query }),
+  exportWatchData: async () => await ipcRenderer.invoke(IPC.exportWatchData),
+  importWatchData: async () => await ipcRenderer.invoke(IPC.importWatchData),
   onResearchEvent: (callback) => {
     const listener = (_event: unknown, progress: ResearchProgressEvent) => callback(progress);
     ipcRenderer.on(IPC.researchEvent, listener);

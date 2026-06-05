@@ -24,6 +24,8 @@ function createHarness(options: {
   record?: ResearchRecord;
   codexDetectError?: Error;
   watchTree?: WatchTreeConfig;
+  exportResult?: unknown;
+  importResult?: unknown;
 } = {}) {
   const handlers = new Map<string, (_event: unknown, value?: unknown) => unknown>();
   const setReportDirectory = vi.fn().mockResolvedValue({});
@@ -46,6 +48,16 @@ function createHarness(options: {
     fromCache: false
   });
   const searchStocks = vi.fn().mockResolvedValue([]);
+  const exportWatchData = vi.fn().mockResolvedValue(options.exportResult ?? {
+    directory: options.dialogResult ?? "C:\\export",
+    tradingDates: ["2026-06-05"],
+    stockCount: 1
+  });
+  const importWatchData = vi.fn().mockResolvedValue(options.importResult ?? {
+    directory: options.dialogResult ?? "C:\\import",
+    tradingDates: ["2026-06-05"],
+    stockCount: 1
+  });
   registerIpcHandlers({
     ipcMain: {
       handle: (channel, handler) => {
@@ -96,6 +108,10 @@ function createHarness(options: {
     watchMarketService: {
       get: getWatchMarketData,
       refresh: refreshWatchMarketData
+    },
+    watchDataTransferService: {
+      exportToDirectory: exportWatchData,
+      importFromDirectory: importWatchData
     }
   });
 
@@ -117,7 +133,9 @@ function createHarness(options: {
     listQuotes,
     getWatchMarketData,
     refreshWatchMarketData,
-    searchStocks
+    searchStocks,
+    exportWatchData,
+    importWatchData
   };
 }
 
@@ -253,5 +271,36 @@ describe("registerIpcHandlers", () => {
     await expect(invoke(IPC.searchStocks, { query: "贵州茅台" })).resolves.toEqual([]);
     expect(searchStocks).toHaveBeenCalledWith("贵州茅台");
     await expect(invoke(IPC.searchStocks, { query: 123 })).rejects.toThrow("query");
+  });
+
+  it("exports and imports watch data through a selected directory", async () => {
+    const {
+      invoke,
+      exportWatchData,
+      importWatchData
+    } = createHarness({ dialogResult: "C:\\watch-data" });
+
+    await expect(invoke(IPC.exportWatchData)).resolves.toMatchObject({
+      directory: "C:\\watch-data"
+    });
+    expect(exportWatchData).toHaveBeenCalledWith("C:\\watch-data");
+
+    await expect(invoke(IPC.importWatchData)).resolves.toMatchObject({
+      directory: "C:\\watch-data"
+    });
+    expect(importWatchData).toHaveBeenCalledWith("C:\\watch-data");
+  });
+
+  it("returns undefined when watch data import or export directory selection is cancelled", async () => {
+    const {
+      invoke,
+      exportWatchData,
+      importWatchData
+    } = createHarness();
+
+    await expect(invoke(IPC.exportWatchData)).resolves.toBeUndefined();
+    await expect(invoke(IPC.importWatchData)).resolves.toBeUndefined();
+    expect(exportWatchData).not.toHaveBeenCalled();
+    expect(importWatchData).not.toHaveBeenCalled();
   });
 });

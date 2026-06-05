@@ -222,6 +222,43 @@ describe("WatchMarketService", () => {
     }));
   });
 
+  it("uses the latest trend point as a visible quote when the quote endpoint is unavailable", async () => {
+    const cacheStore = {
+      getForDate: vi.fn().mockResolvedValue(undefined),
+      write: vi.fn()
+    };
+    const quoteService = marketDataProvider({
+      listQuotes: vi.fn().mockResolvedValue([{
+        secid: "1.603986",
+        fetchedAt: "2026-06-04T15:00:00.000Z",
+        errorMessage: "行情服务请求失败"
+      }]),
+      listTrends: vi.fn().mockResolvedValue([{
+        secid: "1.603986",
+        fetchedAt: "2026-06-04T15:00:00.000Z",
+        points: [
+          { time: "09:30", price: 487.05, changePercent: -1.05 },
+          { time: "15:00", price: 529.31, changePercent: 7.53 }
+        ]
+      }])
+    });
+    const service = new WatchMarketService(
+      cacheStore,
+      quoteService,
+      () => new Date("2026-06-04T15:01:00.000Z")
+    );
+
+    await expect(service.get(["1.603986"])).resolves.toMatchObject({
+      quotes: [{
+        secid: "1.603986",
+        price: 529.31,
+        changePercent: 7.53,
+        errorMessage: undefined
+      }],
+      fromCache: false
+    });
+  });
+
   it("fetches fresh data when same-day cache does not cover requested secids", async () => {
     const cacheStore = {
       getForDate: vi.fn().mockResolvedValue({

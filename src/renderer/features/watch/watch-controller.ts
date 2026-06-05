@@ -91,6 +91,37 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     await updateMarketData((secids) => api.refreshWatchMarketData(secids), "正在刷新行情...");
   }
 
+  async function exportData(): Promise<void> {
+    try {
+      const result = await api.exportWatchData();
+      if (!result) {
+        return;
+      }
+      elements.watchStatus.textContent = `已导出 ${result.stockCount} 只股票、${result.tradingDates.length} 个交易日数据`;
+    } catch (error) {
+      elements.watchStatus.textContent = getErrorMessage(error);
+    }
+  }
+
+  async function importData(): Promise<void> {
+    if (!confirm("导入会覆盖当前盯盘脑图和本地行情缓存，确定继续吗？")) {
+      return;
+    }
+    try {
+      const result = await api.importWatchData();
+      if (!result) {
+        return;
+      }
+      config = await api.getWatchTree();
+      loaded = true;
+      render();
+      await loadMarketData();
+      elements.watchStatus.textContent = `已导入 ${result.stockCount} 只股票、${result.tradingDates.length} 个交易日数据`;
+    } catch (error) {
+      elements.watchStatus.textContent = getErrorMessage(error);
+    }
+  }
+
   async function updateMarketData(
     load: (secids: string[]) => ReturnType<typeof api.getWatchMarketData>,
     loadingMessage: string
@@ -412,6 +443,8 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   return {
     bindEvents: () => {
       elements.refreshWatchQuotes.addEventListener("click", () => void refreshQuotes());
+      elements.exportWatchData.addEventListener("click", () => void exportData());
+      elements.importWatchData.addEventListener("click", () => void importData());
       elements.watchNodeType.addEventListener("change", syncSecidVisibility);
       elements.watchNodeName.addEventListener("input", handleNodeNameInput);
       elements.searchWatchStock.addEventListener("click", () => void searchStocks());

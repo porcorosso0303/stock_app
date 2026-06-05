@@ -31,11 +31,12 @@ export class WatchMarketService {
       };
     }
 
-    const [quotes, trends] = await Promise.all([
+    const [rawQuotes, trends] = await Promise.all([
       this.marketDataProvider.listQuotes(secids),
       this.marketDataProvider.listTrends(secids)
     ]);
-    const normalizedTrends = normalizeTrendChangePercents(trends, quotes);
+    const normalizedTrends = normalizeTrendChangePercents(trends, rawQuotes);
+    const quotes = fillUnavailableQuotesFromTrends(rawQuotes, normalizedTrends);
     const updatedAt = this.now().toISOString();
     await this.cacheStore.write({
       tradingDate,
@@ -58,17 +59,18 @@ export class WatchMarketService {
       return await this.get(secids);
     }
 
-    const quotes = await this.marketDataProvider.listQuotes(secids);
+    const rawQuotes = await this.marketDataProvider.listQuotes(secids);
     const trendsBySecid = new Map(cache.trends.map((trend) => [trend.secid, trend]));
-    const missingTrendSecids = quotes
+    const missingTrendSecids = rawQuotes
       .map((quote) => quote.secid)
       .filter((secid) => !trendsBySecid.has(secid));
     if (missingTrendSecids.length > 0) {
       const missingTrends = await this.marketDataProvider.listTrends(missingTrendSecids);
-      for (const trend of normalizeTrendChangePercents(missingTrends, quotes)) {
+      for (const trend of normalizeTrendChangePercents(missingTrends, rawQuotes)) {
         trendsBySecid.set(trend.secid, trend);
       }
     }
+    const quotes = fillUnavailableQuotesFromTrends(rawQuotes, [...trendsBySecid.values()]);
     const trends = quotes.map((quote) => mergeQuoteIntoTrend(trendsBySecid.get(quote.secid), quote));
     const updatedAt = this.now().toISOString();
     await this.cacheStore.write({
@@ -127,6 +129,33 @@ function normalizeTrendChangePercents(
       }))
     };
   });
+}
+
+function fillUnavailableQuotesFromTrends(
+  quotes: StockQuote[],
+  trends: StockTrend[]
+): StockQuote[] {
+  const trendsBySecid = new Map(trends.map((trend) => [trend.secid, trend]));
+  return quotes.map((quote) => {
+    if (quote.changePercent !== undefined) {
+      return quote;
+    }
+    const latestPoint = latestTrendPoint(trendsBySecid.get(quote.secid));
+    if (!latestPoint) {
+      return quote;
+    }
+    return {
+      ...quote,
+      price: latestPoint.price,
+      changePercent: latestPoint.changePercent,
+      fetchedAt: quote.fetchedAt || trendsBySecid.get(quote.secid)?.fetchedAt || new Date().toISOString(),
+      errorMessage: undefined
+    };
+  });
+}
+
+function latestTrendPoint(trend: StockTrend | undefined): StockTrend["points"][number] | undefined {
+  return trend?.points.at(-1);
 }
 
 function derivePreviousClose(quote: StockQuote | undefined): number | undefined {

@@ -26,6 +26,8 @@ export const elements = {
   watchWorkspace: getElement<HTMLElement>("watch-workspace"),
   watchStatus: getElement<HTMLElement>("watch-status"),
   refreshWatchQuotes: getElement<HTMLButtonElement>("refresh-watch-quotes"),
+  exportWatchData: getElement<HTMLButtonElement>("export-watch-data"),
+  importWatchData: getElement<HTMLButtonElement>("import-watch-data"),
   watchPanel: getElement<HTMLElement>("watch-panel"),
   watchTree: getElement<HTMLElement>("watch-tree"),
   watchContextMenu: getElement<HTMLElement>("watch-context-menu"),

@@ -108,6 +108,17 @@ export interface WatchMarketCache {
   updatedAt: string;
 }
 
+export interface WatchMarketHistoryCache {
+  version: 2;
+  days: WatchMarketCache[];
+}
+
+export interface WatchDataTransferResult {
+  directory: string;
+  tradingDates: string[];
+  stockCount: number;
+}
+
 export interface StockSearchResult {
   secid: string;
   code: string;

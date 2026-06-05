@@ -159,6 +159,7 @@ function readTrendPoints(value: unknown): StockTrend["points"] {
   if (!Array.isArray(trends)) {
     throw new Error("分时走势返回格式错误");
   }
+  const previousClose = readTrendPrice((data as Record<string, unknown>).prePrice);
   return trends.flatMap((item) => {
     if (typeof item !== "string") {
       return [];
@@ -167,7 +168,13 @@ function readTrendPoints(value: unknown): StockTrend["points"] {
     const time = readTrendTime(fields[0]);
     const price = readTrendPrice(fields[2]);
     return time && price !== undefined
-      ? [{ time, price, changePercent: 0 }]
+      ? [{
+          time,
+          price,
+          changePercent: previousClose === undefined
+            ? 0
+            : ((price - previousClose) / previousClose) * 100
+        }]
       : [];
   });
 }
@@ -180,7 +187,7 @@ function readTrendTime(value: string | undefined): string | undefined {
   return match?.[1];
 }
 
-function readTrendPrice(value: string | undefined): number | undefined {
+function readTrendPrice(value: unknown): number | undefined {
   const price = Number(value);
   return Number.isFinite(price) && price > 0 ? price : undefined;
 }

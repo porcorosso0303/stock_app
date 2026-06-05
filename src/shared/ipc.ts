@@ -5,6 +5,7 @@ import type {
   ResearchRecord,
   StockQuote,
   StockSearchResult,
+  WatchDataTransferResult,
   WatchMarketData,
   WatchTreeConfig
 } from "./types";
@@ -28,6 +29,8 @@ export const IPC = {
   getWatchMarketData: "watch-market:get",
   refreshWatchMarketData: "watch-market:refresh",
   searchStocks: "watch-stocks:search",
+  exportWatchData: "watch-data:export",
+  importWatchData: "watch-data:import",
   researchEvent: "research:event"
 } as const;
 
@@ -50,5 +53,7 @@ export interface StockResearchApi {
   getWatchMarketData(secids: string[]): Promise<WatchMarketData>;
   refreshWatchMarketData(secids: string[]): Promise<WatchMarketData>;
   searchStocks(query: string): Promise<StockSearchResult[]>;
+  exportWatchData(): Promise<WatchDataTransferResult | undefined>;
+  importWatchData(): Promise<WatchDataTransferResult | undefined>;
   onResearchEvent(callback: (event: ResearchProgressEvent) => void): () => void;
 }

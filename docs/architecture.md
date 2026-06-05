@@ -152,6 +152,8 @@ Preload 不负责：
 - `StockTrend`
 - `WatchMarketData`
 - `WatchMarketCache`
+- `WatchMarketHistoryCache`
+- `WatchDataTransferResult`
 - `StockSearchResult`
 
 `AppConfig` 当前字段：
@@ -397,6 +399,8 @@ src/renderer/features/watch/watch-controller.ts
 - 激活盯盘时加载行情并启动 15 秒轮询。
 - 离开盯盘时停止轮询。
 - 保存脑图后重新加载行情。
+- 触发盯盘数据导出。
+- 导入盯盘数据前请求用户确认，导入成功后重新 hydrate 脑图并加载行情。
 
 该控制器负责业务状态和事件协调，不负责生成节点 HTML，不负责连接线坐标计算，不直接访问主进程文件系统。
 
@@ -464,6 +468,7 @@ src/main/modules/watch/watch-ipc.ts
 
 - 校验 `secids`、`query`、`config` 参数。
 - 调用 `WatchTreeStore`、`MarketDataProvider`、`WatchMarketService`。
+- 弹出目录选择框并调用盯盘数据导入导出服务。
 
 ### WatchTreeStore
 
@@ -493,10 +498,36 @@ src/main/watch-market-service.ts
 - 同日缓存完整时直接返回缓存。
 - 缓存缺失、缺字段或走势点异常时调用 `MarketDataProvider` 重新获取。
 - 将走势点价格归一化为相对昨收的涨跌幅。
+- 当 quote 接口不可用但 trend 有最新点时，用 trend 最新点兜底生成可展示 quote，避免有走势数据时仍显示“暂无行情”。
 - 刷新时把最新 quote 合并进同日 trend。
-- 写入 `watch-quotes-cache.json`。
+- 写入 `watch-quotes-cache.json` 中最近 5 个交易日的历史缓存。
 
 该服务依赖 `MarketDataProvider`，不依赖东方财富具体类。
+
+### WatchDataTransferService
+
+文件：
+
+```text
+src/main/watch-data-transfer-service.ts
+```
+
+职责：
+
+- 导出当前 `watch-tree.json` 和最近 5 个交易日行情历史。
+- 导入用户指定目录中的盯盘数据包。
+- 导入时校验脑图结构和行情历史结构。
+- 导入成功后覆盖本机盯盘脑图和行情历史缓存。
+
+导出目录包含：
+
+```text
+metadata.json
+watch-tree.json
+watch-market-history.json
+```
+
+`metadata.json` 只用于标识数据包格式和导出时间。实际导入依赖 `watch-tree.json` 和 `watch-market-history.json`。
 
 ### MarketDataProvider
 
@@ -684,7 +715,40 @@ Provider ID 字段当前只是扩展预留。默认 provider 仍由 main 装配�
 
 ### watch-quotes-cache.json
 
-由 `WatchMarketCacheStore` 维护。保存当日行情快照和走势。`WatchMarketService` 按中国时区日期判断是否可复用。
+由 `WatchMarketCacheStore` 维护。文件名保留为 `watch-quotes-cache.json`，内容是最近 5 个交易日的行情历史缓存：
+
+```ts
+interface WatchMarketHistoryCache {
+  version: 2;
+  days: WatchMarketCache[];
+}
+```
+
+`days` 按 `tradingDate` 倒序保存，最多 5 个不同交易日。每个 `WatchMarketCache` 保存一个交易日的：
+
+- `tradingDate`
+- `updatedAt`
+- `quotes`
+- `trends`
+
+旧测试数据不作为长期兼容目标。读取到非 `version: 2` 的缓存时，会按空历史处理；下一次成功刷新会写入新格式。
+
+### 盯盘导出数据包
+
+用户通过“导出数据”选择目录后，应用写入：
+
+```text
+metadata.json
+watch-tree.json
+watch-market-history.json
+```
+
+用户通过“导入数据”选择目录后，应用读取同名文件并覆盖本机：
+
+- `user_data/watch-tree.json`
+- `user_data/watch-quotes-cache.json`
+
+导入会影响当前脑图和本地行情缓存，renderer 会在导入成功后重新 hydrate 脑图并加载行情。
 
 ## 错误处理原则
 
