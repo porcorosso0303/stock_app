@@ -268,7 +268,7 @@ function renderWatchNodeContent(node: WatchTreeNode): string {
   return `
     <strong>${escapeHtml(node.name)}</strong>
     <span class="watch-trend-inline">
-      ${renderTrendSparklineSvg(trend?.points ?? [])}
+      ${renderTrendSparklineSvg(trend?.points ?? [], quote?.changePercent)}
       <span class="${formatTrendPercentClass(quote?.changePercent)}">${escapeHtml(formatChangePercent(quote?.changePercent))}</span>
     </span>
   `;

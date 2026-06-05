@@ -123,13 +123,15 @@ export function normalizeTrendSegments(
 
 export function renderTrendSparklineSvg(
   points: StockTrendPoint[],
+  latestChangePercent: number | undefined,
   width = 96,
   height = 36
 ): string {
   const centerY = height / 2;
   const segments = normalizeTrendSegments(points, width, height);
+  const lineKind = trendLineKind(latestChangePercent);
   const paths = segments.map((segment) => (
-    `<path class="watch-trend-line watch-trend-${segment.kind}" d="${segment.path}" />`
+    `<path class="watch-trend-line watch-trend-${lineKind}" d="${segment.path}" />`
   )).join("");
   return [
     `<svg class="watch-trend-sparkline" viewBox="0 0 ${width} ${height}" aria-hidden="true">`,
@@ -137,6 +139,13 @@ export function renderTrendSparklineSvg(
     paths,
     "</svg>"
   ].join("");
+}
+
+function trendLineKind(value: number | undefined): "positive" | "negative" | "neutral" {
+  if (value === undefined || value === 0) {
+    return "neutral";
+  }
+  return value > 0 ? "positive" : "negative";
 }
 
 export function formatTrendPercentClass(value: number | undefined): string {

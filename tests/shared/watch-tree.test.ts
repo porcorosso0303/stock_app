@@ -134,16 +134,23 @@ describe("watch tree", () => {
     expect(segments.every((segment) => segment.path.startsWith("M "))).toBe(true);
   });
 
-  it("renders a sparkline SVG with zero axis and red-green segment classes", () => {
+  it("renders the whole sparkline color from the latest change percent", () => {
     const svg = renderTrendSparklineSvg([
       { time: "09:30", changePercent: -1 },
       { time: "10:00", changePercent: 0.5 },
       { time: "10:30", changePercent: 1 }
-    ]);
+    ], -0.71);
 
     expect(svg).toContain("watch-trend-zero-axis");
     expect(svg).toContain("watch-trend-negative");
-    expect(svg).toContain("watch-trend-positive");
+    expect(svg).not.toContain("watch-trend-positive");
+
+    const positiveSvg = renderTrendSparklineSvg([
+      { time: "09:30", changePercent: -1 },
+      { time: "10:00", changePercent: 0.5 }
+    ], 0.1);
+    expect(positiveSvg).toContain("watch-trend-positive");
+    expect(positiveSvg).not.toContain("watch-trend-negative");
   });
 
   it("formats trend percentage classes by sign", () => {
