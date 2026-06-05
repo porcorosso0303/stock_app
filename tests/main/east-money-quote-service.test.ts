@@ -14,7 +14,7 @@ describe("EastMoneyQuoteService", () => {
       () => new Date("2026-06-02T00:00:00.000Z")
     );
 
-    await expect(service.list(["1.600519", "1.600519"])).resolves.toEqual([{
+    await expect(service.listQuotes(["1.600519", "1.600519"])).resolves.toEqual([{
       secid: "1.600519",
       stockName: "贵州茅台",
       price: 1307.22,
@@ -30,7 +30,7 @@ describe("EastMoneyQuoteService", () => {
       () => new Date("2026-06-02T00:00:00.000Z")
     );
 
-    await expect(service.list(["0.300750"])).resolves.toEqual([{
+    await expect(service.listQuotes(["0.300750"])).resolves.toEqual([{
       secid: "0.300750",
       fetchedAt: "2026-06-02T00:00:00.000Z",
       errorMessage: "network unavailable"
@@ -54,7 +54,7 @@ describe("EastMoneyQuoteService", () => {
       () => new Date("2026-06-04T09:32:00.000Z")
     );
 
-    await expect(service.trends(["1.600519"])).resolves.toEqual([{
+    await expect(service.listTrends(["1.600519"])).resolves.toEqual([{
       secid: "1.600519",
       fetchedAt: "2026-06-04T09:32:00.000Z",
       points: [
@@ -97,7 +97,7 @@ describe("EastMoneyQuoteService", () => {
     });
     const service = new EastMoneyQuoteService(fetchImpl);
 
-    await expect(service.search("贵州茅台")).resolves.toEqual([{
+    await expect(service.searchStocks("贵州茅台")).resolves.toEqual([{
       secid: "1.600519",
       code: "600519",
       name: "贵州茅台",
@@ -113,6 +113,6 @@ describe("EastMoneyQuoteService", () => {
   it("rejects an empty stock search", async () => {
     const service = new EastMoneyQuoteService(vi.fn());
 
-    await expect(service.search("  ")).rejects.toThrow("股票名称");
+    await expect(service.searchStocks("  ")).rejects.toThrow("股票名称");
   });
 });

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { MarketDataProvider } from "../../src/main/modules/watch/market-data/market-data-provider";
 import { WatchMarketService } from "../../src/main/watch-market-service";
 import type { StockQuote, StockTrend, WatchMarketCache } from "../../src/shared/types";
 
@@ -18,7 +19,44 @@ function trend(changePercent: number, fetchedAt = "2026-06-04T01:31:00.000Z"): S
   };
 }
 
+function marketDataProvider(
+  overrides: Partial<MarketDataProvider>
+): MarketDataProvider {
+  return {
+    id: "fake",
+    label: "Fake Provider",
+    listQuotes: vi.fn(),
+    listTrends: vi.fn(),
+    searchStocks: vi.fn(),
+    ...overrides
+  };
+}
+
 describe("WatchMarketService", () => {
+  it("loads fresh data through the market data provider interface", async () => {
+    const cacheStore = {
+      getForDate: vi.fn().mockResolvedValue(undefined),
+      write: vi.fn()
+    };
+    const provider = marketDataProvider({
+      listQuotes: vi.fn().mockResolvedValue([quote(-0.5)]),
+      listTrends: vi.fn().mockResolvedValue([trend(-0.5)])
+    });
+    const service = new WatchMarketService(
+      cacheStore,
+      provider,
+      () => new Date("2026-06-05T10:00:00.000Z")
+    );
+
+    await expect(service.get(["1.600519"])).resolves.toMatchObject({
+      quotes: [quote(-0.5)],
+      trends: [trend(-0.5)],
+      fromCache: false
+    });
+    expect(provider.listQuotes).toHaveBeenCalledWith(["1.600519"]);
+    expect(provider.listTrends).toHaveBeenCalledWith(["1.600519"]);
+  });
+
   it("returns same-day cache without calling quote service", async () => {
     const cache: WatchMarketCache = {
       tradingDate: "2026-06-04",
@@ -30,10 +68,10 @@ describe("WatchMarketService", () => {
       getForDate: vi.fn().mockResolvedValue(cache),
       write: vi.fn()
     };
-    const quoteService = {
-      list: vi.fn(),
-      trends: vi.fn()
-    };
+    const quoteService = marketDataProvider({
+      listQuotes: vi.fn(),
+      listTrends: vi.fn()
+    });
     const service = new WatchMarketService(
       cacheStore,
       quoteService,
@@ -46,8 +84,8 @@ describe("WatchMarketService", () => {
       updatedAt: cache.updatedAt,
       fromCache: true
     });
-    expect(quoteService.list).not.toHaveBeenCalled();
-    expect(quoteService.trends).not.toHaveBeenCalled();
+    expect(quoteService.listQuotes).not.toHaveBeenCalled();
+    expect(quoteService.listTrends).not.toHaveBeenCalled();
   });
 
   it("fetches and writes a new cache when same-day cache is unavailable", async () => {
@@ -55,10 +93,10 @@ describe("WatchMarketService", () => {
       getForDate: vi.fn().mockResolvedValue(undefined),
       write: vi.fn()
     };
-    const quoteService = {
-      list: vi.fn().mockResolvedValue([quote(-0.5)]),
-      trends: vi.fn().mockResolvedValue([trend(-0.5)])
-    };
+    const quoteService = marketDataProvider({
+      listQuotes: vi.fn().mockResolvedValue([quote(-0.5)]),
+      listTrends: vi.fn().mockResolvedValue([trend(-0.5)])
+    });
     const service = new WatchMarketService(
       cacheStore,
       quoteService,
@@ -91,10 +129,10 @@ describe("WatchMarketService", () => {
       }),
       write: vi.fn()
     };
-    const quoteService = {
-      list: vi.fn().mockResolvedValue([quote(1.2)]),
-      trends: vi.fn().mockResolvedValue([trend(1.2)])
-    };
+    const quoteService = marketDataProvider({
+      listQuotes: vi.fn().mockResolvedValue([quote(1.2)]),
+      listTrends: vi.fn().mockResolvedValue([trend(1.2)])
+    });
     const service = new WatchMarketService(
       cacheStore,
       quoteService,
@@ -105,7 +143,7 @@ describe("WatchMarketService", () => {
       fromCache: false,
       trends: [{ points: [expect.objectContaining({ price: 100 })] }]
     });
-    expect(quoteService.trends).toHaveBeenCalledWith(["1.600519"]);
+    expect(quoteService.listTrends).toHaveBeenCalledWith(["1.600519"]);
   });
 
   it("refetches same-day cache with out-of-order trend points from older builds", async () => {
@@ -125,10 +163,10 @@ describe("WatchMarketService", () => {
       }),
       write: vi.fn()
     };
-    const quoteService = {
-      list: vi.fn().mockResolvedValue([quote(1.2)]),
-      trends: vi.fn().mockResolvedValue([trend(1.2)])
-    };
+    const quoteService = marketDataProvider({
+      listQuotes: vi.fn().mockResolvedValue([quote(1.2)]),
+      listTrends: vi.fn().mockResolvedValue([trend(1.2)])
+    });
     const service = new WatchMarketService(
       cacheStore,
       quoteService,
@@ -139,7 +177,7 @@ describe("WatchMarketService", () => {
       fromCache: false,
       trends: [{ points: [expect.objectContaining({ time: "09:31" })] }]
     });
-    expect(quoteService.trends).toHaveBeenCalledWith(["1.600519"]);
+    expect(quoteService.listTrends).toHaveBeenCalledWith(["1.600519"]);
   });
 
   it("derives trend change percent from trend prices and the latest quote", async () => {
@@ -153,9 +191,9 @@ describe("WatchMarketService", () => {
       price: 529.31,
       changePercent: 7.53
     };
-    const quoteService = {
-      list: vi.fn().mockResolvedValue([quoteWithPrice]),
-      trends: vi.fn().mockResolvedValue([{
+    const quoteService = marketDataProvider({
+      listQuotes: vi.fn().mockResolvedValue([quoteWithPrice]),
+      listTrends: vi.fn().mockResolvedValue([{
         secid: "1.603986",
         fetchedAt: "2026-06-04T15:00:00.000Z",
         points: [
@@ -163,7 +201,7 @@ describe("WatchMarketService", () => {
           { time: "14:59", price: 529.31, changePercent: 0 }
         ]
       }])
-    };
+    });
     const service = new WatchMarketService(
       cacheStore,
       quoteService,
@@ -204,10 +242,10 @@ describe("WatchMarketService", () => {
       fetchedAt: "2026-06-04T01:32:00.000Z",
       points: [{ time: "09:32", changePercent: -0.8 }]
     };
-    const quoteService = {
-      list: vi.fn().mockResolvedValue([quote(1.2), secondQuote]),
-      trends: vi.fn().mockResolvedValue([trend(1.2), secondTrend])
-    };
+    const quoteService = marketDataProvider({
+      listQuotes: vi.fn().mockResolvedValue([quote(1.2), secondQuote]),
+      listTrends: vi.fn().mockResolvedValue([trend(1.2), secondTrend])
+    });
     const service = new WatchMarketService(
       cacheStore,
       quoteService,
@@ -218,7 +256,7 @@ describe("WatchMarketService", () => {
       fromCache: false,
       quotes: [{ secid: "1.600519" }, { secid: "0.300750" }]
     });
-    expect(quoteService.trends).toHaveBeenCalledWith(["1.600519", "0.300750"]);
+    expect(quoteService.listTrends).toHaveBeenCalledWith(["1.600519", "0.300750"]);
     expect(cacheStore.write).toHaveBeenCalledOnce();
   });
 
@@ -237,17 +275,17 @@ describe("WatchMarketService", () => {
       fetchedAt: "2026-06-04T01:32:00.000Z",
       changePercent: -0.8
     };
-    const quoteService = {
-      list: vi.fn().mockResolvedValue([
+    const quoteService = marketDataProvider({
+      listQuotes: vi.fn().mockResolvedValue([
         quote(1.2, "2026-06-04T01:32:00.000Z"),
         secondQuote
       ]),
-      trends: vi.fn().mockResolvedValue([{
+      listTrends: vi.fn().mockResolvedValue([{
         secid: "0.300750",
         fetchedAt: "2026-06-04T01:32:00.000Z",
         points: [{ time: "09:31", changePercent: -0.9 }]
       }])
-    };
+    });
     const service = new WatchMarketService(
       cacheStore,
       quoteService,
@@ -266,7 +304,7 @@ describe("WatchMarketService", () => {
         }
       ]
     });
-    expect(quoteService.trends).toHaveBeenCalledWith(["0.300750"]);
+    expect(quoteService.listTrends).toHaveBeenCalledWith(["0.300750"]);
   });
 
   it("refreshes quotes and merges latest quote points into same-day trends", async () => {
@@ -279,10 +317,10 @@ describe("WatchMarketService", () => {
       }),
       write: vi.fn()
     };
-    const quoteService = {
-      list: vi.fn().mockResolvedValue([quote(1.2, "2026-06-04T01:32:00.000Z")]),
-      trends: vi.fn()
-    };
+    const quoteService = marketDataProvider({
+      listQuotes: vi.fn().mockResolvedValue([quote(1.2, "2026-06-04T01:32:00.000Z")]),
+      listTrends: vi.fn()
+    });
     const service = new WatchMarketService(
       cacheStore,
       quoteService,

@@ -14,15 +14,15 @@ export class EastMoneyQuoteService {
     private readonly now: () => Date = () => new Date()
   ) {}
 
-  async list(secids: string[]): Promise<StockQuote[]> {
+  async listQuotes(secids: string[]): Promise<StockQuote[]> {
     return await Promise.all([...new Set(secids)].map((secid) => this.get(secid)));
   }
 
-  async trends(secids: string[]): Promise<StockTrend[]> {
+  async listTrends(secids: string[]): Promise<StockTrend[]> {
     return await Promise.all([...new Set(secids)].map((secid) => this.getTrend(secid)));
   }
 
-  async search(input: string): Promise<StockSearchResult[]> {
+  async searchStocks(input: string): Promise<StockSearchResult[]> {
     const query = input.trim();
     if (!query) {
       throw new Error("请输入股票名称");

@@ -90,8 +90,8 @@ function createHarness(options: {
       set: setWatchTree
     },
     quoteService: {
-      list: listQuotes,
-      search: searchStocks
+      listQuotes,
+      searchStocks
     },
     watchMarketService: {
       get: getWatchMarketData,

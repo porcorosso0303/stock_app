@@ -18,8 +18,8 @@ export interface WatchTreeStoreLike {
 }
 
 export interface QuoteServiceLike {
-  list(secids: string[]): Promise<StockQuote[]>;
-  search(query: string): Promise<StockSearchResult[]>;
+  listQuotes(secids: string[]): Promise<StockQuote[]>;
+  searchStocks(query: string): Promise<StockSearchResult[]>;
 }
 
 export interface WatchMarketServiceLike {
@@ -51,7 +51,7 @@ export function registerWatchIpc(dependencies: WatchIpcDependencies): void {
 
   ipcMain.handle(IPC.getWatchQuotes, async (_event, value) => {
     const input = requireObject(value);
-    return await quoteService.list(requireStringArray(input.secids, "secids"));
+    return await quoteService.listQuotes(requireStringArray(input.secids, "secids"));
   });
 
   ipcMain.handle(IPC.getWatchMarketData, async (_event, value) => {
@@ -66,6 +66,6 @@ export function registerWatchIpc(dependencies: WatchIpcDependencies): void {
 
   ipcMain.handle(IPC.searchStocks, async (_event, value) => {
     const input = requireObject(value);
-    return await quoteService.search(requireString(input.query, "query"));
+    return await quoteService.searchStocks(requireString(input.query, "query"));
   });
 }

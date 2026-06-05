@@ -5,21 +5,17 @@ import type {
   WatchMarketData
 } from "../shared/types";
 import { mergeQuoteIntoTrend } from "../shared/watch-tree";
+import type { MarketDataProvider } from "./modules/watch/market-data/market-data-provider";
 
 interface WatchMarketCacheStoreLike {
   getForDate(date: string): Promise<WatchMarketCache | undefined>;
   write(cache: WatchMarketCache): Promise<void>;
 }
 
-interface QuoteServiceLike {
-  list(secids: string[]): Promise<StockQuote[]>;
-  trends(secids: string[]): Promise<StockTrend[]>;
-}
-
 export class WatchMarketService {
   constructor(
     private readonly cacheStore: WatchMarketCacheStoreLike,
-    private readonly quoteService: QuoteServiceLike,
+    private readonly marketDataProvider: MarketDataProvider,
     private readonly now: () => Date = () => new Date()
   ) {}
 
@@ -36,8 +32,8 @@ export class WatchMarketService {
     }
 
     const [quotes, trends] = await Promise.all([
-      this.quoteService.list(secids),
-      this.quoteService.trends(secids)
+      this.marketDataProvider.listQuotes(secids),
+      this.marketDataProvider.listTrends(secids)
     ]);
     const normalizedTrends = normalizeTrendChangePercents(trends, quotes);
     const updatedAt = this.now().toISOString();
@@ -62,13 +58,13 @@ export class WatchMarketService {
       return await this.get(secids);
     }
 
-    const quotes = await this.quoteService.list(secids);
+    const quotes = await this.marketDataProvider.listQuotes(secids);
     const trendsBySecid = new Map(cache.trends.map((trend) => [trend.secid, trend]));
     const missingTrendSecids = quotes
       .map((quote) => quote.secid)
       .filter((secid) => !trendsBySecid.has(secid));
     if (missingTrendSecids.length > 0) {
-      const missingTrends = await this.quoteService.trends(missingTrendSecids);
+      const missingTrends = await this.marketDataProvider.listTrends(missingTrendSecids);
       for (const trend of normalizeTrendChangePercents(missingTrends, quotes)) {
         trendsBySecid.set(trend.secid, trend);
       }

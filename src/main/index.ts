@@ -11,7 +11,7 @@ import { CodexLocator } from "./codex-locator";
 import { getCodexLauncherOverride } from "./codex-launcher-override";
 import { CodexRunner } from "./codex-runner";
 import { ConfigStore } from "./config-store";
-import { EastMoneyQuoteService } from "./east-money-quote-service";
+import { EastMoneyMarketDataProvider } from "./modules/watch/market-data/east-money-provider";
 import { resolveEmbeddedSkillDirectory } from "./embedded-skill";
 import { configureExternalLinks } from "./external-links";
 import { HistoryStore } from "./history-store";
@@ -99,7 +99,7 @@ void app.whenReady().then(() => {
       mainWindow?.webContents.send(IPC.researchEvent, event);
     }
   });
-  const quoteService = new EastMoneyQuoteService();
+  const quoteService = new EastMoneyMarketDataProvider();
   const watchMarketService = new WatchMarketService(
     new WatchMarketCacheStore(join(userData, "watch-quotes-cache.json")),
     quoteService
