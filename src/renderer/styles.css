@@ -101,8 +101,8 @@ h2 { margin: 0; font-size: 15px; }
 .watch-node.stock strong { max-width: 86px; overflow: hidden; text-overflow: ellipsis; }
 .watch-trend-inline { display: inline-flex; align-items: center; gap: 6px; }
 .watch-trend-sparkline { width: 96px; height: 36px; flex: 0 0 auto; overflow: visible; border-radius: 4px; background: linear-gradient(180deg, #fff 0%, #f7f9f7 100%); }
-.watch-trend-zero-axis { stroke: #9aa4a7; stroke-width: 1; stroke-dasharray: 4 4; }
-.watch-trend-line { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.watch-trend-zero-axis { stroke: #7f8b8e; stroke-width: 1; stroke-dasharray: 4 4; }
+.watch-trend-line { fill: none; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
 .watch-trend-positive { stroke: #e3483b; }
 .watch-trend-negative { stroke: #169b62; }
 .watch-trend-neutral { stroke: #789095; }
