@@ -83,6 +83,13 @@ describe("EastMoneyQuoteService", () => {
               Name: "腾讯控股",
               Classify: "HKStock",
               QuoteID: "116.00700"
+            },
+            {
+              Code: "688777",
+              Name: "中控技术",
+              Classify: "23",
+              QuoteID: "1.688777",
+              SecurityTypeName: "科创板"
             }
           ]
         }
@@ -95,6 +102,11 @@ describe("EastMoneyQuoteService", () => {
       code: "600519",
       name: "贵州茅台",
       marketName: "沪A"
+    }, {
+      secid: "1.688777",
+      code: "688777",
+      name: "中控技术",
+      marketName: "科创板"
     }]);
   });
 

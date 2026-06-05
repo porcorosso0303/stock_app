@@ -116,7 +116,7 @@ function readSearchResults(value: unknown): StockSearchResult[] {
     const secid = readString(record.QuoteID);
     const code = readString(record.Code);
     const name = readString(record.Name);
-    if (record.Classify !== "AStock" || !secid || !code || !name) {
+    if (!secid || !isAStockCode(code) || !name) {
       return [];
     }
     try {
@@ -130,6 +130,10 @@ function readSearchResults(value: unknown): StockSearchResult[] {
       return [];
     }
   });
+}
+
+function isAStockCode(value: string | undefined): value is string {
+  return typeof value === "string" && /^\d{6}$/.test(value);
 }
 
 function requireQuoteData(value: unknown): Record<string, unknown> {
