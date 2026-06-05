@@ -100,7 +100,8 @@ export function registerIpcHandlers(dependencies: IpcDependencies): void {
   ipcMain.handle(IPC.getBootstrap, async () => ({
     config: await configStore.get(),
     history: await historyStore.list(),
-    codex: await detectCodexSafely(codexLocator)
+    codex: await detectCodexSafely(codexLocator),
+    watchTree: await watchTreeStore.get()
   }));
 
   ipcMain.handle(IPC.chooseReportDirectory, async () => {

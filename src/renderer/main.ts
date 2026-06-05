@@ -123,6 +123,8 @@ void initialize().catch((error: unknown) => {
 async function initialize(): Promise<void> {
   bindEvents();
   state = await api.getBootstrap();
+  watchConfig = state.watchTree;
+  watchTreeLoaded = true;
   elements.researchSpec.value = await api.getResearchSpec();
   renderBootstrap();
   api.onResearchEvent(handleProgress);

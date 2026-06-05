@@ -47,6 +47,7 @@ export interface AppBootstrap {
   config: AppConfig;
   history: ResearchRecord[];
   codex: CodexEnvironmentStatus;
+  watchTree: WatchTreeConfig;
 }
 
 export interface WatchTreeCategoryNode {

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { registerIpcHandlers } from "../../src/main/ipc";
 import { IPC } from "../../src/shared/ipc";
-import type { ResearchRecord } from "../../src/shared/types";
+import type { ResearchRecord, WatchTreeConfig } from "../../src/shared/types";
 
 function createRecord(): ResearchRecord {
   return {
@@ -22,6 +22,7 @@ function createHarness(options: {
   openPathResult?: string;
   record?: ResearchRecord;
   codexDetectError?: Error;
+  watchTree?: WatchTreeConfig;
 } = {}) {
   const handlers = new Map<string, (_event: unknown, value?: unknown) => unknown>();
   const setReportDirectory = vi.fn().mockResolvedValue({});
@@ -84,7 +85,7 @@ function createHarness(options: {
       }
     },
     watchTreeStore: {
-      get: async () => ({}),
+      get: async () => options.watchTree ?? {},
       set: setWatchTree
     },
     quoteService: {
@@ -185,6 +186,15 @@ describe("registerIpcHandlers", () => {
         message: expect.stringContaining("PowerShell blocked")
       }
     });
+  });
+
+  it("includes the persisted watch tree in bootstrap data", async () => {
+    const watchTree = {
+      root: { id: "root", type: "category", name: "自选股", children: [] }
+    } satisfies WatchTreeConfig;
+    const { invoke } = createHarness({ watchTree });
+
+    await expect(invoke(IPC.getBootstrap)).resolves.toMatchObject({ watchTree });
   });
 
   it("saves the user-maintained watch tree", async () => {
