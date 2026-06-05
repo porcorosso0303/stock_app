@@ -18,7 +18,7 @@ export function validateWatchTreeConfig(value: unknown): WatchTreeConfig {
   const ids = new Set<string>();
   const root = validateNode(config.root, ids);
   if (root.type !== "category") {
-    throw new Error("盯盘脑图根节点必须是分类");
+    throw new Error("盯盘脑图顶层节点必须是分类");
   }
   return { root };
 }
@@ -192,7 +192,7 @@ export function replaceWatchTreeNode(
 ): WatchTreeCategoryNode {
   if (root.id === replacement.id) {
     if (replacement.type !== "category") {
-      throw new Error("盯盘脑图根节点必须是分类");
+      throw new Error("盯盘脑图顶层节点必须是分类");
     }
     return replacement;
   }

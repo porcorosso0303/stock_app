@@ -58,10 +58,10 @@ describe("watch tree", () => {
     expect(collectStockSecids(root)).toEqual(["1.600519", "0.300750"]);
   });
 
-  it("rejects stock roots, duplicate ids and invalid secids", () => {
+  it("rejects stock top-level nodes, duplicate ids and invalid secids", () => {
     expect(() => validateWatchTreeConfig({
       root: { id: "one", type: "stock", name: "股票", secid: "1.600519" }
-    })).toThrow("根节点");
+    })).toThrow("顶层节点");
     expect(() => validateWatchTreeConfig({
       root: {
         id: "same",

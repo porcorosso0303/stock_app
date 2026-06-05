@@ -61,7 +61,6 @@ const elements = {
   watchWorkspace: getElement<HTMLElement>("watch-workspace"),
   watchStatus: getElement<HTMLElement>("watch-status"),
   refreshWatchQuotes: getElement<HTMLButtonElement>("refresh-watch-quotes"),
-  toggleWatchConfig: getElement<HTMLButtonElement>("toggle-watch-config"),
   watchPanel: getElement<HTMLElement>("watch-panel"),
   watchTree: getElement<HTMLElement>("watch-tree"),
   watchContextMenu: getElement<HTMLElement>("watch-context-menu"),
@@ -86,7 +85,6 @@ let workingTimer: number | undefined;
 let activeFeature: "research" | "watch" = "research";
 let watchConfig: WatchTreeConfig = {};
 let watchTreeLoaded = false;
-let watchConfiguring = false;
 let watchQuoteTimer: number | undefined;
 let watchQuotes = new Map<string, StockQuote>();
 let watchTrends = new Map<string, StockTrend>();
@@ -99,7 +97,7 @@ const collapsedWatchNodes = new Set<string>();
 const watchConnectorColors = ["#5278c7", "#6f55bb", "#4e9858", "#bf7654"];
 
 type WatchDialogAction =
-  | { kind: "create-root" }
+  | { kind: "create-category" }
   | { kind: "add"; parentId: string; nodeType: WatchTreeNode["type"] }
   | { kind: "edit"; nodeId: string };
 
@@ -138,7 +136,6 @@ function bindEvents(): void {
   elements.saveSpec.addEventListener("click", () => void saveResearchSpec());
   elements.resetSpec.addEventListener("click", () => void resetResearchSpec());
   elements.refreshWatchQuotes.addEventListener("click", () => void refreshWatchQuotes());
-  elements.toggleWatchConfig.addEventListener("click", toggleWatchConfig);
   elements.watchNodeType.addEventListener("change", syncWatchNodeSecidVisibility);
   elements.watchNodeName.addEventListener("input", handleWatchNodeNameInput);
   elements.searchWatchStock.addEventListener("click", () => void searchWatchStocks());
@@ -197,18 +194,11 @@ async function loadWatchTree(): Promise<void> {
   }
 }
 
-function toggleWatchConfig(): void {
-  watchConfiguring = !watchConfiguring;
-  elements.toggleWatchConfig.textContent = watchConfiguring ? "完成配置" : "配置脑图";
-  renderWatchTree();
-}
-
 function renderWatchTree(): void {
   if (!watchConfig.root) {
     elements.watchTree.innerHTML = `
       <div class="watch-empty">
-        <h2>尚未配置盯盘脑图</h2>
-        <p>${watchConfiguring ? "在空白区域点击鼠标右键，创建根分类。" : "点击“配置脑图”，再在空白区域点击鼠标右键创建根分类。"}</p>
+        <p>在空白区域点击鼠标右键创建分类。</p>
       </div>
     `;
     return;
@@ -378,14 +368,14 @@ function handleWatchNodeContextMenu(event: MouseEvent): void {
 }
 
 function handleWatchPanelContextMenu(event: MouseEvent): void {
-  if (!watchConfiguring || watchConfig.root) {
+  if (watchConfig.root) {
     return;
   }
   if (event.target instanceof Element && event.target.closest(".watch-node")) {
     return;
   }
   event.preventDefault();
-  elements.watchContextMenu.innerHTML = '<button data-watch-menu-action="create-root" type="button">创建根分类</button>';
+  elements.watchContextMenu.innerHTML = '<button data-watch-menu-action="create-category" type="button">创建分类</button>';
   elements.watchContextMenu.style.left = `${event.clientX}px`;
   elements.watchContextMenu.style.top = `${event.clientY}px`;
   elements.watchContextMenu.hidden = false;
@@ -400,8 +390,8 @@ function handleWatchContextMenuClick(event: MouseEvent): void {
   }
   const id = button.dataset.watchId ?? "";
   switch (button.dataset.watchMenuAction) {
-    case "create-root":
-      openWatchNodeDialog({ kind: "create-root" });
+    case "create-category":
+      openWatchNodeDialog({ kind: "create-category" });
       break;
     case "add-category":
       openWatchNodeDialog({ kind: "add", parentId: id, nodeType: "category" });
@@ -485,7 +475,7 @@ function openWatchNodeDialog(action: WatchDialogAction): void {
   watchDialogAction = action;
   elements.watchNodeDialogTitle.textContent = action.kind === "edit"
     ? "编辑节点"
-    : action.kind === "create-root" ? "创建根分类" : "添加节点";
+    : action.kind === "create-category" ? "创建分类" : "添加节点";
   elements.watchNodeType.value = existing?.type
     ?? (action.kind === "add" ? action.nodeType : "category");
   elements.watchNodeType.disabled = action.kind !== "add";
@@ -589,14 +579,14 @@ async function saveWatchNode(event: SubmitEvent): Promise<void> {
           name,
           children: existing?.type === "category" ? existing.children : []
         };
-    if (watchDialogAction.kind === "create-root") {
+    if (watchDialogAction.kind === "create-category") {
       if (node.type !== "category") {
-        throw new Error("根节点必须是分类");
+        throw new Error("请创建分类节点");
       }
       watchConfig = { root: node };
     } else if (watchDialogAction.kind === "add") {
       if (!watchConfig.root) {
-        throw new Error("请先创建根分类");
+        throw new Error("请先创建分类");
       }
       watchConfig = {
         root: appendWatchTreeChild(watchConfig.root, watchDialogAction.parentId, node)
