@@ -38,6 +38,24 @@ describe("ConfigStore", () => {
     });
   });
 
+  it("preserves provider selection fields for future module configuration", async () => {
+    const directory = await createTempDirectory();
+    const path = join(directory, "config.json");
+    await writeFile(path, JSON.stringify({
+      watchMarketProviderId: "east-money",
+      researchProviderId: "codex-cli"
+    }), "utf8");
+
+    const updated = await new ConfigStore(path).setReportDirectory("C:\\reports");
+
+    expect(updated).toEqual({
+      reportDirectory: "C:\\reports",
+      watchMarketProviderId: "east-money",
+      researchProviderId: "codex-cli"
+    });
+    await expect(new ConfigStore(path).get()).resolves.toEqual(updated);
+  });
+
   it("reports a damaged JSON file with its path", async () => {
     const directory = await createTempDirectory();
     const path = join(directory, "config.json");

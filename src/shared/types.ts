@@ -7,6 +7,8 @@ export type ResearchStatus =
 
 export interface AppConfig {
   reportDirectory?: string;
+  watchMarketProviderId?: string;
+  researchProviderId?: string;
 }
 
 export interface ResearchRecord {
