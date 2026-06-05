@@ -62,6 +62,6 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 After iterating a new app version:
 - Build the latest Windows app.
-- Sync `release/win-unpacked` to `/mnt/c/Users/pangwa936/Desktop/A股调研助手-最新版本/win-unpacked`.
+- Sync `release/win-unpacked` with `npm run deploy:win-unpacked`; do not use a raw `rsync --delete` that can delete `win-unpacked/user_data`.
 - Copy the NSIS installer into `/mnt/c/Users/pangwa936/Desktop/A股调研助手-最新版本` when one is generated.
 - Launch `/mnt/c/Users/pangwa936/Desktop/A股调研助手-最新版本/win-unpacked/A股调研助手.exe` for user testing.

@@ -99,6 +99,14 @@ NSIS 安装包输出到 `release/`。
 
 股票名称中的 Windows 非法文件名字符会替换为 `_`。
 
+刷新 Windows 解包测试版时使用：
+
+```bash
+npm run deploy:win-unpacked
+```
+
+该脚本同步 `release/win-unpacked` 时会保留目标目录里的 `user_data/`，避免覆盖测试版程序时删除脑图、行情缓存和用户配置。
+
 ## 安全边界
 
 - Renderer 启用上下文隔离，禁用 Node.js integration。
