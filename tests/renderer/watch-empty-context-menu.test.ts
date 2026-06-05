@@ -14,17 +14,18 @@ describe("watch empty-space context menu", () => {
   });
 
   it("opens a create-category menu from empty watch panel space without configuration mode", async () => {
-    const source = await readFile("src/renderer/main.ts", "utf8");
+    const controller = await readFile("src/renderer/features/watch/watch-controller.ts", "utf8");
+    const contextMenu = await readFile("src/renderer/features/watch/watch-context-menu.ts", "utf8");
 
-    expect(source).toContain('elements.watchPanel.addEventListener("contextmenu", handleWatchPanelContextMenu);');
-    expect(source).toContain('data-watch-menu-action="create-category"');
-    expect(source).toContain('openWatchNodeDialog({ kind: "create-category" });');
-    expect(source).not.toContain("watchConfiguring");
-    expect(source).not.toContain("toggleWatchConfig");
+    expect(controller).toContain('elements.watchPanel.addEventListener("contextmenu", handlePanelContextMenu);');
+    expect(contextMenu).toContain('data-watch-menu-action="create-category"');
+    expect(controller).toContain('openNodeDialog({ kind: "create-category" });');
+    expect(controller).not.toContain("watchConfiguring");
+    expect(controller).not.toContain("toggleWatchConfig");
   });
 
   it("keeps the empty state to a single hint without the unconfigured title", async () => {
-    const source = await readFile("src/renderer/main.ts", "utf8");
+    const source = await readFile("src/renderer/features/watch/watch-view.ts", "utf8");
 
     expect(source).not.toContain("尚未配置盯盘脑图");
     expect(source).toContain("在空白区域点击鼠标右键创建分类。");

@@ -8,5 +8,8 @@ describe("renderer module boundaries", () => {
     expect(source).toContain("createShellController");
     expect(source).toContain("createResearchController");
     expect(source).not.toContain("async function handlePrimaryAction");
+    expect(source).toContain("createWatchController");
+    expect(source).not.toContain("function renderWatchTree");
+    expect(source).not.toContain("function drawWatchConnectors");
   });
 });
