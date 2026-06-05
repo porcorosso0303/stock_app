@@ -62,8 +62,6 @@ const elements = {
   watchStatus: getElement<HTMLElement>("watch-status"),
   refreshWatchQuotes: getElement<HTMLButtonElement>("refresh-watch-quotes"),
   toggleWatchConfig: getElement<HTMLButtonElement>("toggle-watch-config"),
-  watchConfigBar: getElement<HTMLElement>("watch-config-bar"),
-  createWatchRoot: getElement<HTMLButtonElement>("create-watch-root"),
   watchPanel: getElement<HTMLElement>("watch-panel"),
   watchTree: getElement<HTMLElement>("watch-tree"),
   watchContextMenu: getElement<HTMLElement>("watch-context-menu"),
@@ -141,9 +139,6 @@ function bindEvents(): void {
   elements.resetSpec.addEventListener("click", () => void resetResearchSpec());
   elements.refreshWatchQuotes.addEventListener("click", () => void refreshWatchQuotes());
   elements.toggleWatchConfig.addEventListener("click", toggleWatchConfig);
-  elements.createWatchRoot.addEventListener("click", () => openWatchNodeDialog({
-    kind: "create-root"
-  }));
   elements.watchNodeType.addEventListener("change", syncWatchNodeSecidVisibility);
   elements.watchNodeName.addEventListener("input", handleWatchNodeNameInput);
   elements.searchWatchStock.addEventListener("click", () => void searchWatchStocks());
@@ -152,6 +147,7 @@ function bindEvents(): void {
   elements.watchTree.addEventListener("click", handleWatchNodeClick);
   elements.watchTree.addEventListener("contextmenu", handleWatchNodeContextMenu);
   elements.watchContextMenu.addEventListener("click", handleWatchContextMenuClick);
+  elements.watchPanel.addEventListener("contextmenu", handleWatchPanelContextMenu);
   elements.watchPanel.addEventListener("pointerdown", beginWatchPan);
   elements.watchPanel.addEventListener("pointermove", moveWatchPan);
   elements.watchPanel.addEventListener("pointerup", endWatchPan);
@@ -203,18 +199,16 @@ async function loadWatchTree(): Promise<void> {
 
 function toggleWatchConfig(): void {
   watchConfiguring = !watchConfiguring;
-  elements.watchConfigBar.hidden = !watchConfiguring;
   elements.toggleWatchConfig.textContent = watchConfiguring ? "完成配置" : "配置脑图";
   renderWatchTree();
 }
 
 function renderWatchTree(): void {
-  elements.createWatchRoot.hidden = Boolean(watchConfig.root);
   if (!watchConfig.root) {
     elements.watchTree.innerHTML = `
       <div class="watch-empty">
         <h2>尚未配置盯盘脑图</h2>
-        <p>${watchConfiguring ? "点击上方“创建根分类”开始配置。" : "点击“配置脑图”，创建分类节点和股票叶子节点。"}</p>
+        <p>${watchConfiguring ? "在空白区域点击鼠标右键，创建根分类。" : "点击“配置脑图”，再在空白区域点击鼠标右键创建根分类。"}</p>
       </div>
     `;
     return;
@@ -383,6 +377,20 @@ function handleWatchNodeContextMenu(event: MouseEvent): void {
   elements.watchContextMenu.hidden = false;
 }
 
+function handleWatchPanelContextMenu(event: MouseEvent): void {
+  if (!watchConfiguring || watchConfig.root) {
+    return;
+  }
+  if (event.target instanceof Element && event.target.closest(".watch-node")) {
+    return;
+  }
+  event.preventDefault();
+  elements.watchContextMenu.innerHTML = '<button data-watch-menu-action="create-root" type="button">创建根分类</button>';
+  elements.watchContextMenu.style.left = `${event.clientX}px`;
+  elements.watchContextMenu.style.top = `${event.clientY}px`;
+  elements.watchContextMenu.hidden = false;
+}
+
 function handleWatchContextMenuClick(event: MouseEvent): void {
   const button = event.target instanceof Element
     ? event.target.closest<HTMLButtonElement>("button[data-watch-menu-action]")
@@ -392,6 +400,9 @@ function handleWatchContextMenuClick(event: MouseEvent): void {
   }
   const id = button.dataset.watchId ?? "";
   switch (button.dataset.watchMenuAction) {
+    case "create-root":
+      openWatchNodeDialog({ kind: "create-root" });
+      break;
     case "add-category":
       openWatchNodeDialog({ kind: "add", parentId: id, nodeType: "category" });
       break;
