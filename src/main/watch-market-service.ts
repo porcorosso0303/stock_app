@@ -39,7 +39,7 @@ export class WatchMarketService {
 
   async refresh(secids: string[]): Promise<WatchMarketData> {
     const now = this.now();
-    if (isTradingMinute(formatChinaMinute(now.toISOString()))) {
+    if (isTradingSession(now)) {
       return await this.fetchFresh(secids, formatChinaDate(now));
     }
     return await this.get(secids);
@@ -104,12 +104,9 @@ function coversSecids(cache: WatchMarketCache, secids: string[], now: Date): boo
 }
 
 function shouldConsiderCache(cache: WatchMarketCache, now: Date): boolean {
-  const currentDate = formatChinaDate(now);
-  if (cache.tradingDate === currentDate) {
-    return true;
-  }
-  return !isTradingMinute(formatChinaMinute(now.toISOString())) &&
-    formatChinaDate(new Date(cache.updatedAt)) === currentDate;
+  return isTradingSession(now)
+    ? cache.tradingDate === formatChinaDate(now)
+    : true;
 }
 
 function hasOrderedTrendPoints(trend: StockTrend): boolean {
@@ -239,6 +236,27 @@ function isTradingMinute(time: string): boolean {
   const minute = trendMinute(time);
   return (minute >= trendMinute("09:30") && minute <= trendMinute("11:30")) ||
     (minute >= trendMinute("13:00") && minute <= trendMinute("15:00"));
+}
+
+function isTradingSession(date: Date): boolean {
+  const day = chinaWeekday(date);
+  return day >= 1 && day <= 5 && isTradingMinute(formatChinaMinute(date.toISOString()));
+}
+
+function chinaWeekday(date: Date): number {
+  const value = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Shanghai",
+    weekday: "short"
+  }).format(date);
+  return new Map([
+    ["Mon", 1],
+    ["Tue", 2],
+    ["Wed", 3],
+    ["Thu", 4],
+    ["Fri", 5],
+    ["Sat", 6],
+    ["Sun", 7]
+  ]).get(value) ?? 0;
 }
 
 function formatChinaMinute(value: string): string {

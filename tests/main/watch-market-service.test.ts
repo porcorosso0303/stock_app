@@ -185,6 +185,52 @@ describe("WatchMarketService", () => {
     }));
   });
 
+  it("uses the latest complete trading-day cache outside trading hours even when it was not written today", async () => {
+    const fridayTrend: StockTrend = {
+      secid: "1.600519",
+      tradingDate: "2026-06-05",
+      fetchedAt: "2026-06-05T07:00:00.000Z",
+      points: [
+        ...minuteRange("09:30", "11:30"),
+        ...minuteRange("13:00", "15:00")
+      ].map((time, index) => ({
+        time,
+        price: 100 + index,
+        changePercent: index
+      }))
+    };
+    const cacheStore = {
+      getForDate: vi.fn(),
+      getHistory: vi.fn().mockResolvedValue({
+        version: 2,
+        days: [{
+          tradingDate: "2026-06-05",
+          updatedAt: "2026-06-05T07:00:00.000Z",
+          quotes: [quote(1.2, "2026-06-05T07:00:00.000Z")],
+          trends: [fridayTrend]
+        }]
+      }),
+      write: vi.fn()
+    };
+    const quoteService = marketDataProvider({
+      listQuotes: vi.fn(),
+      listTrends: vi.fn()
+    });
+    const service = new WatchMarketService(
+      cacheStore,
+      quoteService,
+      () => new Date("2026-06-06T05:30:00.000Z")
+    );
+
+    await expect(service.get(["1.600519"])).resolves.toMatchObject({
+      tradingDate: "2026-06-05",
+      trends: [fridayTrend],
+      fromCache: true
+    });
+    expect(quoteService.listQuotes).not.toHaveBeenCalled();
+    expect(quoteService.listTrends).not.toHaveBeenCalled();
+  });
+
   it("refetches during trading hours when cache does not cover the current minute", async () => {
     const cacheStore = {
       getForDate: vi.fn(),
