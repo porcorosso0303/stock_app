@@ -54,6 +54,27 @@ export function averageChangePercent(
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
+export interface UpDownStockCount {
+  up: number;
+  down: number;
+}
+
+export function countUpDownStocks(
+  node: WatchTreeNode,
+  quotes: ReadonlyMap<string, StockQuote>
+): UpDownStockCount {
+  return collectStockSecids(node)
+    .map((secid) => quotes.get(secid)?.changePercent)
+    .reduce<UpDownStockCount>((count, value) => {
+      if (value === undefined || value === 0) {
+        return count;
+      }
+      return value > 0
+        ? { ...count, up: count.up + 1 }
+        : { ...count, down: count.down + 1 };
+    }, { up: 0, down: 0 });
+}
+
 export interface TrendSegment {
   kind: "positive" | "negative";
   path: string;

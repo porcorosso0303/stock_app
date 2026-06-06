@@ -4,6 +4,7 @@ import {
   appendWatchTreeChild,
   averageChangePercent,
   collectStockSecids,
+  countUpDownStocks,
   formatTrendPercentClass,
   mergeQuoteIntoTrend,
   normalizeTrendSegments,
@@ -46,6 +47,35 @@ describe("watch tree", () => {
 
     expect(collectStockSecids(root)).toEqual(["1.600519", "0.300750"]);
     expect(averageChangePercent(root, quotes)).toBe(0.5);
+    expect(countUpDownStocks(root, quotes)).toEqual({ up: 1, down: 1 });
+  });
+
+  it("counts up and down stocks across nested category leaves", () => {
+    const quotes = new Map<string, StockQuote>([
+      ["1.600519", {
+        secid: "1.600519",
+        fetchedAt: "",
+        changePercent: 2
+      }],
+      ["0.300750", {
+        secid: "0.300750",
+        fetchedAt: "",
+        changePercent: -1
+      }],
+      ["0.000001", {
+        secid: "0.000001",
+        fetchedAt: "",
+        changePercent: 0
+      }]
+    ]);
+    const tree = appendWatchTreeChild(root, "software", {
+      id: "flat",
+      type: "stock",
+      name: "平盘股",
+      secid: "0.000001"
+    });
+
+    expect(countUpDownStocks(tree, quotes)).toEqual({ up: 1, down: 1 });
   });
 
   it("adds and removes nodes without mutating the original tree", () => {

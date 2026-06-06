@@ -96,6 +96,13 @@ h2 { margin: 0; font-size: 15px; }
 .watch-node.category { background: #f8fbf5; cursor: pointer; }
 .watch-node strong { font-size: 13px; }
 .watch-node.stock strong { max-width: 86px; overflow: hidden; text-overflow: ellipsis; }
+.watch-category-content { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.watch-category-stats { display: inline-flex; flex-direction: column; align-items: flex-start; line-height: 1.05; }
+.watch-category-stats .watch-change-percent { min-width: 0; text-align: left; font-size: 11px; }
+.watch-category-up-down { font-size: 11px; font-weight: 700; }
+.watch-up-count { color: #e3483b; }
+.watch-down-count { color: #169b62; }
+.watch-count-separator { color: #789095; padding: 0 1px; }
 .watch-trend-inline { display: inline-flex; align-items: center; gap: 6px; }
 .watch-trend-sparkline { width: 96px; height: 36px; flex: 0 0 auto; overflow: visible; border-radius: 4px; background: linear-gradient(180deg, #fff 0%, #f7f9f7 100%); }
 .watch-trend-zero-axis { stroke: #7f8b8e; stroke-width: 1; stroke-dasharray: 4 4; }

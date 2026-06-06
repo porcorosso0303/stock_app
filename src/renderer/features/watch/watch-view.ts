@@ -7,6 +7,7 @@ import type {
 import {
   averageChangePercent,
   collectStockSecids,
+  countUpDownStocks,
   formatTrendPercentClass,
   renderTrendSparklineSvg
 } from "../../../shared/watch-tree";
@@ -76,7 +77,19 @@ function renderWatchNode(
 
 function renderWatchNodeContent(node: WatchTreeNode, state: WatchViewState): string {
   if (node.type === "category") {
-    return `<strong>${escapeHtml(node.name)}</strong>`;
+    const average = averageChangePercent(node, state.quotes);
+    const count = countUpDownStocks(node, state.quotes);
+    return `
+      <span class="watch-category-content">
+        <strong>${escapeHtml(node.name)}</strong>
+        <span class="watch-category-stats">
+          <span class="${formatTrendPercentClass(average)}">${escapeHtml(formatChangePercent(average))}</span>
+          <span class="watch-category-up-down">
+            <span class="watch-up-count">${count.up}</span><span class="watch-count-separator">:</span><span class="watch-down-count">${count.down}</span>
+          </span>
+        </span>
+      </span>
+    `;
   }
   const quote = state.quotes.get(node.secid);
   const trend = state.trends.get(node.secid);

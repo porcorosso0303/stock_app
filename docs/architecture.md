@@ -191,6 +191,7 @@ interface AppConfig {
 - 节点查找、替换、删除、追加。
 - 收集股票 `secid`。
 - 分类平均涨跌幅计算。
+- 分类上涨/下跌股票数统计。
 - 报价点合并到走势。
 - 走势 SVG sparkline 生成。
 - 涨跌幅样式 class 计算。
@@ -410,7 +411,7 @@ src/renderer/features/watch/watch-controller.ts
 - 维护面板拖拽平移状态。
 - 绑定盯盘相关 DOM 事件。
 - 从 bootstrap 中 hydrate 初始脑图。
-- 激活盯盘时加载行情并启动 15 秒轮询。
+- 激活盯盘时加载行情并启动 10 秒轮询。
 - 离开盯盘时停止轮询。
 - 保存脑图后重新加载行情。
 - 触发盯盘数据导出。
@@ -430,6 +431,7 @@ src/renderer/features/watch/watch-view.ts
 
 - 渲染空状态提示。
 - 渲染分类节点和股票节点 HTML。
+- 渲染分类节点平均涨跌幅、上涨/下跌股票数。
 - 渲染股票走势 sparkline 和涨跌幅数字。
 - 渲染 tooltip 文案。
 - 格式化涨跌幅。
