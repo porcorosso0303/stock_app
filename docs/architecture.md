@@ -591,7 +591,7 @@ shell-controller activates watch
   -> watch-connectors schedule
 ```
 
-同日缓存命中前，`WatchMarketService` 会校验股票和分时走势是否覆盖当前脑图股票。如果缓存中的分时价格有波动、但所有分时涨跌幅都是 `0`，说明上一轮数据缺少昨收价导致归一化失败，这类缓存会被判为不可用并重新拉取。
+同日缓存命中前，`WatchMarketService` 会校验股票和分时走势是否覆盖当前脑图股票。如果缓存中的分时价格有波动、但所有分时涨跌幅都是 `0`，说明上一轮数据缺少昨收价导致归一化失败，这类缓存会被判为不可用并重新拉取。如果缓存写入时间处于交易时段、但走势曲线已经包含写入时间之后的分时点，说明历史完整曲线被当作实时曲线处理过，也会判为不可用并重新拉取。
 
 保存脑图：
 
@@ -614,6 +614,8 @@ watchController interval every 15s
   -> cache write
   -> renderer render
 ```
+
+刷新时，`mergeQuoteIntoTrend` 只会把快照点合并到尚未包含后续分时点的曲线中。如果已有曲线包含当前快照时间之后的点，说明这是已完整返回的历史分时曲线，快照价不能插入中间，否则会产生错误的垂直毛刺。
 
 ## Renderer App Shell
 

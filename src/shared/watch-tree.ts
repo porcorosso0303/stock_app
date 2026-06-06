@@ -76,6 +76,9 @@ export function mergeQuoteIntoTrend(
   if (!isTradingMinute(time)) {
     return { ...base, fetchedAt: quote.fetchedAt };
   }
+  if (base.points.some((point) => trendMinute(point.time) > trendMinute(time))) {
+    return { ...base, fetchedAt: quote.fetchedAt };
+  }
   const nextPoint: StockTrendPoint = {
     time,
     changePercent: quote.changePercent

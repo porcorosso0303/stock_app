@@ -95,6 +95,7 @@ function coversSecids(cache: WatchMarketCache, secids: string[]): boolean {
       .filter((trend) => trend.points.every((point) => typeof point.price === "number"))
       .filter((trend) => hasOrderedTrendPoints(trend))
       .filter((trend) => hasUsableTrendChangePercents(trend))
+      .filter((trend) => hasNoFutureTrendPointsAtUpdate(trend, cache.updatedAt))
       .map((trend) => trend.secid)
   );
   return secids.every((secid) => quoteSecids.has(secid) && trendSecids.has(secid));
@@ -116,6 +117,15 @@ function hasUsableTrendChangePercents(trend: StockTrend): boolean {
   const hasMovingPrice = trend.points.some((point) => point.price !== trend.points[0].price);
   const allZeroChangePercent = trend.points.every((point) => point.changePercent === 0);
   return !hasMovingPrice || !allZeroChangePercent;
+}
+
+function hasNoFutureTrendPointsAtUpdate(trend: StockTrend, updatedAt: string): boolean {
+  const updateMinute = formatChinaMinute(updatedAt);
+  if (!isTradingMinute(updateMinute)) {
+    return true;
+  }
+  const updateTrendMinute = trendMinute(updateMinute);
+  return trend.points.every((point) => trendMinute(point.time) <= updateTrendMinute);
 }
 
 function normalizeTrendChangePercents(
@@ -183,6 +193,27 @@ function derivePreviousClose(quote: StockQuote | undefined): number | undefined 
 function trendMinute(time: string): number {
   const [hour = "0", minute = "0"] = time.split(":");
   return Number(hour) * 60 + Number(minute);
+}
+
+function isTradingMinute(time: string): boolean {
+  const minute = trendMinute(time);
+  return (minute >= trendMinute("09:30") && minute <= trendMinute("11:30")) ||
+    (minute >= trendMinute("13:00") && minute <= trendMinute("15:00"));
+}
+
+function formatChinaMinute(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value.includes("T") ? value.slice(11, 16) : value.slice(0, 5);
+  }
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Shanghai",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).formatToParts(date);
+  const byType = new Map(parts.map((part) => [part.type, part.value]));
+  return `${byType.get("hour")}:${byType.get("minute")}`;
 }
 
 function formatChinaDate(date: Date): string {

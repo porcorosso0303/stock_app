@@ -122,6 +122,25 @@ describe("watch tree", () => {
     }).points).toEqual([{ time: "15:00", price: 529.31, changePercent: 7.53 }]);
   });
 
+  it("does not inject a quote point into a completed trend that already has later points", () => {
+    const trend = {
+      secid: "1.600519",
+      fetchedAt: "2026-06-05T07:00:00.000Z",
+      points: [
+        { time: "10:49", price: 515.03, changePercent: -2.7 },
+        { time: "10:51", price: 515.2, changePercent: -2.67 },
+        { time: "15:00", price: 488, changePercent: -7.8 }
+      ]
+    };
+
+    expect(mergeQuoteIntoTrend(trend, {
+      secid: "1.600519",
+      fetchedAt: "2026-06-06T02:50:00.000Z",
+      price: 488,
+      changePercent: -7.8
+    }).points).toEqual(trend.points);
+  });
+
   it("normalizes positive and negative trend segments around the zero axis", () => {
     const segments = normalizeTrendSegments([
       { time: "09:30", changePercent: -1 },

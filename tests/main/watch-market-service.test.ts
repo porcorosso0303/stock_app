@@ -348,6 +348,63 @@ describe("WatchMarketService", () => {
     expect(result.trends[0].points[0].changePercent).toBeCloseTo(3.89);
   });
 
+  it("refetches cache written during trading hours when trends already contain later points", async () => {
+    const cacheStore = {
+      getForDate: vi.fn().mockResolvedValue({
+        tradingDate: "2026-06-06",
+        updatedAt: "2026-06-06T02:54:00.000Z",
+        quotes: [{
+          secid: "1.603986",
+          fetchedAt: "2026-06-06T02:54:00.000Z",
+          price: 488,
+          changePercent: -7.8
+        }],
+        trends: [{
+          secid: "1.603986",
+          fetchedAt: "2026-06-06T02:54:00.000Z",
+          points: [
+            { time: "10:49", price: 515.03, changePercent: -2.7 },
+            { time: "10:50", price: 488, changePercent: -7.8 },
+            { time: "15:00", price: 488, changePercent: -7.8 }
+          ]
+        }]
+      }),
+      write: vi.fn()
+    };
+    const quoteService = marketDataProvider({
+      listQuotes: vi.fn().mockResolvedValue([{
+        secid: "1.603986",
+        fetchedAt: "2026-06-06T02:55:00.000Z",
+        price: 488,
+        changePercent: -7.8
+      }]),
+      listTrends: vi.fn().mockResolvedValue([{
+        secid: "1.603986",
+        fetchedAt: "2026-06-06T02:55:00.000Z",
+        points: [
+          { time: "10:49", price: 515.03, changePercent: -2.7 },
+          { time: "10:50", price: 515.12, changePercent: -2.68 },
+          { time: "15:00", price: 488, changePercent: -7.8 }
+        ]
+      }])
+    });
+    const service = new WatchMarketService(
+      cacheStore,
+      quoteService,
+      () => new Date("2026-06-06T02:55:00.000Z")
+    );
+
+    const result = await service.get(["1.603986"]);
+
+    expect(result.fromCache).toBe(false);
+    expect(quoteService.listTrends).toHaveBeenCalledWith(["1.603986"]);
+    expect(result.trends[0].points).toContainEqual(expect.objectContaining({
+      time: "10:50",
+      price: 515.12,
+      changePercent: expect.closeTo(-2.676, 3)
+    }));
+  });
+
   it("fetches missing trends during refresh for newly added stocks", async () => {
     const cacheStore = {
       getForDate: vi.fn().mockResolvedValue({
