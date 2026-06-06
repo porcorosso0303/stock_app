@@ -148,8 +148,8 @@ function hasNoFutureTrendPointsAtUpdate(
 
 function hasRequiredCoverage(trend: StockTrend, tradingDate: string, now: Date): boolean {
   const requiredMinute = requiredCoverageMinute(tradingDate, now);
-  const latestMinute = Math.max(...trend.points.map((point) => trendMinute(point.time)));
-  return latestMinute >= trendMinute(requiredMinute);
+  const pointTimes = new Set(trend.points.map((point) => point.time));
+  return requiredTradingMinutes(requiredMinute).every((time) => pointTimes.has(time));
 }
 
 function requiredCoverageMinute(tradingDate: string, now: Date): string {
@@ -194,6 +194,36 @@ function fillUnavailableQuotesFromTrends(
       errorMessage: undefined
     };
   });
+}
+
+function requiredTradingMinutes(endTime: string): string[] {
+  const endMinute = trendMinute(endTime);
+  const minutes: string[] = [];
+  for (const time of tradingSessionMinutes("09:30", "11:30")) {
+    if (trendMinute(time) <= endMinute) {
+      minutes.push(time);
+    }
+  }
+  for (const time of tradingSessionMinutes("13:00", "15:00")) {
+    if (trendMinute(time) <= endMinute) {
+      minutes.push(time);
+    }
+  }
+  return minutes;
+}
+
+function tradingSessionMinutes(startTime: string, endTime: string): string[] {
+  const minutes: string[] = [];
+  for (let minute = trendMinute(startTime); minute <= trendMinute(endTime); minute += 1) {
+    minutes.push(formatMinute(minute));
+  }
+  return minutes;
+}
+
+function formatMinute(value: number): string {
+  const hour = Math.floor(value / 60);
+  const minute = value % 60;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
 function latestTrendPoint(trend: StockTrend | undefined): StockTrend["points"][number] | undefined {

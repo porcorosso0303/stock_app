@@ -111,6 +111,7 @@ Expected: natural-date cache writes are removed.
    - trading morning requires points through current minute.
    - lunch requires coverage through `11:30`.
    - after close requires `15:00`.
+   - gaps inside the required trading-minute range trigger refetch.
    - non-trading day uses provider trading date, not current date.
 3. Implement minimal logic.
 4. Run: `npm test -- tests/main/watch-market-service.test.ts`
@@ -162,4 +163,3 @@ Expected: architecture doc matches implemented code.
 9. Run: `npm run deploy:win-unpacked`.
 
 Expected: tests/build pass, branch pushed, desktop `win-unpacked` refreshed.
-

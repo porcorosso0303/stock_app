@@ -20,6 +20,40 @@ function trend(changePercent: number, fetchedAt = "2026-06-04T01:31:00.000Z"): S
   };
 }
 
+function trendWithTimes(times: string[], fetchedAt = "2026-06-04T01:31:00.000Z"): StockTrend {
+  return {
+    secid: "1.600519",
+    tradingDate: "2026-06-04",
+    fetchedAt,
+    points: times.map((time, index) => ({
+      time,
+      price: 100 + index,
+      changePercent: index
+    }))
+  };
+}
+
+function minuteRange(startTime: string, endTime: string): string[] {
+  const start = minuteOfDay(startTime);
+  const end = minuteOfDay(endTime);
+  const times: string[] = [];
+  for (let minute = start; minute <= end; minute += 1) {
+    times.push(formatMinute(minute));
+  }
+  return times;
+}
+
+function minuteOfDay(time: string): number {
+  const [hour = "0", minute = "0"] = time.split(":");
+  return Number(hour) * 60 + Number(minute);
+}
+
+function formatMinute(value: number): string {
+  const hour = Math.floor(value / 60);
+  const minute = value % 60;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
 function marketDataProvider(
   overrides: Partial<MarketDataProvider>
 ): MarketDataProvider {
@@ -63,7 +97,7 @@ describe("WatchMarketService", () => {
       tradingDate: "2026-06-04",
       updatedAt: "2026-06-04T01:31:00.000Z",
       quotes: [quote(1.2)],
-      trends: [trend(1.2)]
+      trends: [trendWithTimes(["09:30", "09:31"])]
     };
     const cacheStore = {
       getForDate: vi.fn().mockResolvedValue(cache),
@@ -179,6 +213,70 @@ describe("WatchMarketService", () => {
       cacheStore,
       quoteService,
       () => new Date("2026-06-04T02:00:00.000Z")
+    );
+
+    const result = await service.get(["1.600519"]);
+
+    expect(result.fromCache).toBe(false);
+    expect(quoteService.listTrends).toHaveBeenCalledWith(["1.600519"]);
+    expect(result.trends).toEqual([freshTrend]);
+  });
+
+  it("refetches during trading hours when cached trend has a missing minute", async () => {
+    const cacheStore = {
+      getForDate: vi.fn(),
+      getHistory: vi.fn().mockResolvedValue({
+        version: 2,
+        days: [{
+          tradingDate: "2026-06-04",
+          updatedAt: "2026-06-04T01:33:00.000Z",
+          quotes: [quote(1.2)],
+          trends: [trendWithTimes(["09:30", "09:31", "09:33"], "2026-06-04T01:33:00.000Z")]
+        }]
+      }),
+      write: vi.fn()
+    };
+    const freshTrend = trendWithTimes(["09:30", "09:31", "09:32", "09:33"], "2026-06-04T01:33:00.000Z");
+    const quoteService = marketDataProvider({
+      listQuotes: vi.fn().mockResolvedValue([quote(1.2, "2026-06-04T01:33:00.000Z")]),
+      listTrends: vi.fn().mockResolvedValue([freshTrend])
+    });
+    const service = new WatchMarketService(
+      cacheStore,
+      quoteService,
+      () => new Date("2026-06-04T01:33:00.000Z")
+    );
+
+    const result = await service.get(["1.600519"]);
+
+    expect(result.fromCache).toBe(false);
+    expect(quoteService.listTrends).toHaveBeenCalledWith(["1.600519"]);
+    expect(result.trends).toEqual([freshTrend]);
+  });
+
+  it("refetches outside trading hours when completed-day cache has an intraday gap", async () => {
+    const cacheStore = {
+      getForDate: vi.fn(),
+      getHistory: vi.fn().mockResolvedValue({
+        version: 2,
+        days: [{
+          tradingDate: "2026-06-04",
+          updatedAt: "2026-06-04T07:30:00.000Z",
+          quotes: [quote(1.2)],
+          trends: [trendWithTimes(["09:30", "09:31", "15:00"], "2026-06-04T07:30:00.000Z")]
+        }]
+      }),
+      write: vi.fn()
+    };
+    const freshTrend = trendWithTimes(["09:30", "09:31", "09:32", "15:00"], "2026-06-04T07:30:00.000Z");
+    const quoteService = marketDataProvider({
+      listQuotes: vi.fn().mockResolvedValue([quote(1.2, "2026-06-04T07:30:00.000Z")]),
+      listTrends: vi.fn().mockResolvedValue([freshTrend])
+    });
+    const service = new WatchMarketService(
+      cacheStore,
+      quoteService,
+      () => new Date("2026-06-04T07:30:00.000Z")
     );
 
     const result = await service.get(["1.600519"]);
@@ -539,10 +637,10 @@ describe("WatchMarketService", () => {
         tradingDate: "2026-06-04",
         updatedAt: "2026-06-04T07:00:00.000Z",
         quotes: [quote(-0.5)],
-        trends: [{
-          ...trend(-0.5, "2026-06-04T07:00:00.000Z"),
-          points: [{ time: "15:00", price: 100, changePercent: -0.5 }]
-        }]
+        trends: [trendWithTimes([
+          ...minuteRange("09:30", "11:30"),
+          ...minuteRange("13:00", "15:00")
+        ], "2026-06-04T07:00:00.000Z")]
       }),
       write: vi.fn()
     };
@@ -560,7 +658,7 @@ describe("WatchMarketService", () => {
       quotes: [quote(-0.5)],
       trends: [{
         secid: "1.600519",
-        points: [{ time: "15:00", price: 100, changePercent: -0.5 }]
+        points: expect.arrayContaining([expect.objectContaining({ time: "15:00" })])
       }],
       fromCache: true
     });
