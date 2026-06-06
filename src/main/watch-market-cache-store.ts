@@ -1,4 +1,4 @@
-import type { WatchMarketCache, WatchMarketHistoryCache } from "../shared/types";
+import type { StockTrend, WatchMarketCache, WatchMarketHistoryCache } from "../shared/types";
 import { JsonStore } from "./json-store";
 
 const MAX_TRADING_DAYS = 5;
@@ -29,7 +29,7 @@ export class WatchMarketCacheStore {
     try {
       return validateHistory(await this.store.read());
     } catch (error) {
-      if (error instanceof Error && error.message.includes("行情历史缓存格式错误")) {
+      if (error instanceof Error && error.message.includes("行情历史缓存")) {
         return { version: 2, days: [] };
       }
       throw error;
@@ -80,10 +80,28 @@ function validateCacheDay(value: unknown): WatchMarketCache {
   ) {
     throw new Error("行情历史缓存日期格式错误");
   }
+  const tradingDate = record.tradingDate;
   return {
-    tradingDate: record.tradingDate,
+    tradingDate,
     updatedAt: record.updatedAt,
     quotes: record.quotes as WatchMarketCache["quotes"],
-    trends: record.trends as WatchMarketCache["trends"]
+    trends: record.trends.map((trend) => validateTrend(trend, tradingDate))
   };
+}
+
+function validateTrend(value: unknown, tradingDate: string): StockTrend {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("行情历史缓存走势格式错误");
+  }
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.secid !== "string" ||
+    typeof record.tradingDate !== "string" ||
+    record.tradingDate !== tradingDate ||
+    typeof record.fetchedAt !== "string" ||
+    !Array.isArray(record.points)
+  ) {
+    throw new Error("行情历史缓存走势格式错误");
+  }
+  return record as unknown as StockTrend;
 }

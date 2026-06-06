@@ -159,7 +159,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
 
   function startPolling(): void {
     stopPolling();
-    quoteTimer = window.setInterval(() => void refreshQuotes(), 15_000);
+    quoteTimer = window.setInterval(() => void refreshQuotes(), 10_000);
   }
 
   function stopPolling(): void {

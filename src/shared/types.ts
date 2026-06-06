@@ -89,12 +89,14 @@ export interface StockTrendPoint {
 
 export interface StockTrend {
   secid: string;
+  tradingDate: string;
   points: StockTrendPoint[];
   fetchedAt: string;
   errorMessage?: string;
 }
 
 export interface WatchMarketData {
+  tradingDate?: string;
   quotes: StockQuote[];
   trends: StockTrend[];
   updatedAt: string;

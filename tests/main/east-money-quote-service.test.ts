@@ -37,7 +37,7 @@ describe("EastMoneyQuoteService", () => {
     }]);
   });
 
-  it("maps intraday trend prices without treating volume as change percent", async () => {
+  it("returns an unavailable trend when previous close is missing", async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -54,13 +54,12 @@ describe("EastMoneyQuoteService", () => {
       () => new Date("2026-06-04T09:32:00.000Z")
     );
 
-    await expect(service.listTrends(["1.600519"])).resolves.toEqual([{
+    await expect(service.listTrends(["1.600519"])).resolves.toMatchObject([{
       secid: "1.600519",
       fetchedAt: "2026-06-04T09:32:00.000Z",
-      points: [
-        { time: "14:58", price: 529.2, changePercent: 0 },
-        { time: "14:59", price: 529.31, changePercent: 0 }
-      ]
+      tradingDate: "2026-06-04",
+      points: [],
+      errorMessage: "分时走势缺少昨收价"
     }]);
     expect(fetchImpl).toHaveBeenCalledOnce();
   });
@@ -87,6 +86,7 @@ describe("EastMoneyQuoteService", () => {
 
     const requestUrl = new URL(fetchImpl.mock.calls[0][0]);
     expect(requestUrl.searchParams.get("fields1")).toBe("f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13");
+    expect(trend.tradingDate).toBe("2026-06-04");
     expect(trend.points[0]).toMatchObject({
       time: "09:30",
       price: 487.05,

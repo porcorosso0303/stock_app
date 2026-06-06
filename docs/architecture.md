@@ -156,6 +156,20 @@ Preload 不负责：
 - `WatchDataTransferResult`
 - `StockSearchResult`
 
+`StockTrend` 是 provider 返回给上层的标准化分时结构，必须包含真实交易日标签：
+
+```ts
+interface StockTrend {
+  secid: string;
+  tradingDate: string;
+  fetchedAt: string;
+  points: StockTrendPoint[];
+  errorMessage?: string;
+}
+```
+
+`tradingDate` 来自行情数据源返回的实际分时日期，不使用程序打开当天的自然日期代替。
+
 `AppConfig` 当前字段：
 
 ```ts
@@ -553,6 +567,7 @@ interface MarketDataProvider {
 
 ```text
 src/main/modules/watch/market-data/east-money-provider.ts
+src/main/modules/watch/market-data/data-calc-helper.ts
 src/main/east-money-quote-service.ts
 ```
 
@@ -563,6 +578,8 @@ src/main/east-money-quote-service.ts
 - 当日分时走势。分时请求必须包含完整 `fields1=f1...f13`，确保返回中带有 `prePrice` 昨收价；适配器用每个分时价格相对昨收价计算 `StockTrendPoint.changePercent`。
 - 东方财富返回格式解析。
 - 失败时返回可展示的 error message。
+
+`data-calc-helper.ts` 放置 provider 无关的通用行情计算，例如 `price` 相对 `previousClose` 的涨跌幅计算。provider 负责解析各自源数据字段并调用 helper；`WatchMarketService` 不用 quote 反推昨收价，也不补算分时涨跌幅。
 
 未来新增 Tushare、AkShare + 东方财富或券商接口时，应新增 `MarketDataProvider` 实现，不改 renderer 盯盘模块，不改 `WatchMarketService` 的缓存合并主流程。
 
@@ -585,13 +602,15 @@ shell-controller activates watch
   -> watchController.activate()
   -> getWatchMarketData(secids)
   -> WatchMarketService.get()
-  -> same-day cache or MarketDataProvider
+  -> complete cache or MarketDataProvider
   -> watchController updates quotes/trends
   -> watch-view render
   -> watch-connectors schedule
 ```
 
-同日缓存命中前，`WatchMarketService` 会校验股票和分时走势是否覆盖当前脑图股票。如果缓存中的分时价格有波动、但所有分时涨跌幅都是 `0`，说明上一轮数据缺少昨收价导致归一化失败，这类缓存会被判为不可用并重新拉取。如果缓存写入时间处于交易时段、但走势曲线已经包含写入时间之后的分时点，说明历史完整曲线被当作实时曲线处理过，也会判为不可用并重新拉取。
+缓存命中前，`WatchMarketService` 会校验股票和分时走势是否覆盖当前脑图股票。交易时段内，缓存必须覆盖到当前交易分钟；午休时段必须覆盖到 `11:30`；非交易时段必须覆盖到 `15:00`。周末或节假日不使用当前自然日建缓存，使用 provider 返回的最近有效 `tradingDate`。
+
+如果缓存中的分时价格有波动、但所有分时涨跌幅都是 `0`，说明 provider 标准化失败，这类缓存会被判为不可用并重新拉取。如果缓存写入时间处于同一交易日交易时段、但走势曲线已经包含写入时间之后的分时点，说明历史完整曲线被当作实时曲线处理过，也会判为不可用并重新拉取。
 
 保存脑图：
 
@@ -606,11 +625,11 @@ watchController saveNode/deleteNode
 刷新行情：
 
 ```text
-watchController interval every 15s
+watchController interval every 10s
   -> refreshWatchMarketData(secids)
   -> WatchMarketService.refresh()
   -> MarketDataProvider.listQuotes()
-  -> missing trends loaded if needed
+  -> MarketDataProvider.listTrends() during trading hours
   -> cache write
   -> renderer render
 ```
@@ -728,14 +747,14 @@ interface WatchMarketHistoryCache {
 }
 ```
 
-`days` 按 `tradingDate` 倒序保存，最多 5 个不同交易日。每个 `WatchMarketCache` 保存一个交易日的：
+`days` 按真实 `tradingDate` 倒序保存，最多 5 个不同交易日。每个 `WatchMarketCache` 保存一个交易日的：
 
 - `tradingDate`
 - `updatedAt`
 - `quotes`
 - `trends`
 
-旧测试数据不作为长期兼容目标。读取到非 `version: 2` 的缓存时，会按空历史处理；下一次成功刷新会写入新格式。
+每条 `StockTrend.tradingDate` 必须与所在 `WatchMarketCache.tradingDate` 一致。旧测试数据不作为长期兼容目标。读取到非 `version: 2` 或 trend 缺少交易日标签的缓存时，会按空历史处理；下一次成功刷新会写入新格式。
 
 ### 盯盘导出数据包
 

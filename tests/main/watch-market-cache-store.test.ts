@@ -19,6 +19,7 @@ describe("WatchMarketCacheStore", () => {
         }],
         trends: [{
           secid: "1.600519",
+          tradingDate: "2026-06-04",
           fetchedAt: "2026-06-04T09:31:00.000Z",
           points: [{ time: "09:31", changePercent: 1.2 }]
         }]
@@ -50,6 +51,7 @@ describe("WatchMarketCacheStore", () => {
           }],
           trends: [{
             secid: "1.600519",
+            tradingDate: day,
             fetchedAt: `${day}T15:00:00.000Z`,
             points: [{ time: "15:00", changePercent: 1 }]
           }]

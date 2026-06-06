@@ -98,6 +98,7 @@ function day(tradingDate: string) {
     }],
     trends: [{
       secid: "1.603986",
+      tradingDate,
       fetchedAt: `${tradingDate}T15:00:00.000Z`,
       points: [{ time: "15:00", price: 529.31, changePercent: 7.53 }]
     }]

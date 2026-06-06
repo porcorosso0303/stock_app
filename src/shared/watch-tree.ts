@@ -65,6 +65,7 @@ export function mergeQuoteIntoTrend(
 ): StockTrend {
   const base: StockTrend = trend ?? {
     secid: quote.secid,
+    tradingDate: formatTrendPointDate(quote.fetchedAt),
     fetchedAt: quote.fetchedAt,
     points: []
   };
@@ -92,6 +93,7 @@ export function mergeQuoteIntoTrend(
   ].sort((left, right) => trendMinute(left.time) - trendMinute(right.time));
   return {
     secid: quote.secid,
+    tradingDate: base.tradingDate,
     fetchedAt: quote.fetchedAt,
     points
   };
@@ -296,6 +298,21 @@ function formatTrendPointTime(value: string): string {
   }).formatToParts(date);
   const byType = new Map(parts.map((part) => [part.type, part.value]));
   return `${byType.get("hour")}:${byType.get("minute")}`;
+}
+
+function formatTrendPointDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value.slice(0, 10);
+  }
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+  const byType = new Map(parts.map((part) => [part.type, part.value]));
+  return `${byType.get("year")}-${byType.get("month")}-${byType.get("day")}`;
 }
 
 function isTradingMinute(time: string): boolean {

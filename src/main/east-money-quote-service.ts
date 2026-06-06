@@ -1,5 +1,10 @@
 import type { StockQuote, StockSearchResult, StockTrend } from "../shared/types";
 import { validateSecid } from "../shared/watch-tree";
+import {
+  calculateChangePercent,
+  normalizeIntradayTrendPoints,
+  type RawIntradayTrendPoint
+} from "./modules/watch/market-data/data-calc-helper";
 
 interface FetchResponseLike {
   ok: boolean;
@@ -81,14 +86,18 @@ export class EastMoneyQuoteService {
       if (!response.ok) {
         throw new Error("分时走势请求失败");
       }
+      const trendData = readTrendData(await response.json(), formatChinaDate(this.now()));
       return {
         secid,
         fetchedAt,
-        points: readTrendPoints(await response.json())
+        tradingDate: trendData.tradingDate,
+        points: trendData.points,
+        errorMessage: trendData.errorMessage
       };
     } catch (error) {
       return {
         secid,
+        tradingDate: formatChinaDate(this.now()),
         fetchedAt,
         points: [],
         errorMessage: error instanceof Error ? error.message : String(error)
@@ -148,7 +157,13 @@ function requireQuoteData(value: unknown): Record<string, unknown> {
   return data as Record<string, unknown>;
 }
 
-function readTrendPoints(value: unknown): StockTrend["points"] {
+interface TrendData {
+  tradingDate: string;
+  points: StockTrend["points"];
+  errorMessage?: string;
+}
+
+function readTrendData(value: unknown, fallbackTradingDate: string): TrendData {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("分时走势返回格式错误");
   }
@@ -160,24 +175,30 @@ function readTrendPoints(value: unknown): StockTrend["points"] {
   if (!Array.isArray(trends)) {
     throw new Error("分时走势返回格式错误");
   }
-  const previousClose = readTrendPrice((data as Record<string, unknown>).prePrice);
-  return trends.flatMap((item) => {
+  const rawPoints = trends.flatMap((item): RawIntradayTrendPoint[] => {
     if (typeof item !== "string") {
       return [];
     }
     const fields = item.split(",");
     const time = readTrendTime(fields[0]);
     const price = readTrendPrice(fields[2]);
-    return time && price !== undefined
-      ? [{
-          time,
-          price,
-          changePercent: previousClose === undefined
-            ? 0
-            : ((price - previousClose) / previousClose) * 100
-        }]
+    return time
+      ? [{ time, price }]
       : [];
   });
+  const tradingDate = readTrendTradingDate(trends) ?? fallbackTradingDate;
+  const previousClose = readTrendPrice((data as Record<string, unknown>).prePrice);
+  if (previousClose === undefined) {
+    return {
+      tradingDate,
+      points: [],
+      errorMessage: "分时走势缺少昨收价"
+    };
+  }
+  return {
+    tradingDate,
+    points: normalizeIntradayTrendPoints(rawPoints, previousClose)
+  };
 }
 
 function readTrendTime(value: string | undefined): string | undefined {
@@ -186,6 +207,19 @@ function readTrendTime(value: string | undefined): string | undefined {
   }
   const match = /\b(\d{2}:\d{2})\b/.exec(value);
   return match?.[1];
+}
+
+function readTrendTradingDate(values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value !== "string") {
+      continue;
+    }
+    const match = /^(\d{4}-\d{2}-\d{2})\s+\d{2}:\d{2}/.exec(value);
+    if (match) {
+      return match[1];
+    }
+  }
+  return undefined;
 }
 
 function readTrendPrice(value: unknown): number | undefined {
@@ -203,9 +237,20 @@ function readQuoteChangePercent(
   }
   const previousClose = readScaledNumber(data.f60);
   if (price !== undefined && previousClose !== undefined) {
-    return ((price - previousClose) / previousClose) * 100;
+    return calculateChangePercent(price, previousClose);
   }
   return rawChangePercent;
+}
+
+function formatChinaDate(date: Date): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+  const byType = new Map(parts.map((part) => [part.type, part.value]));
+  return `${byType.get("year")}-${byType.get("month")}-${byType.get("day")}`;
 }
 
 function readString(value: unknown): string | undefined {

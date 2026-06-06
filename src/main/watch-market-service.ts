@@ -2,13 +2,14 @@ import type {
   StockQuote,
   StockTrend,
   WatchMarketCache,
+  WatchMarketHistoryCache,
   WatchMarketData
 } from "../shared/types";
-import { mergeQuoteIntoTrend } from "../shared/watch-tree";
 import type { MarketDataProvider } from "./modules/watch/market-data/market-data-provider";
 
 interface WatchMarketCacheStoreLike {
   getForDate(date: string): Promise<WatchMarketCache | undefined>;
+  getHistory?(): Promise<WatchMarketHistoryCache>;
   write(cache: WatchMarketCache): Promise<void>;
 }
 
@@ -20,10 +21,12 @@ export class WatchMarketService {
   ) {}
 
   async get(secids: string[]): Promise<WatchMarketData> {
-    const tradingDate = formatChinaDate(this.now());
-    const cache = await this.cacheStore.getForDate(tradingDate);
-    if (cache && coversSecids(cache, secids)) {
+    const now = this.now();
+    const currentDate = formatChinaDate(now);
+    const cache = await this.findUsableCache(secids, now);
+    if (cache) {
       return {
+        tradingDate: cache.tradingDate,
         quotes: cache.quotes,
         trends: cache.trends,
         updatedAt: cache.updatedAt,
@@ -31,74 +34,82 @@ export class WatchMarketService {
       };
     }
 
+    return await this.fetchFresh(secids, currentDate);
+  }
+
+  async refresh(secids: string[]): Promise<WatchMarketData> {
+    const now = this.now();
+    if (isTradingMinute(formatChinaMinute(now.toISOString()))) {
+      return await this.fetchFresh(secids, formatChinaDate(now));
+    }
+    return await this.get(secids);
+  }
+
+  private async fetchFresh(secids: string[], fallbackTradingDate: string): Promise<WatchMarketData> {
     const [rawQuotes, trends] = await Promise.all([
       this.marketDataProvider.listQuotes(secids),
       this.marketDataProvider.listTrends(secids)
     ]);
-    const normalizedTrends = normalizeTrendChangePercents(trends, rawQuotes);
-    const quotes = fillUnavailableQuotesFromTrends(rawQuotes, normalizedTrends);
+    const tradingDate = selectTradingDate(trends) ?? fallbackTradingDate;
+    const quotes = fillUnavailableQuotesFromTrends(rawQuotes, trends);
     const updatedAt = this.now().toISOString();
     await this.cacheStore.write({
       tradingDate,
       quotes,
-      trends: normalizedTrends,
+      trends,
       updatedAt
     });
     return {
+      tradingDate,
       quotes,
-      trends: normalizedTrends,
+      trends,
       updatedAt,
       fromCache: false
     };
   }
 
-  async refresh(secids: string[]): Promise<WatchMarketData> {
-    const tradingDate = formatChinaDate(this.now());
-    const cache = await this.cacheStore.getForDate(tradingDate);
-    if (!cache) {
-      return await this.get(secids);
-    }
-
-    const rawQuotes = await this.marketDataProvider.listQuotes(secids);
-    const trendsBySecid = new Map(cache.trends.map((trend) => [trend.secid, trend]));
-    const missingTrendSecids = rawQuotes
-      .map((quote) => quote.secid)
-      .filter((secid) => !trendsBySecid.has(secid));
-    if (missingTrendSecids.length > 0) {
-      const missingTrends = await this.marketDataProvider.listTrends(missingTrendSecids);
-      for (const trend of normalizeTrendChangePercents(missingTrends, rawQuotes)) {
-        trendsBySecid.set(trend.secid, trend);
-      }
-    }
-    const quotes = fillUnavailableQuotesFromTrends(rawQuotes, [...trendsBySecid.values()]);
-    const trends = quotes.map((quote) => mergeQuoteIntoTrend(trendsBySecid.get(quote.secid), quote));
-    const updatedAt = this.now().toISOString();
-    await this.cacheStore.write({
-      tradingDate,
-      quotes,
-      trends,
-      updatedAt
-    });
-    return {
-      quotes,
-      trends,
-      updatedAt,
-      fromCache: false
-    };
+  private async findUsableCache(
+    secids: string[],
+    now: Date
+  ): Promise<WatchMarketCache | undefined> {
+    const currentDate = formatChinaDate(now);
+    const history = this.cacheStore.getHistory
+      ? await this.cacheStore.getHistory()
+      : { version: 2 as const, days: [] };
+    const candidates = history.days.length > 0
+      ? history.days
+      : [await this.cacheStore.getForDate(currentDate)].filter((cache): cache is WatchMarketCache => !!cache);
+    return candidates.find((cache) => shouldConsiderCache(cache, now) && coversSecids(cache, secids, now));
   }
 }
 
-function coversSecids(cache: WatchMarketCache, secids: string[]): boolean {
+function selectTradingDate(trends: StockTrend[]): string | undefined {
+  return trends.find((trend) => !trend.errorMessage && trend.tradingDate)?.tradingDate ??
+    trends.find((trend) => trend.tradingDate)?.tradingDate;
+}
+
+function coversSecids(cache: WatchMarketCache, secids: string[], now: Date): boolean {
   const quoteSecids = new Set(cache.quotes.map((quote) => quote.secid));
   const trendSecids = new Set(
     cache.trends
+      .filter((trend) => trend.tradingDate === cache.tradingDate)
       .filter((trend) => trend.points.every((point) => typeof point.price === "number"))
       .filter((trend) => hasOrderedTrendPoints(trend))
       .filter((trend) => hasUsableTrendChangePercents(trend))
-      .filter((trend) => hasNoFutureTrendPointsAtUpdate(trend, cache.updatedAt))
+      .filter((trend) => hasNoFutureTrendPointsAtUpdate(trend, cache.tradingDate, cache.updatedAt))
+      .filter((trend) => hasRequiredCoverage(trend, cache.tradingDate, now))
       .map((trend) => trend.secid)
   );
   return secids.every((secid) => quoteSecids.has(secid) && trendSecids.has(secid));
+}
+
+function shouldConsiderCache(cache: WatchMarketCache, now: Date): boolean {
+  const currentDate = formatChinaDate(now);
+  if (cache.tradingDate === currentDate) {
+    return true;
+  }
+  return !isTradingMinute(formatChinaMinute(now.toISOString())) &&
+    formatChinaDate(new Date(cache.updatedAt)) === currentDate;
 }
 
 function hasOrderedTrendPoints(trend: StockTrend): boolean {
@@ -119,7 +130,14 @@ function hasUsableTrendChangePercents(trend: StockTrend): boolean {
   return !hasMovingPrice || !allZeroChangePercent;
 }
 
-function hasNoFutureTrendPointsAtUpdate(trend: StockTrend, updatedAt: string): boolean {
+function hasNoFutureTrendPointsAtUpdate(
+  trend: StockTrend,
+  tradingDate: string,
+  updatedAt: string
+): boolean {
+  if (tradingDate !== formatChinaDate(new Date(updatedAt))) {
+    return true;
+  }
   const updateMinute = formatChinaMinute(updatedAt);
   if (!isTradingMinute(updateMinute)) {
     return true;
@@ -128,27 +146,31 @@ function hasNoFutureTrendPointsAtUpdate(trend: StockTrend, updatedAt: string): b
   return trend.points.every((point) => trendMinute(point.time) <= updateTrendMinute);
 }
 
-function normalizeTrendChangePercents(
-  trends: StockTrend[],
-  quotes: StockQuote[]
-): StockTrend[] {
-  const quotesBySecid = new Map(quotes.map((quote) => [quote.secid, quote]));
-  return trends.map((trend) => {
-    const quote = quotesBySecid.get(trend.secid);
-    const previousClose = derivePreviousClose(quote);
-    if (previousClose === undefined) {
-      return trend;
-    }
-    return {
-      ...trend,
-      points: trend.points.map((point) => ({
-        ...point,
-        changePercent: point.price === undefined
-          ? point.changePercent
-          : ((point.price - previousClose) / previousClose) * 100
-      }))
-    };
-  });
+function hasRequiredCoverage(trend: StockTrend, tradingDate: string, now: Date): boolean {
+  const requiredMinute = requiredCoverageMinute(tradingDate, now);
+  const latestMinute = Math.max(...trend.points.map((point) => trendMinute(point.time)));
+  return latestMinute >= trendMinute(requiredMinute);
+}
+
+function requiredCoverageMinute(tradingDate: string, now: Date): string {
+  const currentDate = formatChinaDate(now);
+  if (tradingDate !== currentDate) {
+    return "15:00";
+  }
+  const currentMinute = formatChinaMinute(now.toISOString());
+  if (currentMinute < "09:30") {
+    return "15:00";
+  }
+  if (currentMinute <= "11:30") {
+    return currentMinute;
+  }
+  if (currentMinute < "13:00") {
+    return "11:30";
+  }
+  if (currentMinute <= "15:00") {
+    return currentMinute;
+  }
+  return "15:00";
 }
 
 function fillUnavailableQuotesFromTrends(
@@ -176,18 +198,6 @@ function fillUnavailableQuotesFromTrends(
 
 function latestTrendPoint(trend: StockTrend | undefined): StockTrend["points"][number] | undefined {
   return trend?.points.at(-1);
-}
-
-function derivePreviousClose(quote: StockQuote | undefined): number | undefined {
-  if (
-    quote?.price === undefined ||
-    quote.changePercent === undefined ||
-    quote.changePercent <= -100
-  ) {
-    return undefined;
-  }
-  const previousClose = quote.price / (1 + quote.changePercent / 100);
-  return Number.isFinite(previousClose) && previousClose > 0 ? previousClose : undefined;
 }
 
 function trendMinute(time: string): number {
