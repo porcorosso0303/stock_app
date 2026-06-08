@@ -3,6 +3,7 @@ import type {
   StockQuote,
   StockSearchResult,
   StockTrend,
+  WatchMarketCache,
   WatchTreeConfig,
   WatchTreeNode
 } from "../../../shared/types";
@@ -58,6 +59,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   let quoteTimer: number | undefined;
   let quotes = new Map<string, StockQuote>();
   let trends = new Map<string, StockTrend>();
+  let marketHistory: WatchMarketCache[] = [];
   let dialogAction: WatchDialogAction | undefined;
   let selectedStock: StockSearchResult | undefined;
   let pan: WatchPanState | undefined;
@@ -69,6 +71,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       config,
       quotes,
       trends,
+      marketHistory,
       collapsedNodes
     }, connectors.schedule);
   }
@@ -133,6 +136,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     if (secids.length === 0) {
       quotes = new Map();
       trends = new Map();
+      marketHistory = [];
       elements.watchStatus.textContent = "尚未配置股票叶子节点";
       render();
       return;
@@ -142,6 +146,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       const marketData = await load(secids);
       quotes = new Map(marketData.quotes.map((quote) => [quote.secid, quote]));
       trends = new Map(marketData.trends.map((trend) => [trend.secid, trend]));
+      marketHistory = marketData.history ?? currentMarketDataAsHistory(marketData);
       const marketQuotes = marketData.quotes;
       const unavailable = marketQuotes.filter((quote) => quote.errorMessage).length;
       const timeText = marketData.updatedAt
@@ -476,6 +481,20 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     },
     deactivate: () => stopPolling()
   };
+}
+
+function currentMarketDataAsHistory(
+  marketData: Awaited<ReturnType<StockResearchApi["getWatchMarketData"]>>
+): WatchMarketCache[] {
+  if (!marketData.tradingDate) {
+    return [];
+  }
+  return [{
+    tradingDate: marketData.tradingDate,
+    updatedAt: marketData.updatedAt,
+    quotes: marketData.quotes,
+    trends: marketData.trends
+  }];
 }
 
 function formatDate(value: string): string {

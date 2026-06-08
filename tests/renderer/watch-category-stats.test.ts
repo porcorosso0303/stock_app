@@ -9,8 +9,13 @@ describe("watch category stats", () => {
     expect(view).toContain("countUpDownStocks");
     expect(view).toContain("watch-category-stats");
     expect(view).toContain("watch-category-up-down");
+    expect(view).toContain("categoryStrengthHistory");
+    expect(view).toContain("watch-sector-strength-row");
+    expect(view).toContain("watch-sector-strength-index");
+    expect(view).toContain("formatStrengthScore(strength.score)");
     expect(view).toContain("formatChangePercent(average)");
     expect(css).toContain(".watch-category-stats");
+    expect(css).toContain(".watch-sector-strength-index");
     expect(css).toContain(".watch-up-count");
     expect(css).toContain(".watch-down-count");
   });

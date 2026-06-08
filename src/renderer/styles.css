@@ -100,6 +100,9 @@ h2 { margin: 0; font-size: 15px; }
 .watch-category-stats { display: inline-flex; flex-direction: column; align-items: flex-start; line-height: 1.05; }
 .watch-category-stats .watch-change-percent { min-width: 0; text-align: left; font-size: 11px; }
 .watch-category-up-down { font-size: 11px; font-weight: 700; }
+.watch-sector-strength-row { display: inline-flex; align-items: center; gap: 4px; }
+.watch-sector-strength-row .watch-trend-sparkline { width: 60px; height: 20px; }
+.watch-sector-strength-index { font-size: 11px; font-weight: 700; }
 .watch-up-count { color: #e3483b; }
 .watch-down-count { color: #169b62; }
 .watch-count-separator { color: #789095; padding: 0 1px; }

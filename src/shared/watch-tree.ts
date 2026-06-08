@@ -2,10 +2,15 @@ import type {
   StockQuote,
   StockTrend,
   StockTrendPoint,
+  WatchMarketCache,
   WatchTreeCategoryNode,
   WatchTreeConfig,
   WatchTreeNode
 } from "./types";
+import {
+  calculateSectorStrengthIndex,
+  type SectorStrengthIndex
+} from "./data-calc-helper";
 
 const SECID_PATTERN = /^[01]\.\d{6}$/;
 
@@ -73,6 +78,39 @@ export function countUpDownStocks(
         ? { ...count, up: count.up + 1 }
         : { ...count, down: count.down + 1 };
     }, { up: 0, down: 0 });
+}
+
+export function categoryStrengthIndex(
+  node: WatchTreeNode,
+  quotes: ReadonlyMap<string, StockQuote>
+): SectorStrengthIndex {
+  return calculateSectorStrengthIndex(
+    collectStockSecids(node).map((secid) => quotes.get(secid) ?? { secid })
+  );
+}
+
+export interface CategoryStrengthHistoryPoint {
+  tradingDate: string;
+  score: number;
+  index: SectorStrengthIndex;
+}
+
+export function categoryStrengthHistory(
+  node: WatchTreeNode,
+  history: WatchMarketCache[]
+): CategoryStrengthHistoryPoint[] {
+  const secids = collectStockSecids(node);
+  return [...history]
+    .sort((left, right) => left.tradingDate.localeCompare(right.tradingDate))
+    .flatMap((day) => {
+      const quotesBySecid = new Map(day.quotes.map((quote) => [quote.secid, quote]));
+      const index = calculateSectorStrengthIndex(
+        secids.map((secid) => quotesBySecid.get(secid) ?? { secid })
+      );
+      return index.score === undefined
+        ? []
+        : [{ tradingDate: day.tradingDate, score: index.score, index }];
+    });
 }
 
 export interface TrendSegment {

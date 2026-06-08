@@ -3,6 +3,8 @@ import type { StockQuote, WatchTreeCategoryNode } from "../../src/shared/types";
 import {
   appendWatchTreeChild,
   averageChangePercent,
+  categoryStrengthHistory,
+  categoryStrengthIndex,
   collectStockSecids,
   countUpDownStocks,
   formatTrendPercentClass,
@@ -76,6 +78,51 @@ describe("watch tree", () => {
     });
 
     expect(countUpDownStocks(tree, quotes)).toEqual({ up: 1, down: 1 });
+  });
+
+  it("calculates the category strength index across nested category leaves", () => {
+    const quotes = new Map<string, StockQuote>([
+      ["1.600519", {
+        secid: "1.600519",
+        fetchedAt: "",
+        changePercent: 10
+      }],
+      ["0.300750", {
+        secid: "0.300750",
+        fetchedAt: "",
+        changePercent: 4
+      }]
+    ]);
+
+    const result = categoryStrengthIndex(root, quotes);
+
+    expect(result.total).toBe(2);
+    expect(result.limitUp).toBe(1);
+    expect(result.score).toBe(100);
+  });
+
+  it("builds category strength history points from market cache days", () => {
+    const history = categoryStrengthHistory(root, [{
+      tradingDate: "2026-06-06",
+      updatedAt: "",
+      quotes: [
+        { secid: "1.600519", fetchedAt: "", changePercent: -10 },
+        { secid: "0.300750", fetchedAt: "", changePercent: -4 }
+      ],
+      trends: []
+    }, {
+      tradingDate: "2026-06-05",
+      updatedAt: "",
+      quotes: [
+        { secid: "1.600519", fetchedAt: "", changePercent: 10 },
+        { secid: "0.300750", fetchedAt: "", changePercent: 4 }
+      ],
+      trends: []
+    }]);
+
+    expect(history.map((point) => point.tradingDate)).toEqual(["2026-06-05", "2026-06-06"]);
+    expect(history[0].score).toBe(100);
+    expect(history[1].score).toBe(-100);
   });
 
   it("adds and removes nodes without mutating the original tree", () => {

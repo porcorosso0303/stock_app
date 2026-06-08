@@ -1,11 +1,14 @@
 import type {
   StockQuote,
   StockTrend,
+  WatchMarketCache,
   WatchTreeConfig,
   WatchTreeNode
 } from "../../../shared/types";
 import {
   averageChangePercent,
+  categoryStrengthHistory,
+  categoryStrengthIndex,
   collectStockSecids,
   countUpDownStocks,
   formatTrendPercentClass,
@@ -16,6 +19,7 @@ export interface WatchViewState {
   config: WatchTreeConfig;
   quotes: Map<string, StockQuote>;
   trends: Map<string, StockTrend>;
+  marketHistory: WatchMarketCache[];
   collapsedNodes: Set<string>;
 }
 
@@ -79,6 +83,8 @@ function renderWatchNodeContent(node: WatchTreeNode, state: WatchViewState): str
   if (node.type === "category") {
     const average = averageChangePercent(node, state.quotes);
     const count = countUpDownStocks(node, state.quotes);
+    const strength = categoryStrengthIndex(node, state.quotes);
+    const strengthHistory = categoryStrengthHistory(node, state.marketHistory);
     return `
       <span class="watch-category-content">
         <strong>${escapeHtml(node.name)}</strong>
@@ -86,6 +92,13 @@ function renderWatchNodeContent(node: WatchTreeNode, state: WatchViewState): str
           <span class="${formatTrendPercentClass(average)}">${escapeHtml(formatChangePercent(average))}</span>
           <span class="watch-category-up-down">
             <span class="watch-up-count">${count.up}</span><span class="watch-count-separator">:</span><span class="watch-down-count">${count.down}</span>
+          </span>
+          <span class="watch-sector-strength-row">
+            ${renderTrendSparklineSvg(strengthHistory.map((point) => ({
+              time: point.tradingDate,
+              changePercent: point.score
+            })), strength.score, 72, 24)}
+            <span class="${formatTrendPercentClass(strength.score)} watch-sector-strength-index">强度 ${escapeHtml(formatStrengthScore(strength.score))}</span>
           </span>
         </span>
       </span>
@@ -114,10 +127,11 @@ function renderWatchNodeTooltip(
   }
   const leafCount = collectStockSecids(node).length;
   const average = averageChangePercent(node, state.quotes);
+  const strength = categoryStrengthIndex(node, state.quotes);
   const action = node.children.length > 0
     ? `左键${isCollapsed ? "展开" : "回缩"}，右键配置`
     : "右键添加子节点";
-  return `${node.name}\n${leafCount} 只股票\n平均涨跌幅：${formatChangePercent(average)}\n${action}`;
+  return `${node.name}\n${leafCount} 只股票\n平均涨跌幅：${formatChangePercent(average)}\n板块强度指数：${formatStrengthScore(strength.score)}\n${action}`;
 }
 
 export function formatChangePercent(value: number | undefined): string {
@@ -125,6 +139,13 @@ export function formatChangePercent(value: number | undefined): string {
     return "暂无行情";
   }
   return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+
+export function formatStrengthScore(value: number | undefined): string {
+  if (value === undefined) {
+    return "暂无指数";
+  }
+  return `${value > 0 ? "+" : ""}${value.toFixed(1)}`;
 }
 
 export function escapeHtml(value: string): string {

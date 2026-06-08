@@ -192,11 +192,37 @@ interface AppConfig {
 - 收集股票 `secid`。
 - 分类平均涨跌幅计算。
 - 分类上涨/下跌股票数统计。
+- 分类板块强度指数计算入口。
+- 最近 5 个交易日分类强度曲线点生成。
 - 报价点合并到走势。
 - 走势 SVG sparkline 生成。
 - 涨跌幅样式 class 计算。
 
 这些函数不依赖 DOM 或 Electron，可在 main、renderer、测试中复用。
+
+`src/shared/data-calc-helper.ts` 放置 provider 无关的通用行情计算：
+
+- `calculateChangePercent`: 用价格和昨收价计算涨跌幅。
+- `normalizeIntradayTrendPoints`: 把 provider 解析出的分时价格标准化为 `StockTrendPoint`。
+- `calculateSectorStrengthIndex`: 板块强度指数算法。
+
+板块强度指数算法用于分类节点，输入是该分类下所有股票的标准化 quote。算法分两层：
+
+```text
+基础强弱分 = 0.60 * 涨跌幅强度分 + 0.40 * 涨跌家数宽度分
+板块强度指数 = clamp(基础强弱分 + 涨跌停事件冲击分, -100, +100)
+```
+
+其中：
+
+```text
+涨跌幅强度分 = 100 * average(clamp(changePercent / limitRate, -1, 1))
+涨跌家数宽度分 = 100 * (上涨家数 - 下跌家数) / 有行情股票数
+涨跌停事件冲击分 = clamp(12 * sign(净涨跌停数) + 80 * 净涨跌停数 / 有行情股票数, -35, +35)
+净涨跌停数 = 涨停家数 - 跌停家数
+```
+
+涨跌停事件不参与固定权重平均，而是作为额外冲击项。这样没有涨停或跌停时，指数仍使用完整基础强弱区间；出现涨停或跌停时，指数会产生明显增强或削弱。`limitRate` 可由 provider 标准化提供；缺失时 helper 按 `secid` 推断常见 A 股涨跌幅限制：主板 10%，创业板/科创板 20%，北交所代码段 30%。未来 provider 如果能返回更精确的涨跌停状态，应写入 `StockQuote.limitRate` 和 `StockQuote.limitStatus`，上层算法无需改动。
 
 ### Markdown 渲染
 
@@ -569,7 +595,7 @@ interface MarketDataProvider {
 
 ```text
 src/main/modules/watch/market-data/east-money-provider.ts
-src/main/modules/watch/market-data/data-calc-helper.ts
+src/shared/data-calc-helper.ts
 src/main/east-money-quote-service.ts
 ```
 
@@ -581,7 +607,7 @@ src/main/east-money-quote-service.ts
 - 东方财富返回格式解析。
 - 失败时返回可展示的 error message。
 
-`data-calc-helper.ts` 放置 provider 无关的通用行情计算，例如 `price` 相对 `previousClose` 的涨跌幅计算。provider 负责解析各自源数据字段并调用 helper；`WatchMarketService` 不用 quote 反推昨收价，也不补算分时涨跌幅。
+`data-calc-helper.ts` 的主实现位于 `src/shared/`，main 侧 `src/main/modules/watch/market-data/data-calc-helper.ts` 只保留兼容导出入口。provider 负责解析各自源数据字段并调用 helper；`WatchMarketService` 不用 quote 反推昨收价，也不补算分时涨跌幅。
 
 未来新增 Tushare、AkShare + 东方财富或券商接口时，应新增 `MarketDataProvider` 实现，不改 renderer 盯盘模块，不改 `WatchMarketService` 的缓存合并主流程。
 
@@ -605,14 +631,17 @@ shell-controller activates watch
   -> getWatchMarketData(secids)
   -> WatchMarketService.get()
   -> complete cache or MarketDataProvider
-  -> watchController updates quotes/trends
-  -> watch-view render
+  -> WatchMarketData quotes/trends/history
+  -> watchController updates quotes/trends/marketHistory
+  -> watch-view render stocks and category strength
   -> watch-connectors schedule
 ```
 
 缓存命中前，`WatchMarketService` 会校验股票和分时走势是否覆盖当前脑图股票。交易时段至少要求北京时间周一到周五，并且处于 `09:30-11:30` 或 `13:00-15:00`。交易时段内，缓存必须从 `09:30` 起按交易分钟连续覆盖到当前交易分钟；午休时段必须连续覆盖到 `11:30`；非交易时段必须连续覆盖到 `15:00`。午休区间 `11:31-12:59` 不属于交易分钟，不要求存在。周末或节假日不使用当前自然日建缓存，使用 provider 返回的最近有效 `tradingDate`。
 
 如果缓存中的分时价格有波动、但所有分时涨跌幅都是 `0`，说明 provider 标准化失败，这类缓存会被判为不可用并重新拉取。如果缓存写入时间处于同一交易日交易时段、但走势曲线已经包含写入时间之后的分时点，说明历史完整曲线被当作实时曲线处理过，也会判为不可用并重新拉取。
+
+`WatchMarketData.history` 返回最近 5 个交易日的 `WatchMarketCache[]`。Renderer 不持久化派生指标，而是在渲染分类节点时用 `categoryStrengthHistory()` 从历史 quote 即时计算每日板块强度指数，并用 sparkline 展示最近几天强度走势。当前曲线基于 `watch-quotes-cache.json` 中已保存的最近 5 个交易日行情。
 
 保存脑图：
 
@@ -753,7 +782,7 @@ interface WatchMarketHistoryCache {
 
 - `tradingDate`
 - `updatedAt`
-- `quotes`
+- `quotes`：包含 `changePercent`，可选包含 `limitRate` 和 `limitStatus`，用于板块强度指数。
 - `trends`
 
 每条 `StockTrend.tradingDate` 必须与所在 `WatchMarketCache.tradingDate` 一致。旧测试数据不作为长期兼容目标。读取到非 `version: 2` 或 trend 缺少交易日标签的缓存时，会按空历史处理；下一次成功刷新会写入新格式。

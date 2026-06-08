@@ -29,6 +29,7 @@ export class WatchMarketService {
         tradingDate: cache.tradingDate,
         quotes: cache.quotes,
         trends: cache.trends,
+        history: await this.historyWith(cache),
         updatedAt: cache.updatedAt,
         fromCache: true
       };
@@ -53,16 +54,18 @@ export class WatchMarketService {
     const tradingDate = selectTradingDate(trends) ?? fallbackTradingDate;
     const quotes = fillUnavailableQuotesFromTrends(rawQuotes, trends);
     const updatedAt = this.now().toISOString();
-    await this.cacheStore.write({
+    const cache = {
       tradingDate,
       quotes,
       trends,
       updatedAt
-    });
+    };
+    await this.cacheStore.write(cache);
     return {
       tradingDate,
       quotes,
       trends,
+      history: await this.historyWith(cache),
       updatedAt,
       fromCache: false
     };
@@ -81,6 +84,20 @@ export class WatchMarketService {
       : [await this.cacheStore.getForDate(currentDate)].filter((cache): cache is WatchMarketCache => !!cache);
     return candidates.find((cache) => shouldConsiderCache(cache, now) && coversSecids(cache, secids, now));
   }
+
+  private async historyWith(cache: WatchMarketCache): Promise<WatchMarketCache[]> {
+    const history = this.cacheStore.getHistory
+      ? await this.cacheStore.getHistory()
+      : { version: 2 as const, days: [] };
+    return sortAndLimitHistory([cache, ...history.days]);
+  }
+}
+
+function sortAndLimitHistory(days: WatchMarketCache[]): WatchMarketCache[] {
+  const byDate = new Map(days.map((day) => [day.tradingDate, day]));
+  return [...byDate.values()]
+    .sort((left, right) => right.tradingDate.localeCompare(left.tradingDate))
+    .slice(0, 5);
 }
 
 function selectTradingDate(trends: StockTrend[]): string | undefined {

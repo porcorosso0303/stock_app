@@ -1,0 +1,195 @@
+import type { StockLimitStatus, StockTrendPoint } from "./types";
+
+export interface RawIntradayTrendPoint {
+  time: string;
+  price?: number;
+}
+
+export interface SectorStrengthQuoteInput {
+  secid: string;
+  changePercent?: number;
+  limitRate?: number;
+  limitStatus?: StockLimitStatus;
+}
+
+export interface SectorStrengthIndex {
+  total: number;
+  available: number;
+  up: number;
+  down: number;
+  flat: number;
+  limitUp: number;
+  limitDown: number;
+  changeStrengthScore?: number;
+  breadthScore?: number;
+  baseScore?: number;
+  limitImpactScore?: number;
+  score?: number;
+}
+
+const LIMIT_EVENT_BASE_IMPACT = 12;
+const LIMIT_EVENT_DIFFUSION_MULTIPLIER = 80;
+const LIMIT_EVENT_IMPACT_CAP = 35;
+const LIMIT_STATUS_THRESHOLD = 0.995;
+
+export function calculateChangePercent(
+  price: number | undefined,
+  previousClose: number | undefined
+): number | undefined {
+  if (
+    price === undefined ||
+    previousClose === undefined ||
+    !Number.isFinite(price) ||
+    !Number.isFinite(previousClose) ||
+    previousClose <= 0
+  ) {
+    return undefined;
+  }
+  return ((price - previousClose) / previousClose) * 100;
+}
+
+export function normalizeIntradayTrendPoints(
+  points: RawIntradayTrendPoint[],
+  previousClose: number | undefined
+): StockTrendPoint[] {
+  return points
+    .flatMap((point) => {
+      const changePercent = calculateChangePercent(point.price, previousClose);
+      return changePercent === undefined || point.price === undefined
+        ? []
+        : [{
+            time: point.time,
+            price: point.price,
+            changePercent
+          }];
+    })
+    .sort((left, right) => trendMinute(left.time) - trendMinute(right.time));
+}
+
+export function calculateSectorStrengthIndex(
+  quotes: SectorStrengthQuoteInput[]
+): SectorStrengthIndex {
+  const result: SectorStrengthIndex = {
+    total: quotes.length,
+    available: 0,
+    up: 0,
+    down: 0,
+    flat: 0,
+    limitUp: 0,
+    limitDown: 0
+  };
+  const availableQuotes = quotes.flatMap((quote) => {
+    const changePercent = quote.changePercent;
+    if (changePercent === undefined || !Number.isFinite(changePercent)) {
+      return [];
+    }
+    const limitRate = resolveLimitRate(quote);
+    const normalizedChange = clamp(changePercent / limitRate, -1, 1);
+    const limitStatus = resolveLimitStatus(quote, limitRate);
+    return [{ changePercent, normalizedChange, limitStatus }];
+  });
+
+  if (availableQuotes.length === 0) {
+    return result;
+  }
+
+  const counts = availableQuotes.reduce((next, quote) => {
+    const direction = quote.changePercent === 0 ? "flat" : quote.changePercent > 0 ? "up" : "down";
+    const limitDirection = quote.limitStatus;
+    return {
+      up: next.up + (direction === "up" ? 1 : 0),
+      down: next.down + (direction === "down" ? 1 : 0),
+      flat: next.flat + (direction === "flat" ? 1 : 0),
+      limitUp: next.limitUp + (limitDirection === "up" ? 1 : 0),
+      limitDown: next.limitDown + (limitDirection === "down" ? 1 : 0)
+    };
+  }, {
+    up: 0,
+    down: 0,
+    flat: 0,
+    limitUp: 0,
+    limitDown: 0
+  });
+
+  const available = availableQuotes.length;
+  const changeStrengthScore = (
+    availableQuotes.reduce((sum, quote) => sum + quote.normalizedChange, 0) / available
+  ) * 100;
+  const breadthScore = ((counts.up - counts.down) / available) * 100;
+  const baseScore = changeStrengthScore * 0.6 + breadthScore * 0.4;
+  const limitImpactScore = calculateLimitEventImpact(
+    counts.limitUp,
+    counts.limitDown,
+    available
+  );
+
+  return {
+    ...result,
+    ...counts,
+    available,
+    changeStrengthScore,
+    breadthScore,
+    baseScore,
+    limitImpactScore,
+    score: clamp(baseScore + limitImpactScore, -100, 100)
+  };
+}
+
+function calculateLimitEventImpact(limitUp: number, limitDown: number, total: number): number {
+  const netLimit = limitUp - limitDown;
+  if (netLimit === 0 || total <= 0) {
+    return 0;
+  }
+  const direction = Math.sign(netLimit);
+  const baseImpact = LIMIT_EVENT_BASE_IMPACT * direction;
+  const diffusionImpact = LIMIT_EVENT_DIFFUSION_MULTIPLIER * (netLimit / total);
+  return clamp(baseImpact + diffusionImpact, -LIMIT_EVENT_IMPACT_CAP, LIMIT_EVENT_IMPACT_CAP);
+}
+
+function resolveLimitStatus(
+  quote: SectorStrengthQuoteInput,
+  limitRate: number
+): StockLimitStatus {
+  if (quote.limitStatus) {
+    return quote.limitStatus;
+  }
+  const changePercent = quote.changePercent;
+  if (changePercent === undefined || !Number.isFinite(changePercent) || limitRate <= 0) {
+    return "none";
+  }
+  const normalized = changePercent / limitRate;
+  if (normalized >= LIMIT_STATUS_THRESHOLD) {
+    return "up";
+  }
+  if (normalized <= -LIMIT_STATUS_THRESHOLD) {
+    return "down";
+  }
+  return "none";
+}
+
+function resolveLimitRate(quote: SectorStrengthQuoteInput): number {
+  if (quote.limitRate !== undefined && Number.isFinite(quote.limitRate) && quote.limitRate > 0) {
+    return quote.limitRate;
+  }
+  return inferStockLimitRate(quote.secid);
+}
+
+function inferStockLimitRate(secid: string): number {
+  const code = secid.split(".")[1] ?? "";
+  if (/^(300|301|688|689)/.test(code)) {
+    return 20;
+  }
+  if (/^(4|8|920)/.test(code)) {
+    return 30;
+  }
+  return 10;
+}
+
+function trendMinute(time: string): number {
+  const [hour = "0", minute = "0"] = time.split(":");
+  return Number(hour) * 60 + Number(minute);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}

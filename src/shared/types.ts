@@ -77,9 +77,13 @@ export interface StockQuote {
   stockName?: string;
   price?: number;
   changePercent?: number;
+  limitRate?: number;
+  limitStatus?: StockLimitStatus;
   fetchedAt: string;
   errorMessage?: string;
 }
+
+export type StockLimitStatus = "up" | "down" | "none";
 
 export interface StockTrendPoint {
   time: string;
@@ -99,6 +103,7 @@ export interface WatchMarketData {
   tradingDate?: string;
   quotes: StockQuote[];
   trends: StockTrend[];
+  history?: WatchMarketCache[];
   updatedAt: string;
   fromCache: boolean;
 }

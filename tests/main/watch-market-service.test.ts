@@ -117,6 +117,7 @@ describe("WatchMarketService", () => {
       tradingDate: "2026-06-04",
       quotes: cache.quotes,
       trends: cache.trends,
+      history: [cache],
       updatedAt: cache.updatedAt,
       fromCache: true
     });
@@ -199,16 +200,17 @@ describe("WatchMarketService", () => {
         changePercent: index
       }))
     };
+    const historyDay = {
+      tradingDate: "2026-06-05",
+      updatedAt: "2026-06-05T07:00:00.000Z",
+      quotes: [quote(1.2, "2026-06-05T07:00:00.000Z")],
+      trends: [fridayTrend]
+    };
     const cacheStore = {
       getForDate: vi.fn(),
       getHistory: vi.fn().mockResolvedValue({
         version: 2,
-        days: [{
-          tradingDate: "2026-06-05",
-          updatedAt: "2026-06-05T07:00:00.000Z",
-          quotes: [quote(1.2, "2026-06-05T07:00:00.000Z")],
-          trends: [fridayTrend]
-        }]
+        days: [historyDay]
       }),
       write: vi.fn()
     };
@@ -225,6 +227,7 @@ describe("WatchMarketService", () => {
     await expect(service.get(["1.600519"])).resolves.toMatchObject({
       tradingDate: "2026-06-05",
       trends: [fridayTrend],
+      history: [historyDay],
       fromCache: true
     });
     expect(quoteService.listQuotes).not.toHaveBeenCalled();
