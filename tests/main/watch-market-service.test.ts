@@ -58,7 +58,7 @@ function marketDataProvider(
   overrides: Partial<MarketDataProvider>
 ): MarketDataProvider {
   return {
-    id: "fake",
+    id: "east-money",
     label: "Fake Provider",
     listQuotes: vi.fn(),
     listTrends: vi.fn(),
@@ -232,6 +232,178 @@ describe("WatchMarketService", () => {
     });
     expect(quoteService.listQuotes).not.toHaveBeenCalled();
     expect(quoteService.listTrends).not.toHaveBeenCalled();
+  });
+
+  it("uses completed same-day cache after close when EastMoney omits the 13:00 point", async () => {
+    const sameDayTrend: StockTrend = {
+      secid: "1.600519",
+      tradingDate: "2026-06-17",
+      fetchedAt: "2026-06-17T07:00:00.000Z",
+      points: [
+        ...minuteRange("09:30", "11:30"),
+        ...minuteRange("13:01", "15:00")
+      ].map((time, index) => ({
+        time,
+        price: 100 + index,
+        changePercent: index
+      }))
+    };
+    const sameDayCache: WatchMarketCache = {
+      tradingDate: "2026-06-17",
+      updatedAt: "2026-06-17T07:00:00.000Z",
+      quotes: [quote(1.2, "2026-06-17T07:00:00.000Z")],
+      trends: [sameDayTrend]
+    };
+    const cacheStore = {
+      getForDate: vi.fn(),
+      getHistory: vi.fn().mockResolvedValue({
+        version: 2,
+        days: [sameDayCache]
+      }),
+      write: vi.fn()
+    };
+    const quoteService = marketDataProvider({
+      listQuotes: vi.fn(),
+      listTrends: vi.fn()
+    });
+    const service = new WatchMarketService(
+      cacheStore,
+      quoteService,
+      () => new Date("2026-06-17T09:30:00.000Z")
+    );
+
+    await expect(service.get(["1.600519"])).resolves.toMatchObject({
+      tradingDate: "2026-06-17",
+      trends: [sameDayTrend],
+      fromCache: true
+    });
+    expect(quoteService.listQuotes).not.toHaveBeenCalled();
+    expect(quoteService.listTrends).not.toHaveBeenCalled();
+  });
+
+  it("does not fall back to an older cache after the current trading day has closed", async () => {
+    const olderTrend: StockTrend = {
+      secid: "1.600519",
+      tradingDate: "2026-06-08",
+      fetchedAt: "2026-06-08T07:00:00.000Z",
+      points: [
+        ...minuteRange("09:30", "11:30"),
+        ...minuteRange("13:01", "15:00")
+      ].map((time, index) => ({
+        time,
+        price: 100 + index,
+        changePercent: index
+      }))
+    };
+    const cacheStore = {
+      getForDate: vi.fn(),
+      getHistory: vi.fn().mockResolvedValue({
+        version: 2,
+        days: [{
+          tradingDate: "2026-06-08",
+          updatedAt: "2026-06-08T07:00:00.000Z",
+          quotes: [quote(1.2, "2026-06-08T07:00:00.000Z")],
+          trends: [olderTrend]
+        }]
+      }),
+      write: vi.fn()
+    };
+    const freshTrend: StockTrend = {
+      secid: "1.600519",
+      tradingDate: "2026-06-17",
+      fetchedAt: "2026-06-17T09:30:00.000Z",
+      points: [{ time: "15:00", price: 101.2, changePercent: 1.2 }]
+    };
+    const quoteService = marketDataProvider({
+      listQuotes: vi.fn().mockResolvedValue([quote(1.2, "2026-06-17T09:30:00.000Z")]),
+      listTrends: vi.fn().mockResolvedValue([freshTrend])
+    });
+    const service = new WatchMarketService(
+      cacheStore,
+      quoteService,
+      () => new Date("2026-06-17T09:30:00.000Z")
+    );
+
+    await expect(service.get(["1.600519"])).resolves.toMatchObject({
+      tradingDate: "2026-06-17",
+      trends: [freshTrend],
+      fromCache: false
+    });
+    expect(quoteService.listTrends).toHaveBeenCalledWith(["1.600519"]);
+  });
+
+  it("does not overwrite existing cache when the provider returns only failed market data", async () => {
+    const cacheStore = {
+      getForDate: vi.fn().mockResolvedValue(undefined),
+      getHistory: vi.fn().mockResolvedValue({ version: 2, days: [] }),
+      write: vi.fn()
+    };
+    const quoteService = marketDataProvider({
+      listQuotes: vi.fn().mockResolvedValue([{
+        secid: "1.600519",
+        fetchedAt: "2026-06-17T09:30:00.000Z",
+        errorMessage: "fetch failed"
+      }]),
+      listTrends: vi.fn().mockResolvedValue([{
+        secid: "1.600519",
+        tradingDate: "2026-06-17",
+        fetchedAt: "2026-06-17T09:30:00.000Z",
+        points: [],
+        errorMessage: "fetch failed"
+      }])
+    });
+    const service = new WatchMarketService(
+      cacheStore,
+      quoteService,
+      () => new Date("2026-06-17T09:30:00.000Z")
+    );
+
+    await expect(service.get(["1.600519"])).resolves.toMatchObject({
+      tradingDate: "2026-06-17",
+      quotes: [expect.objectContaining({ errorMessage: "fetch failed" })],
+      trends: [expect.objectContaining({ errorMessage: "fetch failed" })],
+      fromCache: false
+    });
+    expect(cacheStore.write).not.toHaveBeenCalled();
+  });
+
+  it("bypasses cache reads and writes for ephemeral market data providers", async () => {
+    const fullCache: WatchMarketCache = {
+      tradingDate: "2026-06-17",
+      updatedAt: "2026-06-17T07:00:00.000Z",
+      quotes: [quote(8, "2026-06-17T07:00:00.000Z")],
+      trends: [trendWithTimes(["09:30", "09:31", "15:00"], "2026-06-17T07:00:00.000Z")]
+    };
+    const cacheStore = {
+      getForDate: vi.fn().mockResolvedValue(fullCache),
+      getHistory: vi.fn().mockResolvedValue({ version: 2, days: [fullCache] }),
+      write: vi.fn()
+    };
+    const replayTrend: StockTrend = {
+      secid: "1.600519",
+      tradingDate: "2026-06-17",
+      fetchedAt: "2026-06-17T01:30:00.000Z",
+      points: [{ time: "09:30", price: 100, changePercent: 0 }]
+    };
+    const provider = marketDataProvider({
+      cacheBehavior: "ephemeral",
+      listQuotes: vi.fn().mockResolvedValue([quote(0, "2026-06-17T01:30:00.000Z")]),
+      listTrends: vi.fn().mockResolvedValue([replayTrend])
+    });
+    const service = new WatchMarketService(
+      cacheStore,
+      provider,
+      () => new Date("2026-06-17T09:30:00.000Z")
+    );
+
+    await expect(service.get(["1.600519"])).resolves.toMatchObject({
+      quotes: [quote(0, "2026-06-17T01:30:00.000Z")],
+      trends: [replayTrend],
+      fromCache: false
+    });
+    expect(cacheStore.getHistory).not.toHaveBeenCalled();
+    expect(cacheStore.getForDate).not.toHaveBeenCalled();
+    expect(cacheStore.write).not.toHaveBeenCalled();
   });
 
   it("refetches during trading hours when cache does not cover the current minute", async () => {

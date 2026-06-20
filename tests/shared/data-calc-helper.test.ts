@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { StockQuote } from "../../src/shared/types";
-import { calculateSectorStrengthIndex } from "../../src/shared/data-calc-helper";
+import {
+  calculateSectorStrengthIndex,
+  calculateSuddenStockMove
+} from "../../src/shared/data-calc-helper";
 
 describe("sector strength index algorithm", () => {
   it("uses the full base score range when no stock reaches its limit", () => {
@@ -75,6 +78,38 @@ describe("sector strength index algorithm", () => {
     expect(result.limitUp).toBe(5);
     expect(result.limitImpactScore).toBe(35);
     expect(result.score).toBe(100);
+  });
+});
+
+describe("sudden stock move algorithm", () => {
+  it("detects a sudden upward move over the recent intraday window", () => {
+    expect(calculateSuddenStockMove([
+      { time: "09:30", changePercent: 0.1 },
+      { time: "09:31", changePercent: 0.3 },
+      { time: "09:34", changePercent: 1.6 }
+    ])).toEqual({
+      direction: "up",
+      deltaPercent: 1.5
+    });
+  });
+
+  it("detects a sudden downward move over the recent intraday window", () => {
+    expect(calculateSuddenStockMove([
+      { time: "10:00", changePercent: 1.2 },
+      { time: "10:02", changePercent: 0.5 },
+      { time: "10:05", changePercent: -0.4 }
+    ])).toEqual({
+      direction: "down",
+      deltaPercent: -1.6
+    });
+  });
+
+  it("ignores normal noise below the sudden move threshold", () => {
+    expect(calculateSuddenStockMove([
+      { time: "13:01", changePercent: 2.0 },
+      { time: "13:03", changePercent: 2.4 },
+      { time: "13:06", changePercent: 2.8 }
+    ])).toBeUndefined();
   });
 });
 

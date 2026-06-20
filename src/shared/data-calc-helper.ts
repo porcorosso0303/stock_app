@@ -27,10 +27,17 @@ export interface SectorStrengthIndex {
   score?: number;
 }
 
+export interface SuddenStockMove {
+  direction: "up" | "down";
+  deltaPercent: number;
+}
+
 const LIMIT_EVENT_BASE_IMPACT = 12;
 const LIMIT_EVENT_DIFFUSION_MULTIPLIER = 80;
 const LIMIT_EVENT_IMPACT_CAP = 35;
 const LIMIT_STATUS_THRESHOLD = 0.995;
+const SUDDEN_MOVE_WINDOW_MINUTES = 5;
+const SUDDEN_MOVE_THRESHOLD_PERCENT = 1.2;
 
 export function calculateChangePercent(
   price: number | undefined,
@@ -135,6 +142,51 @@ export function calculateSectorStrengthIndex(
   };
 }
 
+export function calculateSuddenStockMove(
+  points: StockTrendPoint[],
+  windowMinutes = SUDDEN_MOVE_WINDOW_MINUTES,
+  thresholdPercent = SUDDEN_MOVE_THRESHOLD_PERCENT
+): SuddenStockMove | undefined {
+  const orderedPoints = [...points]
+    .filter((point) => Number.isFinite(point.changePercent))
+    .sort((left, right) => trendMinute(left.time) - trendMinute(right.time));
+  if (orderedPoints.length < 2 || windowMinutes <= 0 || thresholdPercent <= 0) {
+    return undefined;
+  }
+
+  const latest = orderedPoints.at(-1);
+  if (!latest) {
+    return undefined;
+  }
+  const startMinute = trendMinute(latest.time) - windowMinutes;
+  const baseline = findBaselinePoint(orderedPoints, startMinute) ?? orderedPoints[0];
+  if (baseline === latest) {
+    return undefined;
+  }
+
+  const deltaPercent = roundPercentDelta(latest.changePercent - baseline.changePercent);
+  if (Math.abs(deltaPercent) < thresholdPercent) {
+    return undefined;
+  }
+  return {
+    direction: deltaPercent > 0 ? "up" : "down",
+    deltaPercent
+  };
+}
+
+function findBaselinePoint(
+  points: StockTrendPoint[],
+  startMinute: number
+): StockTrendPoint | undefined {
+  for (let index = points.length - 1; index >= 0; index -= 1) {
+    const point = points[index];
+    if (point && trendMinute(point.time) <= startMinute) {
+      return point;
+    }
+  }
+  return undefined;
+}
+
 function calculateLimitEventImpact(limitUp: number, limitDown: number, total: number): number {
   const netLimit = limitUp - limitDown;
   if (netLimit === 0 || total <= 0) {
@@ -188,6 +240,10 @@ function inferStockLimitRate(secid: string): number {
 function trendMinute(time: string): number {
   const [hour = "0", minute = "0"] = time.split(":");
   return Number(hour) * 60 + Number(minute);
+}
+
+function roundPercentDelta(value: number): number {
+  return Number(value.toFixed(3));
 }
 
 function clamp(value: number, min: number, max: number): number {

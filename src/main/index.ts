@@ -3,6 +3,7 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
+  Menu,
   shell
 } from "electron";
 import { join } from "node:path";
@@ -11,8 +12,11 @@ import { CodexLocator } from "./codex-locator";
 import { getCodexLauncherOverride } from "./codex-launcher-override";
 import { CodexRunner } from "./codex-runner";
 import { ConfigStore } from "./config-store";
+import { buildApplicationMenuTemplate } from "./app-menu";
 import { CodexCliResearchProvider } from "./modules/research/providers/codex-cli-provider";
 import { EastMoneyMarketDataProvider } from "./modules/watch/market-data/east-money-provider";
+import { MockCacheMarketDataProvider } from "./modules/watch/market-data/mock-cache-provider";
+import { SelectableMarketDataProvider } from "./modules/watch/market-data/selectable-market-data-provider";
 import { resolveEmbeddedSkillDirectory } from "./embedded-skill";
 import { configureExternalLinks } from "./external-links";
 import { HistoryStore } from "./history-store";
@@ -26,6 +30,7 @@ import { WatchMarketCacheStore } from "./watch-market-cache-store";
 import { WatchMarketService } from "./watch-market-service";
 import { WatchTreeStore } from "./watch-tree-store";
 import { IPC } from "../shared/ipc";
+import type { WatchMarketProviderId } from "../shared/types";
 
 let mainWindow: BrowserWindow | undefined;
 
@@ -53,7 +58,7 @@ function createMainWindow(): BrowserWindow {
   return window;
 }
 
-void app.whenReady().then(() => {
+void app.whenReady().then(async () => {
   const userData = resolveAppDataDirectory({
     isPackaged: app.isPackaged,
     appPath: app.getAppPath(),
@@ -104,8 +109,14 @@ void app.whenReady().then(() => {
       mainWindow?.webContents.send(IPC.researchEvent, event);
     }
   });
-  const quoteService = new EastMoneyMarketDataProvider();
   const watchMarketCacheStore = new WatchMarketCacheStore(join(userData, "watch-quotes-cache.json"));
+  const eastMoneyProvider = new EastMoneyMarketDataProvider();
+  const mockCacheProvider = new MockCacheMarketDataProvider(watchMarketCacheStore);
+  const initialConfig = await configStore.get();
+  const quoteService = new SelectableMarketDataProvider([
+    eastMoneyProvider,
+    mockCacheProvider
+  ], resolveWatchMarketProviderId(initialConfig.watchMarketProviderId));
   const watchMarketService = new WatchMarketService(watchMarketCacheStore, quoteService);
   const watchDataTransferService = new WatchDataTransferService(
     watchTreeStore,
@@ -125,6 +136,30 @@ void app.whenReady().then(() => {
     watchMarketService,
     watchDataTransferService
   });
+  const applyApplicationMenu = (selectedWatchMarketProviderId: WatchMarketProviderId): void => {
+    Menu.setApplicationMenu(Menu.buildFromTemplate(buildApplicationMenuTemplate({
+      selectedWatchMarketProviderId,
+      onOpenWatchMarketProviderSettings: () => {
+        BrowserWindow.getAllWindows().forEach((window) => {
+          window.webContents.send(IPC.openWatchMarketProviderSettings);
+        });
+      }
+    })));
+  };
+  const selectWatchMarketProvider = async (providerId: WatchMarketProviderId): Promise<void> => {
+    await configStore.setWatchMarketProviderId(providerId);
+    quoteService.select(providerId);
+    applyApplicationMenu(providerId);
+    BrowserWindow.getAllWindows().forEach((window) => {
+      window.webContents.send(IPC.watchMarketProviderChanged, { providerId });
+    });
+  };
+  ipcMain.handle(IPC.setWatchMarketProvider, async (_event, value) => {
+    const providerId = readWatchMarketProviderId(value);
+    await selectWatchMarketProvider(providerId);
+    return await configStore.get();
+  });
+  applyApplicationMenu(quoteService.id);
 
   createMainWindow();
 
@@ -140,3 +175,18 @@ app.on("window-all-closed", () => {
     app.quit();
   }
 });
+
+function resolveWatchMarketProviderId(value: unknown): WatchMarketProviderId {
+  return value === "mock-cache" ? "mock-cache" : "east-money";
+}
+
+function readWatchMarketProviderId(value: unknown): WatchMarketProviderId {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("providerId 参数必须是对象");
+  }
+  const providerId = (value as Record<string, unknown>).providerId;
+  if (providerId === "east-money" || providerId === "mock-cache") {
+    return providerId;
+  }
+  throw new Error("providerId 必须是 east-money 或 mock-cache");
+}

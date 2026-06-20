@@ -23,16 +23,18 @@ export class WatchMarketService {
   async get(secids: string[]): Promise<WatchMarketData> {
     const now = this.now();
     const currentDate = formatChinaDate(now);
-    const cache = await this.findUsableCache(secids, now);
-    if (cache) {
-      return {
-        tradingDate: cache.tradingDate,
-        quotes: cache.quotes,
-        trends: cache.trends,
-        history: await this.historyWith(cache),
-        updatedAt: cache.updatedAt,
-        fromCache: true
-      };
+    if (!this.usesEphemeralProvider()) {
+      const cache = await this.findUsableCache(secids, now);
+      if (cache) {
+        return {
+          tradingDate: cache.tradingDate,
+          quotes: cache.quotes,
+          trends: cache.trends,
+          history: await this.historyWith(cache),
+          updatedAt: cache.updatedAt,
+          fromCache: true
+        };
+      }
     }
 
     return await this.fetchFresh(secids, currentDate);
@@ -60,15 +62,21 @@ export class WatchMarketService {
       trends,
       updatedAt
     };
-    await this.cacheStore.write(cache);
+    if (!this.usesEphemeralProvider() && hasAnyUsableMarketData(cache)) {
+      await this.cacheStore.write(cache);
+    }
     return {
       tradingDate,
       quotes,
       trends,
-      history: await this.historyWith(cache),
+      history: this.usesEphemeralProvider() ? [cache] : await this.historyWith(cache),
       updatedAt,
       fromCache: false
     };
+  }
+
+  private usesEphemeralProvider(): boolean {
+    return this.marketDataProvider.cacheBehavior === "ephemeral";
   }
 
   private async findUsableCache(
@@ -82,7 +90,10 @@ export class WatchMarketService {
     const candidates = history.days.length > 0
       ? history.days
       : [await this.cacheStore.getForDate(currentDate)].filter((cache): cache is WatchMarketCache => !!cache);
-    return candidates.find((cache) => shouldConsiderCache(cache, now) && coversSecids(cache, secids, now));
+    const scopedCandidates = shouldUseCurrentTradingDateOnly(now)
+      ? candidates.filter((cache) => cache.tradingDate === currentDate)
+      : candidates;
+    return scopedCandidates.find((cache) => shouldConsiderCache(cache, now) && coversSecids(cache, secids, now));
   }
 
   private async historyWith(cache: WatchMarketCache): Promise<WatchMarketCache[]> {
@@ -91,6 +102,11 @@ export class WatchMarketService {
       : { version: 2 as const, days: [] };
     return sortAndLimitHistory([cache, ...history.days]);
   }
+}
+
+function hasAnyUsableMarketData(cache: WatchMarketCache): boolean {
+  return cache.quotes.some((quote) => quote.changePercent !== undefined && !quote.errorMessage) ||
+    cache.trends.some((trend) => trend.points.length > 0 && !trend.errorMessage);
 }
 
 function sortAndLimitHistory(days: WatchMarketCache[]): WatchMarketCache[] {
@@ -124,6 +140,11 @@ function shouldConsiderCache(cache: WatchMarketCache, now: Date): boolean {
   return isTradingSession(now)
     ? cache.tradingDate === formatChinaDate(now)
     : true;
+}
+
+function shouldUseCurrentTradingDateOnly(now: Date): boolean {
+  const day = chinaWeekday(now);
+  return day >= 1 && day <= 5 && formatChinaMinute(now.toISOString()) >= "09:30";
 }
 
 function hasOrderedTrendPoints(trend: StockTrend): boolean {
@@ -218,7 +239,7 @@ function requiredTradingMinutes(endTime: string): string[] {
       minutes.push(time);
     }
   }
-  for (const time of tradingSessionMinutes("13:00", "15:00")) {
+  for (const time of tradingSessionMinutes("13:01", "15:00")) {
     if (trendMinute(time) <= endMinute) {
       minutes.push(time);
     }

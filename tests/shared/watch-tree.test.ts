@@ -12,6 +12,7 @@ import {
   normalizeTrendSegments,
   renderTrendSparklineSvg,
   removeWatchTreeNode,
+  sortWatchChildrenByChangePercent,
   validateWatchTreeConfig
 } from "../../src/shared/watch-tree";
 
@@ -125,6 +126,30 @@ describe("watch tree", () => {
     expect(history[1].score).toBe(-100);
   });
 
+  it("sorts direct stock children by current change percent for display", () => {
+    const tree: WatchTreeCategoryNode = {
+      id: "root",
+      type: "category",
+      name: "分类",
+      children: [
+        { id: "down", type: "stock", name: "下跌", secid: "1.600001" },
+        { id: "missing", type: "stock", name: "无行情", secid: "1.600004" },
+        { id: "up", type: "stock", name: "上涨", secid: "1.600002" },
+        { id: "flat", type: "stock", name: "平盘", secid: "1.600003" }
+      ]
+    };
+    const quotes = new Map<string, StockQuote>([
+      ["1.600001", { secid: "1.600001", fetchedAt: "", changePercent: -2 }],
+      ["1.600002", { secid: "1.600002", fetchedAt: "", changePercent: 5 }],
+      ["1.600003", { secid: "1.600003", fetchedAt: "", changePercent: 0 }]
+    ]);
+
+    expect(sortWatchChildrenByChangePercent(tree, quotes).map((child) => child.id))
+      .toEqual(["up", "flat", "down", "missing"]);
+    expect(tree.children.map((child) => child.id))
+      .toEqual(["down", "missing", "up", "flat"]);
+  });
+
   it("adds and removes nodes without mutating the original tree", () => {
     const child = { id: "three", type: "stock" as const, name: "股票三", secid: "0.000001" };
     const appended = appendWatchTreeChild(root, "software", child);
@@ -155,6 +180,50 @@ describe("watch tree", () => {
         children: [{ id: "stock", type: "stock", name: "股票", secid: "600519" }]
       }
     })).toThrow("secid");
+  });
+
+  it("validates optional stock industry position settings", () => {
+    expect(validateWatchTreeConfig({
+      root: {
+        id: "root",
+        type: "category",
+        name: "分类",
+        children: [{
+          id: "stock",
+          type: "stock",
+          name: "股票",
+          secid: "1.600519",
+          industryPosition: "leader1"
+        }]
+      }
+    })).toEqual({
+      root: {
+        id: "root",
+        type: "category",
+        name: "分类",
+        children: [{
+          id: "stock",
+          type: "stock",
+          name: "股票",
+          secid: "1.600519",
+          industryPosition: "leader1"
+        }]
+      }
+    });
+    expect(() => validateWatchTreeConfig({
+      root: {
+        id: "root",
+        type: "category",
+        name: "分类",
+        children: [{
+          id: "stock",
+          type: "stock",
+          name: "股票",
+          secid: "1.600519",
+          industryPosition: "leader4"
+        }]
+      }
+    })).toThrow("行业地位");
   });
 
   it("merges the latest quote into a trend without duplicating fetchedAt minutes", () => {
@@ -232,6 +301,20 @@ describe("watch tree", () => {
     expect(segments.some((segment) => segment.kind === "negative")).toBe(true);
     expect(segments.some((segment) => segment.kind === "positive")).toBe(true);
     expect(segments.every((segment) => segment.path.startsWith("M "))).toBe(true);
+  });
+
+  it("places intraday trend points on a fixed full-day time axis", () => {
+    const openingSegments = normalizeTrendSegments([
+      { time: "09:30", changePercent: 0 },
+      { time: "09:31", changePercent: 1 }
+    ], 120, 40);
+    const fullDaySegments = normalizeTrendSegments([
+      { time: "09:30", changePercent: 0 },
+      { time: "15:00", changePercent: 1 }
+    ], 120, 40);
+
+    expect(openingSegments[0].path).toBe("M 0 20 L 0.5 2");
+    expect(fullDaySegments[0].path).toBe("M 0 20 L 120 2");
   });
 
   it("renders the whole sparkline color from the latest change percent", () => {

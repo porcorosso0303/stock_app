@@ -49,7 +49,7 @@ export class EastMoneyQuoteService {
     try {
       const url = new URL("https://push2.eastmoney.com/api/qt/stock/get");
       url.searchParams.set("secid", secid);
-      url.searchParams.set("fields", "f43,f57,f58,f60,f170");
+      url.searchParams.set("fields", "f43,f57,f58,f60,f170,f8,f115,f117");
       const response = await this.fetchImpl(url.toString());
       if (!response.ok) {
         throw new Error("行情服务请求失败");
@@ -61,6 +61,9 @@ export class EastMoneyQuoteService {
         stockName: readString(data.f58),
         price,
         changePercent: readQuoteChangePercent(data, price),
+        peTtm: readScaledNumber(data.f115),
+        turnoverRate: readScaledNumber(data.f8),
+        floatMarketCap: readNumber(data.f117),
         fetchedAt
       };
     } catch (error) {
@@ -260,5 +263,11 @@ function readString(value: unknown): string | undefined {
 function readScaledNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value)
     ? value / 100
+    : undefined;
+}
+
+function readNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
     : undefined;
 }

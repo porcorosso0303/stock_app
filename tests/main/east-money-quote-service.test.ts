@@ -6,7 +6,14 @@ describe("EastMoneyQuoteService", () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        data: { f43: 130722, f58: "贵州茅台", f170: -18 }
+        data: {
+          f43: 130722,
+          f58: "贵州茅台",
+          f170: -18,
+          f8: 72,
+          f115: 2540,
+          f117: 194000000000
+        }
       })
     });
     const service = new EastMoneyQuoteService(
@@ -19,8 +26,15 @@ describe("EastMoneyQuoteService", () => {
       stockName: "贵州茅台",
       price: 1307.22,
       changePercent: -0.18,
+      peTtm: 25.4,
+      turnoverRate: 0.72,
+      floatMarketCap: 194000000000,
       fetchedAt: "2026-06-02T00:00:00.000Z"
     }]);
+    const requestUrl = new URL(fetchImpl.mock.calls[0][0]);
+    expect(requestUrl.searchParams.get("fields")).toContain("f8");
+    expect(requestUrl.searchParams.get("fields")).toContain("f115");
+    expect(requestUrl.searchParams.get("fields")).toContain("f117");
     expect(fetchImpl).toHaveBeenCalledOnce();
   });
 

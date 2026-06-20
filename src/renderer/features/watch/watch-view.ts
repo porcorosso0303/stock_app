@@ -1,10 +1,17 @@
 import type {
   StockQuote,
   StockTrend,
+  StockTrendPoint,
+  WatchIndustryPosition,
   WatchMarketCache,
   WatchTreeConfig,
+  WatchTreeCategoryNode,
   WatchTreeNode
 } from "../../../shared/types";
+import {
+  calculateSuddenStockMove,
+  type SuddenStockMove
+} from "../../../shared/data-calc-helper";
 import {
   averageChangePercent,
   categoryStrengthHistory,
@@ -12,7 +19,8 @@ import {
   collectStockSecids,
   countUpDownStocks,
   formatTrendPercentClass,
-  renderTrendSparklineSvg
+  renderTrendSparklineSvg,
+  sortWatchChildrenByChangePercent
 } from "../../../shared/watch-tree";
 
 export interface WatchViewState {
@@ -55,12 +63,15 @@ function renderWatchNode(
 ): string {
   const isCollapsed = state.collapsedNodes.has(node.id);
   const children = node.type === "category" && !isCollapsed
-    ? `<ul class="watch-children">${node.children.map((child) => `
+    ? `<ul class="watch-children">${sortWatchChildrenByChangePercent(node, state.quotes).map((child) => `
         <li class="watch-branch">${renderWatchNode(child, node.id, depth + 1, state)}</li>
       `).join("")}</ul>`
     : "";
   const collapsedMarker = node.type === "category" && node.children.length > 0 && isCollapsed
     ? '<span class="watch-collapsed-marker" aria-hidden="true">+</span>'
+    : "";
+  const anomalyAlert = node.type === "category" && isCollapsed && hasDescendantSuddenMove(node, state)
+    ? renderCategoryAnomalyAlert()
     : "";
   return `
     <div class="watch-node-wrap">
@@ -72,6 +83,7 @@ function renderWatchNode(
         title="${escapeHtml(renderWatchNodeTooltip(node, isCollapsed, state))}"
       >
         ${renderWatchNodeContent(node, state)}
+        ${anomalyAlert}
       </div>
       ${collapsedMarker}
     </div>
@@ -106,11 +118,16 @@ function renderWatchNodeContent(node: WatchTreeNode, state: WatchViewState): str
   }
   const quote = state.quotes.get(node.secid);
   const trend = state.trends.get(node.secid);
+  const suddenMove = calculateSuddenStockMove(trend?.points ?? []);
   return `
-    <strong>${escapeHtml(node.name)}</strong>
+    <span class="watch-stock-name">
+      <strong>${escapeHtml(node.name)}</strong>
+      ${renderSuddenMoveArrow(suddenMove)}
+    </span>
     <span class="watch-trend-inline">
       ${renderTrendSparklineSvg(trend?.points ?? [], quote?.changePercent)}
       <span class="${formatTrendPercentClass(quote?.changePercent)}">${escapeHtml(formatChangePercent(quote?.changePercent))}</span>
+      ${renderIndustryPositionStar(node.industryPosition)}
     </span>
   `;
 }
@@ -123,7 +140,7 @@ function renderWatchNodeTooltip(
   if (node.type === "stock") {
     const quote = state.quotes.get(node.secid);
     const price = quote?.price === undefined ? "暂无行情" : `¥${quote.price.toFixed(2)}`;
-    return `${node.name}\n${node.secid}\n价格：${price}\n涨跌幅：${formatChangePercent(quote?.changePercent)}\n右键编辑或删除`;
+    return `${node.name}\n${node.secid}\n价格：${price}\n涨跌幅：${formatChangePercent(quote?.changePercent)}\nTTM市盈率：${formatNumber(quote?.peTtm)}\n换手率：${formatChangePercent(quote?.turnoverRate)}\n流通市值：${formatMarketCap(quote?.floatMarketCap)}\n右键编辑或删除`;
   }
   const leafCount = collectStockSecids(node).length;
   const average = averageChangePercent(node, state.quotes);
@@ -146,6 +163,54 @@ export function formatStrengthScore(value: number | undefined): string {
     return "暂无指数";
   }
   return `${value > 0 ? "+" : ""}${value.toFixed(1)}`;
+}
+
+function renderIndustryPositionStar(value: WatchIndustryPosition | undefined): string {
+  if (!value) {
+    return "";
+  }
+  const label = value === "leader1" ? "龙头一" : value === "leader2" ? "龙头二" : "龙头三";
+  return `<span class="watch-industry-star ${value}" title="${label}" aria-label="${label}">★</span>`;
+}
+
+function renderSuddenMoveArrow(value: SuddenStockMove | undefined): string {
+  if (!value) {
+    return "";
+  }
+  const label = value.direction === "up" ? "异动上涨" : "异动下跌";
+  const arrow = value.direction === "up" ? "↗" : "↘";
+  return `<span class="watch-sudden-move-arrow ${value.direction}" title="${label}" aria-label="${label}">${arrow}</span>`;
+}
+
+function renderCategoryAnomalyAlert(): string {
+  return '<span class="watch-category-anomaly-alert" title="隐藏股票异动" aria-label="隐藏股票异动">!</span>';
+}
+
+function hasDescendantSuddenMove(
+  node: WatchTreeCategoryNode,
+  state: WatchViewState
+): boolean {
+  return node.children.some((child) => child.type === "stock"
+    ? hasSuddenMove(state.trends.get(child.secid)?.points)
+    : hasDescendantSuddenMove(child, state));
+}
+
+function hasSuddenMove(points: StockTrendPoint[] | undefined): boolean {
+  return calculateSuddenStockMove(points ?? []) !== undefined;
+}
+
+function formatNumber(value: number | undefined): string {
+  return value === undefined ? "暂无数据" : value.toFixed(2);
+}
+
+function formatMarketCap(value: number | undefined): string {
+  if (value === undefined) {
+    return "暂无数据";
+  }
+  if (Math.abs(value) >= 100_000_000) {
+    return `${(value / 100_000_000).toFixed(2)}亿`;
+  }
+  return value.toFixed(2);
 }
 
 export function escapeHtml(value: string): string {

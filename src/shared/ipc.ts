@@ -1,5 +1,6 @@
 import type {
   AppBootstrap,
+  AppConfig,
   CodexEnvironmentStatus,
   ResearchProgressEvent,
   ResearchRecord,
@@ -7,6 +8,7 @@ import type {
   StockSearchResult,
   WatchDataTransferResult,
   WatchMarketData,
+  WatchMarketProviderId,
   WatchTreeConfig
 } from "./types";
 
@@ -31,6 +33,9 @@ export const IPC = {
   searchStocks: "watch-stocks:search",
   exportWatchData: "watch-data:export",
   importWatchData: "watch-data:import",
+  openWatchMarketProviderSettings: "watch-market-provider:open-settings",
+  setWatchMarketProvider: "watch-market-provider:set",
+  watchMarketProviderChanged: "watch-market-provider:changed",
   researchEvent: "research:event"
 } as const;
 
@@ -55,5 +60,8 @@ export interface StockResearchApi {
   searchStocks(query: string): Promise<StockSearchResult[]>;
   exportWatchData(): Promise<WatchDataTransferResult | undefined>;
   importWatchData(): Promise<WatchDataTransferResult | undefined>;
+  setWatchMarketProvider(providerId: WatchMarketProviderId): Promise<AppConfig>;
+  onOpenWatchMarketProviderSettings(callback: () => void): () => void;
+  onWatchMarketProviderChanged(callback: () => void): () => void;
   onResearchEvent(callback: (event: ResearchProgressEvent) => void): () => void;
 }

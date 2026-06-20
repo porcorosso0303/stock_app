@@ -56,6 +56,18 @@ describe("ConfigStore", () => {
     await expect(new ConfigStore(path).get()).resolves.toEqual(updated);
   });
 
+  it("persists the selected watch market provider", async () => {
+    const directory = await createTempDirectory();
+    const path = join(directory, "config.json");
+
+    const updated = await new ConfigStore(path).setWatchMarketProviderId("mock-cache");
+
+    expect(updated).toEqual({
+      watchMarketProviderId: "mock-cache"
+    });
+    await expect(new ConfigStore(path).get()).resolves.toEqual(updated);
+  });
+
   it("reports a damaged JSON file with its path", async () => {
     const directory = await createTempDirectory();
     const path = join(directory, "config.json");

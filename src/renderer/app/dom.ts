@@ -40,8 +40,15 @@ export const elements = {
   watchStockResults: getElement<HTMLElement>("watch-stock-results"),
   watchNodeSecidLabel: getElement<HTMLElement>("watch-node-secid-label"),
   watchNodeSecid: getElement<HTMLInputElement>("watch-node-secid"),
+  watchNodeIndustryPositionLabel: getElement<HTMLElement>("watch-node-industry-position-label"),
+  watchNodeIndustryPosition: getElement<HTMLSelectElement>("watch-node-industry-position"),
   watchNodeError: getElement<HTMLElement>("watch-node-error"),
-  cancelWatchNode: getElement<HTMLButtonElement>("cancel-watch-node")
+  cancelWatchNode: getElement<HTMLButtonElement>("cancel-watch-node"),
+  marketProviderDialog: getElement<HTMLDialogElement>("market-provider-dialog"),
+  marketProviderForm: getElement<HTMLFormElement>("market-provider-form"),
+  marketProviderSelect: getElement<HTMLSelectElement>("market-provider-select"),
+  marketProviderStatus: getElement<HTMLElement>("market-provider-status"),
+  cancelMarketProvider: getElement<HTMLButtonElement>("cancel-market-provider")
 };
 
 export type RendererElements = typeof elements;

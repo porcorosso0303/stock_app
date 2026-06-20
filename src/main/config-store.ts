@@ -1,4 +1,4 @@
-import type { AppConfig } from "../shared/types";
+import type { AppConfig, WatchMarketProviderId } from "../shared/types";
 import { JsonStore } from "./json-store";
 
 export class ConfigStore {
@@ -14,6 +14,12 @@ export class ConfigStore {
 
   async setReportDirectory(reportDirectory: string): Promise<AppConfig> {
     const config = { ...await this.get(), reportDirectory };
+    await this.store.write(config);
+    return config;
+  }
+
+  async setWatchMarketProviderId(watchMarketProviderId: WatchMarketProviderId): Promise<AppConfig> {
+    const config = { ...await this.get(), watchMarketProviderId };
     await this.store.write(config);
     return config;
   }

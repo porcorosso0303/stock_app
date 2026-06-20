@@ -80,6 +80,35 @@ export function countUpDownStocks(
     }, { up: 0, down: 0 });
 }
 
+export function sortWatchChildrenByChangePercent(
+  node: WatchTreeCategoryNode,
+  quotes: ReadonlyMap<string, StockQuote>
+): WatchTreeNode[] {
+  return [...node.children].sort((left, right) => {
+    const leftScore = childChangePercent(left, quotes);
+    const rightScore = childChangePercent(right, quotes);
+    if (leftScore === undefined && rightScore === undefined) {
+      return 0;
+    }
+    if (leftScore === undefined) {
+      return 1;
+    }
+    if (rightScore === undefined) {
+      return -1;
+    }
+    return rightScore - leftScore;
+  });
+}
+
+function childChangePercent(
+  node: WatchTreeNode,
+  quotes: ReadonlyMap<string, StockQuote>
+): number | undefined {
+  return node.type === "stock"
+    ? quotes.get(node.secid)?.changePercent
+    : averageChangePercent(node, quotes);
+}
+
 export function categoryStrengthIndex(
   node: WatchTreeNode,
   quotes: ReadonlyMap<string, StockQuote>
@@ -170,8 +199,11 @@ export function normalizeTrendSegments(
   const maxAbs = Math.max(1, ...points.map((point) => Math.abs(point.changePercent)));
   const centerY = height / 2;
   const amplitude = Math.max(1, centerY - 2);
+  const useIntradayTimeScale = points.every((point) => intradayTimelineIndex(point.time) !== undefined);
   const coordinates = points.map((point, index) => {
-    const x = points.length === 1 ? width / 2 : (index / (points.length - 1)) * width;
+    const x = useIntradayTimeScale
+      ? ((intradayTimelineIndex(point.time) ?? 0) / FULL_DAY_TREND_INTERVALS) * width
+      : points.length === 1 ? width / 2 : (index / (points.length - 1)) * width;
     const y = centerY - (point.changePercent / maxAbs) * amplitude;
     return { x, y, value: point.changePercent };
   });
@@ -320,14 +352,26 @@ function validateNode(value: unknown, ids: Set<string>): WatchTreeNode {
     };
   }
   if (node.type === "stock") {
+    const industryPosition = validateIndustryPosition(node.industryPosition);
     return {
       id,
       type: "stock",
       name,
-      secid: validateSecid(requireNonEmptyString(node.secid, "股票 secid"))
+      secid: validateSecid(requireNonEmptyString(node.secid, "股票 secid")),
+      ...(industryPosition ? { industryPosition } : {})
     };
   }
   throw new Error("盯盘脑图节点类型必须是 category 或 stock");
+}
+
+function validateIndustryPosition(value: unknown): "leader1" | "leader2" | "leader3" | undefined {
+  if (value === undefined || value === "") {
+    return undefined;
+  }
+  if (value === "leader1" || value === "leader2" || value === "leader3") {
+    return value;
+  }
+  throw new Error("股票行业地位必须是 leader1、leader2 或 leader3");
 }
 
 function requireObject(value: unknown, name: string): Record<string, unknown> {
@@ -378,6 +422,31 @@ function isTradingMinute(time: string): boolean {
   const minute = trendMinute(time);
   return (minute >= trendMinute("09:30") && minute <= trendMinute("11:30")) ||
     (minute >= trendMinute("13:00") && minute <= trendMinute("15:00"));
+}
+
+const FULL_DAY_TREND_INTERVALS = 240;
+const MORNING_START_MINUTE = 9 * 60 + 30;
+const MORNING_END_MINUTE = 11 * 60 + 30;
+const AFTERNOON_START_MINUTE = 13 * 60 + 1;
+const AFTERNOON_COMPAT_START_MINUTE = 13 * 60;
+const AFTERNOON_END_MINUTE = 15 * 60;
+const MORNING_TREND_POINT_COUNT = MORNING_END_MINUTE - MORNING_START_MINUTE + 1;
+
+function intradayTimelineIndex(time: string): number | undefined {
+  if (!/^\d{2}:\d{2}$/.test(time)) {
+    return undefined;
+  }
+  const minute = trendMinute(time);
+  if (minute >= MORNING_START_MINUTE && minute <= MORNING_END_MINUTE) {
+    return minute - MORNING_START_MINUTE;
+  }
+  if (minute >= AFTERNOON_START_MINUTE && minute <= AFTERNOON_END_MINUTE) {
+    return MORNING_TREND_POINT_COUNT + minute - AFTERNOON_START_MINUTE;
+  }
+  if (minute === AFTERNOON_COMPAT_START_MINUTE) {
+    return MORNING_TREND_POINT_COUNT;
+  }
+  return undefined;
 }
 
 function trendMinute(time: string): number {

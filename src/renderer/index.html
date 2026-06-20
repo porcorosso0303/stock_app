@@ -130,9 +130,32 @@
         <div id="watch-stock-results" class="watch-stock-results" hidden></div>
         <label id="watch-node-secid-label" for="watch-node-secid">已选股票 secid</label>
         <input id="watch-node-secid" readonly placeholder="请先搜索并选择股票" />
+        <label id="watch-node-industry-position-label" for="watch-node-industry-position">行业地位</label>
+        <select id="watch-node-industry-position">
+          <option value="">无</option>
+          <option value="leader1">龙头一</option>
+          <option value="leader2">龙头二</option>
+          <option value="leader3">龙头三</option>
+        </select>
         <p id="watch-node-error" class="dialog-error"></p>
         <div class="dialog-actions">
           <button id="cancel-watch-node" type="button">取消</button>
+          <button class="primary" type="submit">保存</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="market-provider-dialog" class="settings-dialog">
+      <form id="market-provider-form">
+        <h2>数据源设置</h2>
+        <p class="settings-hint">选择盯盘脑图使用的行情数据源。模拟数据会从最近真实交易日第一个分时点开始回放。</p>
+        <label for="market-provider-select">数据源</label>
+        <select id="market-provider-select">
+          <option value="east-money">东方财富</option>
+          <option value="mock-cache">模拟数据</option>
+        </select>
+        <p id="market-provider-status" class="dialog-error"></p>
+        <div class="dialog-actions">
+          <button id="cancel-market-provider" type="button">取消</button>
           <button class="primary" type="submit">保存</button>
         </div>
       </form>

@@ -148,6 +148,7 @@ Preload 不负责：
 - `AppBootstrap`
 - `WatchTreeNode`
 - `WatchTreeConfig`
+- `WatchIndustryPosition`
 - `StockQuote`
 - `StockTrend`
 - `WatchMarketData`
@@ -170,17 +171,32 @@ interface StockTrend {
 
 `tradingDate` 来自行情数据源返回的实际分时日期，不使用程序打开当天的自然日期代替。
 
+股票叶子节点可选保存 `industryPosition`，取值为：
+
+```ts
+type WatchIndustryPosition = "leader1" | "leader2" | "leader3";
+```
+
+该字段表示用户手工维护的行业地位，分别对应“龙头一”、“龙头二”、“龙头三”。字段保存在 `watch-tree.json` 的股票节点内；未设置时省略。
+
+`StockQuote` 是 provider 返回给上层的标准化行情快照。除价格和涨跌幅外，当前可选包含：
+
+- `peTtm`: TTM 市盈率。
+- `turnoverRate`: 换手率百分比。
+- `floatMarketCap`: 流通市值，单位为元。
+- `limitRate` 和 `limitStatus`: 涨跌停相关标准化字段。
+
 `AppConfig` 当前字段：
 
 ```ts
 interface AppConfig {
   reportDirectory?: string;
-  watchMarketProviderId?: string;
+  watchMarketProviderId?: "east-money" | "mock-cache";
   researchProviderId?: string;
 }
 ```
 
-`watchMarketProviderId` 和 `researchProviderId` 是 provider 选择扩展点。当前 UI 尚未提供选择入口，默认装配仍在 `src/main/index.ts` 中完成。
+`watchMarketProviderId` 是盯盘行情 provider 选择配置。顶部 Electron 菜单 `Setting -> 数据源` 不直接承载所有选项，而是通知 renderer 打开独立的数据源设置弹窗。用户在弹窗中选择“东方财富”或“模拟数据”并保存后，renderer 调用 `watch-market-provider:set`；主进程写入 `user_data/config.json`，切换当前 provider，并通过 `watch-market-provider:changed` 通知 renderer 重新加载盯盘行情。`Setting` 下后续新增模型 API 等配置时，应复用这种“菜单入口 -> 独立设置界面 -> IPC 保存”的结构，避免把大量配置项堆在系统菜单里。`researchProviderId` 是股票调研 provider 的预留扩展点。
 
 ### 盯盘纯函数
 
@@ -194,8 +210,9 @@ interface AppConfig {
 - 分类上涨/下跌股票数统计。
 - 分类板块强度指数计算入口。
 - 最近 5 个交易日分类强度曲线点生成。
+- 展示用子节点涨跌幅排序。
 - 报价点合并到走势。
-- 走势 SVG sparkline 生成。
+- 走势 SVG sparkline 生成。股票分时走势使用固定 A 股全天时间轴：`09:30` 位于最左，`15:00` 位于最右，盘中或模拟回放只绘制已经到达的左侧片段；分类强度历史等非分时数据仍按点均分横轴。
 - 涨跌幅样式 class 计算。
 
 这些函数不依赖 DOM 或 Electron，可在 main、renderer、测试中复用。
@@ -205,6 +222,7 @@ interface AppConfig {
 - `calculateChangePercent`: 用价格和昨收价计算涨跌幅。
 - `normalizeIntradayTrendPoints`: 把 provider 解析出的分时价格标准化为 `StockTrendPoint`。
 - `calculateSectorStrengthIndex`: 板块强度指数算法。
+- `calculateSuddenStockMove`: 股票分时异动判定算法。
 
 板块强度指数算法用于分类节点，输入是该分类下所有股票的标准化 quote。算法分两层：
 
@@ -223,6 +241,8 @@ interface AppConfig {
 ```
 
 涨跌停事件不参与固定权重平均，而是作为额外冲击项。这样没有涨停或跌停时，指数仍使用完整基础强弱区间；出现涨停或跌停时，指数会产生明显增强或削弱。`limitRate` 可由 provider 标准化提供；缺失时 helper 按 `secid` 推断常见 A 股涨跌幅限制：主板 10%，创业板/科创板 20%，北交所代码段 30%。未来 provider 如果能返回更精确的涨跌停状态，应写入 `StockQuote.limitRate` 和 `StockQuote.limitStatus`，上层算法无需改动。
+
+股票分时异动算法用于 UI 提醒。默认取最新分时点向前 5 分钟作为观察窗口，计算窗口首尾涨跌幅变化；绝对变化达到 1.2 个百分点时判定为异动，正值为上涨异动，负值为下跌异动。该算法只依赖标准化 `StockTrendPoint.changePercent`，不关心数据源来自东财、Tushare、AkShare 或券商接口。
 
 ### Markdown 渲染
 
@@ -458,7 +478,12 @@ src/renderer/features/watch/watch-view.ts
 - 渲染空状态提示。
 - 渲染分类节点和股票节点 HTML。
 - 渲染分类节点平均涨跌幅、上涨/下跌股票数。
+- 渲染分类子节点时按涨跌幅降序排序；股票节点使用自身涨跌幅，分类节点使用递归平均涨跌幅，无行情节点排在有行情节点后面。排序只影响展示，不写回 `watch-tree.json`。
 - 渲染股票走势 sparkline 和涨跌幅数字。
+- 根据 `calculateSuddenStockMove()` 的结果，在可见股票名称上叠加渐变闪烁的异动箭头；上涨为红色，下跌为绿色。异动状态每次渲染时从最新走势即时计算，不写入用户配置或行情缓存。
+- 当折叠分类节点下存在异动股票且股票被折叠隐藏时，在分类节点上叠加渐变感叹号；用户展开分类后，因股票已经可见，该分类节点不再显示隐藏异动提示。
+- 股票节点设置 `industryPosition` 时，在涨跌幅右侧显示立体星标：`leader1` 金色、`leader2` 银色、`leader3` 铜色。
+- 股票 tooltip 显示价格、涨跌幅、TTM 市盈率、换手率和流通市值。
 - 渲染 tooltip 文案。
 - 格式化涨跌幅。
 
@@ -583,8 +608,9 @@ src/main/modules/watch/market-data/market-data-provider.ts
 
 ```ts
 interface MarketDataProvider {
-  readonly id: string;
+  readonly id: "east-money" | "mock-cache";
   readonly label: string;
+  readonly cacheBehavior?: "standard" | "ephemeral";
   listQuotes(secids: string[]): Promise<StockQuote[]>;
   listTrends(secids: string[]): Promise<StockTrend[]>;
   searchStocks(query: string): Promise<StockSearchResult[]>;
@@ -594,18 +620,24 @@ interface MarketDataProvider {
 当前实现：
 
 ```text
+src/main/modules/watch/market-data/selectable-market-data-provider.ts
 src/main/modules/watch/market-data/east-money-provider.ts
+src/main/modules/watch/market-data/mock-cache-provider.ts
 src/shared/data-calc-helper.ts
 src/main/east-money-quote-service.ts
 ```
 
+`SelectableMarketDataProvider` 是运行时代理 provider。`WatchMarketService`、IPC 和 renderer 始终依赖同一个 `MarketDataProvider` 接口；数据源设置弹窗保存后只改变代理内部当前 provider。选择 mock provider 时会调用其 `reset()`，让模拟回放从最近真实交易日第一个分时点重新开始。
+
 `EastMoneyMarketDataProvider` 是 provider 适配器。`EastMoneyQuoteService` 负责东方财富公开接口：
 
 - 股票搜索。
-- 行情快照。快照请求包含最新价、昨收价和涨跌幅；当接口返回的涨跌幅为 0 但最新价和昨收价不一致时，适配器用最新价和昨收价重算涨跌幅。
+- 行情快照。快照请求包含最新价、昨收价、涨跌幅、TTM 市盈率、换手率和流通市值；当接口返回的涨跌幅为 0 但最新价和昨收价不一致时，适配器用最新价和昨收价重算涨跌幅。
 - 当日分时走势。分时请求必须包含完整 `fields1=f1...f13`，确保返回中带有 `prePrice` 昨收价；适配器用每个分时价格相对昨收价计算 `StockTrendPoint.changePercent`。
 - 东方财富返回格式解析。
 - 失败时返回可展示的 error message。
+
+`MockCacheMarketDataProvider` 是独立的模拟数据 provider，`id` 为 `mock-cache`，`cacheBehavior` 为 `ephemeral`。它不访问外部接口，而是从 `WatchMarketCacheStore.getHistory()` 读取 `watch-quotes-cache.json` 中最近一个包含目标股票分时走势的真实交易日。回放开始时只返回第一个分时点；之后按当前刷新节奏推进，每 10 秒多返回一个分时点。`listQuotes()` 使用当前模拟时间点的最后一个分时点生成标准 quote，`listTrends()` 只返回从开盘到当前模拟点的走势。对 renderer 来说，这和真实盘中行情逐步到达的结构一致。
 
 `data-calc-helper.ts` 的主实现位于 `src/shared/`，main 侧 `src/main/modules/watch/market-data/data-calc-helper.ts` 只保留兼容导出入口。provider 负责解析各自源数据字段并调用 helper；`WatchMarketService` 不用 quote 反推昨收价，也不补算分时涨跌幅。
 
@@ -637,9 +669,11 @@ shell-controller activates watch
   -> watch-connectors schedule
 ```
 
-缓存命中前，`WatchMarketService` 会校验股票和分时走势是否覆盖当前脑图股票。交易时段至少要求北京时间周一到周五，并且处于 `09:30-11:30` 或 `13:00-15:00`。交易时段内，缓存必须从 `09:30` 起按交易分钟连续覆盖到当前交易分钟；午休时段必须连续覆盖到 `11:30`；非交易时段必须连续覆盖到 `15:00`。午休区间 `11:31-12:59` 不属于交易分钟，不要求存在。周末或节假日不使用当前自然日建缓存，使用 provider 返回的最近有效 `tradingDate`。
+缓存命中前，`WatchMarketService` 会校验股票和分时走势是否覆盖当前脑图股票。交易时段至少要求北京时间周一到周五，并且处于 `09:30-11:30` 或 `13:00-15:00`。交易日 `09:30` 之后，包括午休和收盘后，只接受当前自然日对应的交易日缓存，不回退到更早交易日。交易时段内，缓存必须从 `09:30` 起按交易分钟连续覆盖到当前交易分钟；午休时段必须连续覆盖到 `11:30`；非交易时段必须连续覆盖到 `15:00`。午休区间 `11:31-13:00` 不属于东财分时返回的连续交易分钟，不要求存在；下午连续分钟从 `13:01` 开始。周末或交易日开盘前不使用当前自然日建缓存，使用 provider 返回的最近有效 `tradingDate`。
 
 如果缓存中的分时价格有波动、但所有分时涨跌幅都是 `0`，说明 provider 标准化失败，这类缓存会被判为不可用并重新拉取。如果缓存写入时间处于同一交易日交易时段、但走势曲线已经包含写入时间之后的分时点，说明历史完整曲线被当作实时曲线处理过，也会判为不可用并重新拉取。
+
+当 provider 返回的 quote 全部不可用且 trend 全部为空或失败时，`WatchMarketService` 会把失败结果返回给本次调用用于提示，但不会写入 `watch-quotes-cache.json`，避免接口或网络临时故障覆盖已有缓存。
 
 `WatchMarketData.history` 返回最近 5 个交易日的 `WatchMarketCache[]`。Renderer 不持久化派生指标，而是在渲染分类节点时用 `categoryStrengthHistory()` 从历史 quote 即时计算每日板块强度指数，并用 sparkline 展示最近几天强度走势。当前曲线基于 `watch-quotes-cache.json` 中已保存的最近 5 个交易日行情。
 
@@ -664,6 +698,8 @@ watchController interval every 10s
   -> cache write
   -> renderer render
 ```
+
+当当前 provider 的 `cacheBehavior` 是 `ephemeral` 时，`WatchMarketService` 会跳过缓存命中检查和缓存写入。这个规则用于模拟数据，避免完整历史缓存直接短路模拟回放，也避免把半日回放进度写回真实行情缓存。
 
 刷新时，`mergeQuoteIntoTrend` 只会把快照点合并到尚未包含后续分时点的曲线中。如果已有曲线包含当前快照时间之后的点，说明这是已完整返回的历史分时曲线，快照价不能插入中间，否则会产生错误的垂直毛刺。
 
@@ -782,7 +818,7 @@ interface WatchMarketHistoryCache {
 
 - `tradingDate`
 - `updatedAt`
-- `quotes`：包含 `changePercent`，可选包含 `limitRate` 和 `limitStatus`，用于板块强度指数。
+- `quotes`：包含 `changePercent`，可选包含 `peTtm`、`turnoverRate`、`floatMarketCap`、`limitRate` 和 `limitStatus`。
 - `trends`
 
 每条 `StockTrend.tradingDate` 必须与所在 `WatchMarketCache.tradingDate` 一致。旧测试数据不作为长期兼容目标。读取到非 `version: 2` 或 trend 缺少交易日标签的缓存时，会按空历史处理；下一次成功刷新会写入新格式。
@@ -865,7 +901,7 @@ tests/fixtures/     测试 fixture
 - Provider 测试验证外部接口响应解析和失败降级。
 - Store 测试验证文件不存在、损坏、读写和校验行为。
 - Renderer 模块边界测试保护 `src/renderer/main.ts` 不重新膨胀。
-- Watch 行为源码测试保护空白区右键、启动 hydrate、走势样式等用户已确认行为。
+- Watch 行为测试保护空白区右键、启动 hydrate、走势样式、股票异动箭头和折叠分类异动提示等用户已确认行为。
 
 ## 当前非目标
 

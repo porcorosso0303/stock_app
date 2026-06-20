@@ -3,6 +3,7 @@ import type {
   StockQuote,
   StockSearchResult,
   StockTrend,
+  WatchIndustryPosition,
   WatchMarketCache,
   WatchTreeConfig,
   WatchTreeNode
@@ -307,6 +308,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     elements.watchNodeType.disabled = action.kind !== "add";
     elements.watchNodeName.value = existing?.name ?? "";
     elements.watchNodeSecid.value = existing?.type === "stock" ? existing.secid : "";
+    elements.watchNodeIndustryPosition.value = existing?.type === "stock" ? existing.industryPosition ?? "" : "";
     selectedStock = existing?.type === "stock"
       ? { secid: existing.secid, code: existing.secid.slice(2), name: existing.name }
       : undefined;
@@ -324,6 +326,8 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     elements.watchStockResults.hidden = true;
     elements.watchNodeSecidLabel.hidden = !isStock;
     elements.watchNodeSecid.hidden = !isStock;
+    elements.watchNodeIndustryPositionLabel.hidden = !isStock;
+    elements.watchNodeIndustryPosition.hidden = !isStock;
   }
 
   function handleNodeNameInput(): void {
@@ -397,7 +401,8 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
             id: existing?.id ?? crypto.randomUUID(),
             type,
             name,
-            secid: validateSecid(elements.watchNodeSecid.value)
+            secid: validateSecid(elements.watchNodeSecid.value),
+            industryPosition: readIndustryPosition(elements.watchNodeIndustryPosition.value)
           }
         : {
             id: existing?.id ?? crypto.randomUUID(),
@@ -466,6 +471,11 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       elements.watchPanel.addEventListener("scroll", () => closeWatchContextMenu(elements.watchContextMenu));
       document.addEventListener("click", () => closeWatchContextMenu(elements.watchContextMenu));
       window.addEventListener("resize", connectors.schedule);
+      api.onWatchMarketProviderChanged(() => {
+        if (isActive()) {
+          void loadMarketData();
+        }
+      });
     },
     hydrate: (nextConfig) => {
       config = nextConfig;
@@ -481,6 +491,12 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     },
     deactivate: () => stopPolling()
   };
+}
+
+function readIndustryPosition(value: string): WatchIndustryPosition | undefined {
+  return value === "leader1" || value === "leader2" || value === "leader3"
+    ? value
+    : undefined;
 }
 
 function currentMarketDataAsHistory(

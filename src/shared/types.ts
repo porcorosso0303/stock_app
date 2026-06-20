@@ -7,9 +7,11 @@ export type ResearchStatus =
 
 export interface AppConfig {
   reportDirectory?: string;
-  watchMarketProviderId?: string;
+  watchMarketProviderId?: WatchMarketProviderId;
   researchProviderId?: string;
 }
+
+export type WatchMarketProviderId = "east-money" | "mock-cache";
 
 export interface ResearchRecord {
   id: string;
@@ -64,9 +66,11 @@ export interface WatchTreeStockNode {
   type: "stock";
   name: string;
   secid: string;
+  industryPosition?: WatchIndustryPosition;
 }
 
 export type WatchTreeNode = WatchTreeCategoryNode | WatchTreeStockNode;
+export type WatchIndustryPosition = "leader1" | "leader2" | "leader3";
 
 export interface WatchTreeConfig {
   root?: WatchTreeCategoryNode;
@@ -77,6 +81,9 @@ export interface StockQuote {
   stockName?: string;
   price?: number;
   changePercent?: number;
+  peTtm?: number;
+  turnoverRate?: number;
+  floatMarketCap?: number;
   limitRate?: number;
   limitStatus?: StockLimitStatus;
   fetchedAt: string;

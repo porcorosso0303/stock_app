@@ -23,6 +23,9 @@ const IPC = {
   searchStocks: "watch-stocks:search",
   exportWatchData: "watch-data:export",
   importWatchData: "watch-data:import",
+  openWatchMarketProviderSettings: "watch-market-provider:open-settings",
+  setWatchMarketProvider: "watch-market-provider:set",
+  watchMarketProviderChanged: "watch-market-provider:changed",
   researchEvent: "research:event"
 } as const satisfies typeof import("../shared/ipc").IPC;
 
@@ -47,6 +50,17 @@ const api: StockResearchApi = {
   searchStocks: async (query) => await ipcRenderer.invoke(IPC.searchStocks, { query }),
   exportWatchData: async () => await ipcRenderer.invoke(IPC.exportWatchData),
   importWatchData: async () => await ipcRenderer.invoke(IPC.importWatchData),
+  setWatchMarketProvider: async (providerId) => await ipcRenderer.invoke(IPC.setWatchMarketProvider, { providerId }),
+  onOpenWatchMarketProviderSettings: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on(IPC.openWatchMarketProviderSettings, listener);
+    return () => ipcRenderer.removeListener(IPC.openWatchMarketProviderSettings, listener);
+  },
+  onWatchMarketProviderChanged: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on(IPC.watchMarketProviderChanged, listener);
+    return () => ipcRenderer.removeListener(IPC.watchMarketProviderChanged, listener);
+  },
   onResearchEvent: (callback) => {
     const listener = (_event: unknown, progress: ResearchProgressEvent) => callback(progress);
     ipcRenderer.on(IPC.researchEvent, listener);
