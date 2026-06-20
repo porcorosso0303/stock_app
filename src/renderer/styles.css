@@ -97,6 +97,7 @@ h2 { margin: 0; font-size: 15px; }
 .watch-node strong { font-size: 13px; }
 .watch-node.stock .watch-stock-name strong { display: block; max-width: 86px; overflow: hidden; text-overflow: ellipsis; }
 .watch-stock-name { position: relative; display: inline-block; flex: 0 1 auto; min-width: 0; }
+.watch-stock-name.is-holding strong { color: #c51ce0; font-weight: 900; text-shadow: 0 0 2px #fff, 0 0 7px #d83bea99; }
 .watch-sudden-move-arrow { position: absolute; z-index: 2; top: 50%; left: 50%; display: inline-block; font-size: 32px; font-weight: 900; line-height: 1; pointer-events: none; opacity: .64; transform: translate(-50%, -56%) rotate(-10deg) scaleX(1.18); filter: drop-shadow(0 1px 0 #ffffffd9) drop-shadow(0 3px 6px #17343d66); text-shadow: 0 0 3px #fff, 0 0 8px currentColor, 0 5px 12px currentColor; animation: watch-sudden-move-flash 1.05s ease-in-out infinite; -webkit-text-stroke: 1.1px currentColor; }
 .watch-sudden-move-arrow.up { color: #ff2f22; }
 .watch-sudden-move-arrow.down { color: #00a85a; }

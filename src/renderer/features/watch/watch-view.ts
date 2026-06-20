@@ -120,7 +120,7 @@ function renderWatchNodeContent(node: WatchTreeNode, state: WatchViewState): str
   const trend = state.trends.get(node.secid);
   const suddenMove = calculateSuddenStockMove(trend?.points ?? []);
   return `
-    <span class="watch-stock-name">
+    <span class="watch-stock-name${node.isHolding ? " is-holding" : ""}">
       <strong>${escapeHtml(node.name)}</strong>
       ${renderSuddenMoveArrow(suddenMove)}
     </span>
