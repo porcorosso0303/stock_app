@@ -67,6 +67,7 @@ export interface WatchTreeStockNode {
   name: string;
   secid: string;
   industryPosition?: WatchIndustryPosition;
+  isHolding?: boolean;
 }
 
 export type WatchTreeNode = WatchTreeCategoryNode | WatchTreeStockNode;

@@ -353,12 +353,14 @@ function validateNode(value: unknown, ids: Set<string>): WatchTreeNode {
   }
   if (node.type === "stock") {
     const industryPosition = validateIndustryPosition(node.industryPosition);
+    const isHolding = validateIsHolding(node.isHolding);
     return {
       id,
       type: "stock",
       name,
       secid: validateSecid(requireNonEmptyString(node.secid, "股票 secid")),
-      ...(industryPosition ? { industryPosition } : {})
+      ...(industryPosition ? { industryPosition } : {}),
+      ...(isHolding ? { isHolding } : {})
     };
   }
   throw new Error("盯盘脑图节点类型必须是 category 或 stock");
@@ -372,6 +374,16 @@ function validateIndustryPosition(value: unknown): "leader1" | "leader2" | "lead
     return value;
   }
   throw new Error("股票行业地位必须是 leader1、leader2 或 leader3");
+}
+
+function validateIsHolding(value: unknown): boolean | undefined {
+  if (value === undefined || value === false) {
+    return undefined;
+  }
+  if (value === true) {
+    return true;
+  }
+  throw new Error("股票持仓股属性必须是布尔值");
 }
 
 function requireObject(value: unknown, name: string): Record<string, unknown> {

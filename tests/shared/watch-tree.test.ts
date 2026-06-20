@@ -226,6 +226,82 @@ describe("watch tree", () => {
     })).toThrow("行业地位");
   });
 
+  it("preserves holding status on stock nodes", () => {
+    expect(validateWatchTreeConfig({
+      root: {
+        id: "root",
+        type: "category",
+        name: "分类",
+        children: [{
+          id: "stock",
+          type: "stock",
+          name: "股票",
+          secid: "1.600519",
+          isHolding: true
+        }]
+      }
+    })).toEqual({
+      root: {
+        id: "root",
+        type: "category",
+        name: "分类",
+        children: [{
+          id: "stock",
+          type: "stock",
+          name: "股票",
+          secid: "1.600519",
+          isHolding: true
+        }]
+      }
+    });
+  });
+
+  it("omits false holding status from stock nodes", () => {
+    expect(validateWatchTreeConfig({
+      root: {
+        id: "root",
+        type: "category",
+        name: "分类",
+        children: [{
+          id: "stock",
+          type: "stock",
+          name: "股票",
+          secid: "1.600519",
+          isHolding: false
+        }]
+      }
+    })).toEqual({
+      root: {
+        id: "root",
+        type: "category",
+        name: "分类",
+        children: [{
+          id: "stock",
+          type: "stock",
+          name: "股票",
+          secid: "1.600519"
+        }]
+      }
+    });
+  });
+
+  it("rejects non-boolean holding status on stock nodes", () => {
+    expect(() => validateWatchTreeConfig({
+      root: {
+        id: "root",
+        type: "category",
+        name: "分类",
+        children: [{
+          id: "stock",
+          type: "stock",
+          name: "股票",
+          secid: "1.600519",
+          isHolding: "yes"
+        }]
+      }
+    })).toThrow("持仓股");
+  });
+
   it("merges the latest quote into a trend without duplicating fetchedAt minutes", () => {
     const trend = {
       secid: "1.600519",
