@@ -42,6 +42,8 @@ export const elements = {
   watchNodeSecid: getElement<HTMLInputElement>("watch-node-secid"),
   watchNodeIndustryPositionLabel: getElement<HTMLElement>("watch-node-industry-position-label"),
   watchNodeIndustryPosition: getElement<HTMLSelectElement>("watch-node-industry-position"),
+  watchNodeHoldingLabel: getElement<HTMLElement>("watch-node-holding-label"),
+  watchNodeHolding: getElement<HTMLSelectElement>("watch-node-holding"),
   watchNodeError: getElement<HTMLElement>("watch-node-error"),
   cancelWatchNode: getElement<HTMLButtonElement>("cancel-watch-node"),
   marketProviderDialog: getElement<HTMLDialogElement>("market-provider-dialog"),

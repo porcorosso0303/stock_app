@@ -11,9 +11,19 @@ describe("watch stock industry position", () => {
     expect(html).toContain("龙头一");
     expect(html).toContain("龙头二");
     expect(html).toContain("龙头三");
+    expect(html).toContain('<label id="watch-node-holding-label" for="watch-node-holding">持仓股</label>');
+    expect(html).toContain('<select id="watch-node-holding">');
+    expect(html).toContain('<option value="false">否</option>');
+    expect(html).toContain('<option value="true">是</option>');
     expect(dom).toContain('watchNodeIndustryPosition: getElement<HTMLSelectElement>("watch-node-industry-position")');
+    expect(dom).toContain('watchNodeHoldingLabel: getElement<HTMLElement>("watch-node-holding-label")');
+    expect(dom).toContain('watchNodeHolding: getElement<HTMLSelectElement>("watch-node-holding")');
     expect(controller).toContain("industryPosition: readIndustryPosition(elements.watchNodeIndustryPosition.value)");
     expect(controller).toContain("existing?.type === \"stock\" ? existing.industryPosition ?? \"\" : \"\"");
+    expect(controller).toContain('elements.watchNodeHolding.value = existing?.type === "stock" && existing.isHolding ? "true" : "false"');
+    expect(controller).toContain("elements.watchNodeHoldingLabel.hidden = !isStock");
+    expect(controller).toContain("elements.watchNodeHolding.hidden = !isStock");
+    expect(controller).toContain('...(elements.watchNodeHolding.value === "true" ? { isHolding: true } : {})');
   });
 
   it("renders industry position stars and extra quote metrics for stock nodes", async () => {

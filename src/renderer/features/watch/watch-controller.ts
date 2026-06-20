@@ -309,6 +309,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     elements.watchNodeName.value = existing?.name ?? "";
     elements.watchNodeSecid.value = existing?.type === "stock" ? existing.secid : "";
     elements.watchNodeIndustryPosition.value = existing?.type === "stock" ? existing.industryPosition ?? "" : "";
+    elements.watchNodeHolding.value = existing?.type === "stock" && existing.isHolding ? "true" : "false";
     selectedStock = existing?.type === "stock"
       ? { secid: existing.secid, code: existing.secid.slice(2), name: existing.name }
       : undefined;
@@ -328,6 +329,8 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     elements.watchNodeSecid.hidden = !isStock;
     elements.watchNodeIndustryPositionLabel.hidden = !isStock;
     elements.watchNodeIndustryPosition.hidden = !isStock;
+    elements.watchNodeHoldingLabel.hidden = !isStock;
+    elements.watchNodeHolding.hidden = !isStock;
   }
 
   function handleNodeNameInput(): void {
@@ -402,7 +405,8 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
             type,
             name,
             secid: validateSecid(elements.watchNodeSecid.value),
-            industryPosition: readIndustryPosition(elements.watchNodeIndustryPosition.value)
+            industryPosition: readIndustryPosition(elements.watchNodeIndustryPosition.value),
+            ...(elements.watchNodeHolding.value === "true" ? { isHolding: true } : {})
           }
         : {
             id: existing?.id ?? crypto.randomUUID(),
