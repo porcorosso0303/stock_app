@@ -122,6 +122,7 @@ function renderWatchNodeContent(node: WatchTreeNode, state: WatchViewState): str
   return `
     <span class="watch-stock-name${node.isHolding ? " is-holding" : ""}">
       <strong>${escapeHtml(node.name)}</strong>
+      ${node.isHolding ? '<span class="watch-visually-hidden">持仓股</span>' : ""}
       ${renderSuddenMoveArrow(suddenMove)}
     </span>
     <span class="watch-trend-inline">
@@ -140,7 +141,8 @@ function renderWatchNodeTooltip(
   if (node.type === "stock") {
     const quote = state.quotes.get(node.secid);
     const price = quote?.price === undefined ? "暂无行情" : `¥${quote.price.toFixed(2)}`;
-    return `${node.name}\n${node.secid}\n价格：${price}\n涨跌幅：${formatChangePercent(quote?.changePercent)}\nTTM市盈率：${formatNumber(quote?.peTtm)}\n换手率：${formatChangePercent(quote?.turnoverRate)}\n流通市值：${formatMarketCap(quote?.floatMarketCap)}\n右键编辑或删除`;
+    const holdingStatus = node.isHolding ? "\n持仓状态：持仓股" : "";
+    return `${node.name}\n${node.secid}${holdingStatus}\n价格：${price}\n涨跌幅：${formatChangePercent(quote?.changePercent)}\nTTM市盈率：${formatNumber(quote?.peTtm)}\n换手率：${formatChangePercent(quote?.turnoverRate)}\n流通市值：${formatMarketCap(quote?.floatMarketCap)}\n右键编辑或删除`;
   }
   const leafCount = collectStockSecids(node).length;
   const average = averageChangePercent(node, state.quotes);
