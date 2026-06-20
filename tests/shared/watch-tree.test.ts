@@ -285,6 +285,35 @@ describe("watch tree", () => {
     });
   });
 
+  it("omits undefined holding status from stock nodes", () => {
+    expect(validateWatchTreeConfig({
+      root: {
+        id: "root",
+        type: "category",
+        name: "分类",
+        children: [{
+          id: "stock",
+          type: "stock",
+          name: "股票",
+          secid: "1.600519",
+          isHolding: undefined
+        }]
+      }
+    })).toEqual({
+      root: {
+        id: "root",
+        type: "category",
+        name: "分类",
+        children: [{
+          id: "stock",
+          type: "stock",
+          name: "股票",
+          secid: "1.600519"
+        }]
+      }
+    });
+  });
+
   it("rejects non-boolean holding status on stock nodes", () => {
     expect(() => validateWatchTreeConfig({
       root: {
