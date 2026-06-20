@@ -179,6 +179,17 @@ type WatchIndustryPosition = "leader1" | "leader2" | "leader3";
 
 该字段表示用户手工维护的行业地位，分别对应“龙头一”、“龙头二”、“龙头三”。字段保存在 `watch-tree.json` 的股票节点内；未设置时省略。
 
+股票叶子节点还可选保存持仓状态：
+
+```ts
+interface WatchTreeStockNode {
+  // 其他字段省略
+  isHolding?: boolean;
+}
+```
+
+`isHolding: true` 表示持仓股；`false` 或字段缺失均表示非持仓股，并在脑图配置规范化时省略。`validateWatchTreeConfig()` 只接受布尔值，其他类型会作为无效配置拒绝。该字段和节点其他属性一起保存在 `watch-tree.json` 中。
+
 `StockQuote` 是 provider 返回给上层的标准化行情快照。除价格和涨跌幅外，当前可选包含：
 
 - `peTtm`: TTM 市盈率。
@@ -454,6 +465,7 @@ src/renderer/features/watch/watch-controller.ts
 - 维护折叠节点集合。
 - 维护股票搜索选择状态。
 - 维护节点编辑弹窗状态。
+- 在股票节点编辑弹窗中管理“持仓股”选项：新增股票默认“否”，编辑时回填已有状态，保存“否”时省略 `isHolding`，保存“是”时写入 `isHolding: true`。该控件只对股票节点显示。
 - 维护面板拖拽平移状态。
 - 绑定盯盘相关 DOM 事件。
 - 从 bootstrap 中 hydrate 初始脑图。
@@ -483,7 +495,8 @@ src/renderer/features/watch/watch-view.ts
 - 根据 `calculateSuddenStockMove()` 的结果，在可见股票名称上叠加渐变闪烁的异动箭头；上涨为红色，下跌为绿色。异动状态每次渲染时从最新走势即时计算，不写入用户配置或行情缓存。
 - 当折叠分类节点下存在异动股票且股票被折叠隐藏时，在分类节点上叠加渐变感叹号；用户展开分类后，因股票已经可见，该分类节点不再显示隐藏异动提示。
 - 股票节点设置 `industryPosition` 时，在涨跌幅右侧显示立体星标：`leader1` 金色、`leader2` 银色、`leader3` 铜色。
-- 股票 tooltip 显示价格、涨跌幅、TTM 市盈率、换手率和流通市值。
+- 股票节点设置 `isHolding: true` 时，名称容器增加 `is-holding` 语义 class，名称使用高亮紫色、粗体和 `drop-shadow` 光晕。持仓样式只作用于股票名称，不改变涨跌幅和走势红绿、行业地位星标或异动箭头；同时输出视觉隐藏的“持仓股”文本供辅助技术读取。
+- 股票 tooltip 显示价格、涨跌幅、TTM 市盈率、换手率、流通市值和持仓状态。
 - 渲染 tooltip 文案。
 - 格式化涨跌幅。
 
@@ -585,6 +598,8 @@ src/main/watch-data-transfer-service.ts
 - 导入用户指定目录中的盯盘数据包。
 - 导入时校验脑图结构和行情历史结构。
 - 导入成功后覆盖本机盯盘脑图和行情历史缓存。
+
+持仓状态属于 `watch-tree.json` 股票节点字段，因此会随现有脑图数据包直接导出；导入时经过 `validateWatchTreeConfig()` 校验并规范化，不需要单独的数据迁移或附加文件。
 
 导出目录包含：
 
@@ -789,7 +804,7 @@ user_data/runs/<run-id>/.agents/skills/research-a-share-stock/
 - `watchMarketProviderId`
 - `researchProviderId`
 
-Provider ID 字段当前只是扩展预留。默认 provider 仍由 main 装配。
+`watchMarketProviderId` 已用于持久化用户在数据源设置弹窗中的选择，并由 main 装配的 `SelectableMarketDataProvider` 执行运行时切换。`researchProviderId` 仍是自定义调研 provider 的扩展预留。
 
 ### history.json
 
@@ -801,7 +816,7 @@ Provider ID 字段当前只是扩展预留。默认 provider 仍由 main 装配�
 
 ### watch-tree.json
 
-由 `WatchTreeStore` 维护。保存用户自定义脑图结构。
+由 `WatchTreeStore` 维护。保存用户自定义脑图结构，以及股票节点的 `industryPosition`、`isHolding` 等用户属性。所有读写和导入都经过 `validateWatchTreeConfig()`；其中仅 `isHolding: true` 会持久化，`false` 和缺失字段统一表示非持仓。
 
 ### watch-quotes-cache.json
 
@@ -901,13 +916,12 @@ tests/fixtures/     测试 fixture
 - Provider 测试验证外部接口响应解析和失败降级。
 - Store 测试验证文件不存在、损坏、读写和校验行为。
 - Renderer 模块边界测试保护 `src/renderer/main.ts` 不重新膨胀。
-- Watch 行为测试保护空白区右键、启动 hydrate、走势样式、股票异动箭头和折叠分类异动提示等用户已确认行为。
+- Watch 行为测试保护空白区右键、启动 hydrate、走势样式、股票异动箭头、折叠分类异动提示、持仓属性编辑持久化和持仓名称渲染等用户已确认行为。
 
 ## 当前非目标
 
 当前代码尚未实现：
 
-- 用户在 UI 中选择行情 provider。
 - 用户在 UI 中配置自定义 AI provider。
 - main process 主动向 renderer 推送盯盘行情刷新事件。
 - 多棵盯盘脑图。
