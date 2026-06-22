@@ -6,12 +6,12 @@ import {
   type RawIntradayTrendPoint
 } from "./modules/watch/market-data/data-calc-helper";
 
-interface FetchResponseLike {
+export interface FetchResponseLike {
   ok: boolean;
   json(): Promise<unknown>;
 }
 
-interface FetchOptionsLike {
+export interface FetchOptionsLike {
   signal?: AbortSignal;
 }
 
@@ -20,7 +20,7 @@ interface EastMoneyQuoteServiceOptions {
   maxConcurrentRequests?: number;
 }
 
-type FetchLike = (url: string, init?: FetchOptionsLike) => Promise<FetchResponseLike>;
+export type FetchLike = (url: string, init?: FetchOptionsLike) => Promise<FetchResponseLike>;
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 5_000;
 const DEFAULT_MAX_CONCURRENT_REQUESTS = 2;

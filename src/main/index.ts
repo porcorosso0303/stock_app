@@ -15,7 +15,10 @@ import { CodexRunner } from "./codex-runner";
 import { ConfigStore } from "./config-store";
 import { buildApplicationMenuTemplate } from "./app-menu";
 import { CodexCliResearchProvider } from "./modules/research/providers/codex-cli-provider";
-import { EastMoneyMarketDataProvider } from "./modules/watch/market-data/east-money-provider";
+import {
+  createElectronNetFetch,
+  EastMoneyMarketDataProvider
+} from "./modules/watch/market-data/east-money-provider";
 import { MockCacheMarketDataProvider } from "./modules/watch/market-data/mock-cache-provider";
 import { SelectableMarketDataProvider } from "./modules/watch/market-data/selectable-market-data-provider";
 import { resolveEmbeddedSkillDirectory } from "./embedded-skill";
@@ -111,7 +114,7 @@ void app.whenReady().then(async () => {
     }
   });
   const watchMarketCacheStore = new WatchMarketCacheStore(join(userData, "watch-quotes-cache.json"));
-  const eastMoneyProvider = new EastMoneyMarketDataProvider((url, init) => net.fetch(url, init));
+  const eastMoneyProvider = new EastMoneyMarketDataProvider(createElectronNetFetch(net));
   const mockCacheProvider = new MockCacheMarketDataProvider(watchMarketCacheStore);
   const initialConfig = await configStore.get();
   const quoteService = new SelectableMarketDataProvider([

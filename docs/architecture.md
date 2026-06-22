@@ -653,7 +653,9 @@ src/main/east-money-quote-service.ts
 - 东方财富返回格式解析。
 - 失败时返回可展示的 error message。
 
-生产环境在 `src/main/index.ts` 中向 `EastMoneyMarketDataProvider` 注入 Electron `net.fetch`，使行情请求使用 Chromium 网络栈和 Windows 系统代理配置。URL 和 `AbortSignal` 等请求选项必须完整透传。`EastMoneyQuoteService` 仍只依赖通用 fetch 接口，测试可以注入 fake fetch；不得在 provider 内直接依赖 Electron，以保持数据适配逻辑可独立测试。
+生产环境在 `src/main/index.ts` 中通过 `createElectronNetFetch(net)` 向 `EastMoneyMarketDataProvider` 注入网络实现。该适配器位于 `east-money-provider.ts`，使用 Electron `net.request` 和 Chromium 网络栈读取 Windows 系统代理，把响应转换为 `EastMoneyQuoteService` 依赖的 fetch-like 结构。收到 `AbortSignal` 时，适配器必须立即 reject 并调用 `ClientRequest.abort()` 释放底层代理连接，不能依赖 `net.fetch` 在代理链路中的 abort 行为。
+
+`EastMoneyQuoteService` 仍只依赖通用 fetch-like 接口，测试可以注入 fake fetch；东财返回解析、标准化和通用请求调度不依赖 Electron。Electron 网络传输细节仅保留在 main 侧 `EastMoneyMarketDataProvider` 适配模块中。
 
 东财请求默认 5 秒超时，超时后转换为可展示的“行情请求超时”，由下一轮轮询继续重试，不允许单个连接永久阻塞整个行情批次。`listQuotes()` 和 `listTrends()` 各自最多并发 2 个请求，避免一次为多只股票创建过多系统代理连接；返回结果顺序仍与输入去重后的 `secid` 顺序一致。
 

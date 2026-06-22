@@ -13,10 +13,12 @@ describe("watch provider selection wiring", () => {
     expect(source).toContain("IPC.watchMarketProviderChanged");
   });
 
-  it("uses Electron net.fetch for EastMoney so Windows system proxy settings are honored", async () => {
+  it("uses the abortable Electron network adapter for EastMoney", async () => {
     const source = await readFile("src/main/index.ts", "utf8");
 
     expect(source).toMatch(/import\s*\{[\s\S]*\bnet\b[\s\S]*\}\s*from\s*"electron"/);
-    expect(source).toContain("new EastMoneyMarketDataProvider((url, init) => net.fetch(url, init))");
+    expect(source).toContain("createElectronNetFetch");
+    expect(source).toContain("new EastMoneyMarketDataProvider(createElectronNetFetch(net))");
+    expect(source).not.toContain("net.fetch");
   });
 });
