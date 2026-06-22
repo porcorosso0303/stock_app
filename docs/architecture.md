@@ -652,6 +652,8 @@ src/main/east-money-quote-service.ts
 - 东方财富返回格式解析。
 - 失败时返回可展示的 error message。
 
+生产环境在 `src/main/index.ts` 中向 `EastMoneyMarketDataProvider` 注入 Electron `net.fetch`，使行情请求使用 Chromium 网络栈和 Windows 系统代理配置。`EastMoneyQuoteService` 仍只依赖通用 fetch 接口，测试可以注入 fake fetch；不得在 provider 内直接依赖 Electron，以保持数据适配逻辑可独立测试。
+
 `MockCacheMarketDataProvider` 是独立的模拟数据 provider，`id` 为 `mock-cache`，`cacheBehavior` 为 `ephemeral`。它不访问外部接口，而是从 `WatchMarketCacheStore.getHistory()` 读取 `watch-quotes-cache.json` 中最近一个包含目标股票分时走势的真实交易日。回放开始时只返回第一个分时点；之后按当前刷新节奏推进，每 10 秒多返回一个分时点。`listQuotes()` 使用当前模拟时间点的最后一个分时点生成标准 quote，`listTrends()` 只返回从开盘到当前模拟点的走势。对 renderer 来说，这和真实盘中行情逐步到达的结构一致。
 
 `data-calc-helper.ts` 的主实现位于 `src/shared/`，main 侧 `src/main/modules/watch/market-data/data-calc-helper.ts` 只保留兼容导出入口。provider 负责解析各自源数据字段并调用 helper；`WatchMarketService` 不用 quote 反推昨收价，也不补算分时涨跌幅。

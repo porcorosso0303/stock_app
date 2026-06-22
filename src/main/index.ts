@@ -4,6 +4,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  net,
   shell
 } from "electron";
 import { join } from "node:path";
@@ -110,7 +111,7 @@ void app.whenReady().then(async () => {
     }
   });
   const watchMarketCacheStore = new WatchMarketCacheStore(join(userData, "watch-quotes-cache.json"));
-  const eastMoneyProvider = new EastMoneyMarketDataProvider();
+  const eastMoneyProvider = new EastMoneyMarketDataProvider((url) => net.fetch(url));
   const mockCacheProvider = new MockCacheMarketDataProvider(watchMarketCacheStore);
   const initialConfig = await configStore.get();
   const quoteService = new SelectableMarketDataProvider([
