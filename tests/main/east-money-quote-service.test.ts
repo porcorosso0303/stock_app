@@ -51,6 +51,53 @@ describe("EastMoneyQuoteService", () => {
     }]);
   });
 
+  it("aborts a hanging request and returns a visible timeout error", async () => {
+    const fetchImpl = vi.fn((_url: string, init?: { signal?: AbortSignal }) => new Promise<never>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+    }));
+    const service = new EastMoneyQuoteService(
+      fetchImpl,
+      () => new Date("2026-06-22T10:10:00.000Z"),
+      { requestTimeoutMs: 5 }
+    );
+
+    await expect(service.listQuotes(["1.603986"])).resolves.toEqual([{
+      secid: "1.603986",
+      fetchedAt: "2026-06-22T10:10:00.000Z",
+      errorMessage: "行情请求超时"
+    }]);
+  });
+
+  it("limits concurrent requests to avoid exhausting the system proxy", async () => {
+    let activeRequests = 0;
+    let maxActiveRequests = 0;
+    const fetchImpl = vi.fn(async () => {
+      activeRequests += 1;
+      maxActiveRequests = Math.max(maxActiveRequests, activeRequests);
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      activeRequests -= 1;
+      return {
+        ok: true,
+        json: async () => ({ data: { f43: 1000, f60: 1000, f170: 0 } })
+      };
+    });
+    const service = new EastMoneyQuoteService(
+      fetchImpl,
+      () => new Date("2026-06-22T10:10:00.000Z"),
+      { maxConcurrentRequests: 2 }
+    );
+
+    await service.listQuotes([
+      "1.603986",
+      "1.688525",
+      "0.001309",
+      "1.600487",
+      "1.601869"
+    ]);
+
+    expect(maxActiveRequests).toBeLessThanOrEqual(2);
+  });
+
   it("returns an unavailable trend when previous close is missing", async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,

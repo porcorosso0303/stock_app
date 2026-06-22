@@ -58,6 +58,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   let config: WatchTreeConfig = {};
   let loaded = false;
   let quoteTimer: number | undefined;
+  let marketUpdateInFlight = false;
   let quotes = new Map<string, StockQuote>();
   let trends = new Map<string, StockTrend>();
   let marketHistory: WatchMarketCache[] = [];
@@ -133,6 +134,9 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     if (!isActive()) {
       return;
     }
+    if (marketUpdateInFlight) {
+      return;
+    }
     const secids = collectStockSecids(config.root);
     if (secids.length === 0) {
       quotes = new Map();
@@ -142,6 +146,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       render();
       return;
     }
+    marketUpdateInFlight = true;
     elements.watchStatus.textContent = loadingMessage;
     try {
       const marketData = await load(secids);
@@ -160,6 +165,8 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       render();
     } catch (error) {
       elements.watchStatus.textContent = getErrorMessage(error);
+    } finally {
+      marketUpdateInFlight = false;
     }
   }
 

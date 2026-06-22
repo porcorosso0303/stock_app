@@ -111,7 +111,7 @@ void app.whenReady().then(async () => {
     }
   });
   const watchMarketCacheStore = new WatchMarketCacheStore(join(userData, "watch-quotes-cache.json"));
-  const eastMoneyProvider = new EastMoneyMarketDataProvider((url) => net.fetch(url));
+  const eastMoneyProvider = new EastMoneyMarketDataProvider((url, init) => net.fetch(url, init));
   const mockCacheProvider = new MockCacheMarketDataProvider(watchMarketCacheStore);
   const initialConfig = await configStore.get();
   const quoteService = new SelectableMarketDataProvider([

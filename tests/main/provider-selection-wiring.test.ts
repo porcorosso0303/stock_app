@@ -17,6 +17,6 @@ describe("watch provider selection wiring", () => {
     const source = await readFile("src/main/index.ts", "utf8");
 
     expect(source).toMatch(/import\s*\{[\s\S]*\bnet\b[\s\S]*\}\s*from\s*"electron"/);
-    expect(source).toContain("new EastMoneyMarketDataProvider((url) => net.fetch(url))");
+    expect(source).toContain("new EastMoneyMarketDataProvider((url, init) => net.fetch(url, init))");
   });
 });

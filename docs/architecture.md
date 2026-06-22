@@ -470,6 +470,7 @@ src/renderer/features/watch/watch-controller.ts
 - 绑定盯盘相关 DOM 事件。
 - 从 bootstrap 中 hydrate 初始脑图。
 - 激活盯盘时加载行情并启动 10 秒轮询。
+- 同一时刻只允许一轮行情加载或刷新在途；定时器、手动刷新或数据源切换遇到未完成请求时直接跳过，避免轮询叠加。
 - 离开盯盘时停止轮询。
 - 保存脑图后重新加载行情。
 - 触发盯盘数据导出。
@@ -652,7 +653,9 @@ src/main/east-money-quote-service.ts
 - 东方财富返回格式解析。
 - 失败时返回可展示的 error message。
 
-生产环境在 `src/main/index.ts` 中向 `EastMoneyMarketDataProvider` 注入 Electron `net.fetch`，使行情请求使用 Chromium 网络栈和 Windows 系统代理配置。`EastMoneyQuoteService` 仍只依赖通用 fetch 接口，测试可以注入 fake fetch；不得在 provider 内直接依赖 Electron，以保持数据适配逻辑可独立测试。
+生产环境在 `src/main/index.ts` 中向 `EastMoneyMarketDataProvider` 注入 Electron `net.fetch`，使行情请求使用 Chromium 网络栈和 Windows 系统代理配置。URL 和 `AbortSignal` 等请求选项必须完整透传。`EastMoneyQuoteService` 仍只依赖通用 fetch 接口，测试可以注入 fake fetch；不得在 provider 内直接依赖 Electron，以保持数据适配逻辑可独立测试。
+
+东财请求默认 5 秒超时，超时后转换为可展示的“行情请求超时”，由下一轮轮询继续重试，不允许单个连接永久阻塞整个行情批次。`listQuotes()` 和 `listTrends()` 各自最多并发 2 个请求，避免一次为多只股票创建过多系统代理连接；返回结果顺序仍与输入去重后的 `secid` 顺序一致。
 
 `MockCacheMarketDataProvider` 是独立的模拟数据 provider，`id` 为 `mock-cache`，`cacheBehavior` 为 `ephemeral`。它不访问外部接口，而是从 `WatchMarketCacheStore.getHistory()` 读取 `watch-quotes-cache.json` 中最近一个包含目标股票分时走势的真实交易日。回放开始时只返回第一个分时点；之后按当前刷新节奏推进，每 10 秒多返回一个分时点。`listQuotes()` 使用当前模拟时间点的最后一个分时点生成标准 quote，`listTrends()` 只返回从开盘到当前模拟点的走势。对 renderer 来说，这和真实盘中行情逐步到达的结构一致。
 

@@ -11,20 +11,41 @@ interface FetchResponseLike {
   json(): Promise<unknown>;
 }
 
-type FetchLike = (url: string) => Promise<FetchResponseLike>;
+interface FetchOptionsLike {
+  signal?: AbortSignal;
+}
+
+interface EastMoneyQuoteServiceOptions {
+  requestTimeoutMs?: number;
+  maxConcurrentRequests?: number;
+}
+
+type FetchLike = (url: string, init?: FetchOptionsLike) => Promise<FetchResponseLike>;
+
+const DEFAULT_REQUEST_TIMEOUT_MS = 5_000;
+const DEFAULT_MAX_CONCURRENT_REQUESTS = 2;
 
 export class EastMoneyQuoteService {
   constructor(
     private readonly fetchImpl: FetchLike = fetch,
-    private readonly now: () => Date = () => new Date()
+    private readonly now: () => Date = () => new Date(),
+    private readonly options: EastMoneyQuoteServiceOptions = {}
   ) {}
 
   async listQuotes(secids: string[]): Promise<StockQuote[]> {
-    return await Promise.all([...new Set(secids)].map((secid) => this.get(secid)));
+    return await mapWithConcurrency(
+      [...new Set(secids)],
+      this.options.maxConcurrentRequests ?? DEFAULT_MAX_CONCURRENT_REQUESTS,
+      (secid) => this.get(secid)
+    );
   }
 
   async listTrends(secids: string[]): Promise<StockTrend[]> {
-    return await Promise.all([...new Set(secids)].map((secid) => this.getTrend(secid)));
+    return await mapWithConcurrency(
+      [...new Set(secids)],
+      this.options.maxConcurrentRequests ?? DEFAULT_MAX_CONCURRENT_REQUESTS,
+      (secid) => this.getTrend(secid)
+    );
   }
 
   async searchStocks(input: string): Promise<StockSearchResult[]> {
@@ -36,11 +57,7 @@ export class EastMoneyQuoteService {
     url.searchParams.set("input", query);
     url.searchParams.set("type", "14");
     url.searchParams.set("token", "D43BF722C8E33BDC906FB84D85E326E8");
-    const response = await this.fetchImpl(url.toString());
-    if (!response.ok) {
-      throw new Error("股票搜索请求失败");
-    }
-    return readSearchResults(await response.json());
+    return readSearchResults(await this.fetchJson(url, "股票搜索请求失败"));
   }
 
   private async get(input: string): Promise<StockQuote> {
@@ -50,11 +67,7 @@ export class EastMoneyQuoteService {
       const url = new URL("https://push2.eastmoney.com/api/qt/stock/get");
       url.searchParams.set("secid", secid);
       url.searchParams.set("fields", "f43,f57,f58,f60,f170,f8,f115,f117");
-      const response = await this.fetchImpl(url.toString());
-      if (!response.ok) {
-        throw new Error("行情服务请求失败");
-      }
-      const data = requireQuoteData(await response.json());
+      const data = requireQuoteData(await this.fetchJson(url, "行情服务请求失败"));
       const price = readScaledNumber(data.f43);
       return {
         secid,
@@ -85,11 +98,10 @@ export class EastMoneyQuoteService {
       url.searchParams.set("iscr", "0");
       url.searchParams.set("fields1", "f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13");
       url.searchParams.set("fields2", "f51,f52,f53,f54,f55,f56,f57,f58");
-      const response = await this.fetchImpl(url.toString());
-      if (!response.ok) {
-        throw new Error("分时走势请求失败");
-      }
-      const trendData = readTrendData(await response.json(), formatChinaDate(this.now()));
+      const trendData = readTrendData(
+        await this.fetchJson(url, "分时走势请求失败"),
+        formatChinaDate(this.now())
+      );
       return {
         secid,
         fetchedAt,
@@ -107,6 +119,46 @@ export class EastMoneyQuoteService {
       };
     }
   }
+
+  private async fetchJson(url: URL, requestErrorMessage: string): Promise<unknown> {
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(),
+      this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
+    );
+    try {
+      const response = await this.fetchImpl(url.toString(), { signal: controller.signal });
+      if (!response.ok) {
+        throw new Error(requestErrorMessage);
+      }
+      return await response.json();
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new Error("行情请求超时");
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+}
+
+async function mapWithConcurrency<T, U>(
+  values: T[],
+  concurrency: number,
+  map: (value: T) => Promise<U>
+): Promise<U[]> {
+  const results = new Array<U>(values.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(1, concurrency), values.length);
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < values.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await map(values[index]);
+    }
+  }));
+  return results;
 }
 
 function readSearchResults(value: unknown): StockSearchResult[] {
