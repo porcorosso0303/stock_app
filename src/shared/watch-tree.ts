@@ -312,6 +312,35 @@ export function removeWatchTreeNode(
   };
 }
 
+export function moveWatchTreeNode(
+  root: WatchTreeCategoryNode,
+  nodeId: string,
+  targetParentId: string
+): WatchTreeCategoryNode {
+  if (nodeId === targetParentId) {
+    return root;
+  }
+  const source = locateWatchTreeNode(root, nodeId);
+  const target = findWatchTreeNode(root, targetParentId);
+  if (!source || !source.parent || !target || target.type !== "category") {
+    return root;
+  }
+  if (source.parent.id === target.id) {
+    return root;
+  }
+  if (source.node.type === "category" && findWatchTreeNode(source.node, targetParentId)) {
+    return root;
+  }
+  if (target.children.some((child) => child.type !== source.node.type)) {
+    return root;
+  }
+  const withoutSource = removeWatchTreeNode(root, nodeId);
+  if (!withoutSource) {
+    return root;
+  }
+  return appendWatchTreeChild(withoutSource, targetParentId, source.node);
+}
+
 function mapCategory(
   root: WatchTreeCategoryNode,
   update: (node: WatchTreeCategoryNode) => WatchTreeCategoryNode,
@@ -329,6 +358,34 @@ function mapCategory(
         : child;
     })
   };
+}
+
+interface LocatedWatchTreeNode {
+  node: WatchTreeNode;
+  parent?: WatchTreeCategoryNode;
+}
+
+function locateWatchTreeNode(
+  root: WatchTreeNode | undefined,
+  id: string,
+  parent?: WatchTreeCategoryNode
+): LocatedWatchTreeNode | undefined {
+  if (!root) {
+    return undefined;
+  }
+  if (root.id === id) {
+    return { node: root, parent };
+  }
+  if (root.type === "stock") {
+    return undefined;
+  }
+  for (const child of root.children) {
+    const found = locateWatchTreeNode(child, id, root);
+    if (found) {
+      return found;
+    }
+  }
+  return undefined;
 }
 
 function validateNode(value: unknown, ids: Set<string>): WatchTreeNode {

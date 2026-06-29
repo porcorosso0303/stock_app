@@ -9,6 +9,7 @@ import {
   countUpDownStocks,
   formatTrendPercentClass,
   mergeQuoteIntoTrend,
+  moveWatchTreeNode,
   normalizeTrendSegments,
   renderTrendSparklineSvg,
   removeWatchTreeNode,
@@ -158,6 +159,129 @@ describe("watch tree", () => {
     expect(collectStockSecids(appended)).toEqual(["1.600519", "0.000001", "0.300750"]);
     expect(collectStockSecids(removed)).toEqual(["0.300750"]);
     expect(collectStockSecids(root)).toEqual(["1.600519", "0.300750"]);
+  });
+
+  it("moves a category subtree under another category when sibling types match", () => {
+    const tree: WatchTreeCategoryNode = {
+      id: "root",
+      type: "category",
+      name: "根",
+      children: [
+        {
+          id: "hardware",
+          type: "category",
+          name: "硬件",
+          children: [
+            {
+              id: "storage",
+              type: "category",
+              name: "存储",
+              children: [{ id: "stock-a", type: "stock", name: "股票A", secid: "1.600001" }]
+            }
+          ]
+        },
+        {
+          id: "software",
+          type: "category",
+          name: "软件",
+          children: [
+            {
+              id: "ai",
+              type: "category",
+              name: "AI",
+              children: [{ id: "stock-b", type: "stock", name: "股票B", secid: "1.600002" }]
+            }
+          ]
+        }
+      ]
+    };
+
+    const moved = moveWatchTreeNode(tree, "storage", "software");
+
+    expect(moved.children.map((child) => child.id)).toEqual(["hardware", "software"]);
+    expect((moved.children[0] as WatchTreeCategoryNode).children).toEqual([]);
+    expect((moved.children[1] as WatchTreeCategoryNode).children.map((child) => child.id))
+      .toEqual(["ai", "storage"]);
+    expect(collectStockSecids(moved)).toEqual(["1.600002", "1.600001"]);
+    expect(collectStockSecids(tree)).toEqual(["1.600001", "1.600002"]);
+  });
+
+  it("moves a stock leaf under an empty category", () => {
+    const tree: WatchTreeCategoryNode = {
+      id: "root",
+      type: "category",
+      name: "根",
+      children: [
+        {
+          id: "source",
+          type: "category",
+          name: "来源",
+          children: [{ id: "stock", type: "stock", name: "股票", secid: "1.600001" }]
+        },
+        { id: "target", type: "category", name: "目标", children: [] }
+      ]
+    };
+
+    const moved = moveWatchTreeNode(tree, "stock", "target");
+
+    expect((moved.children[0] as WatchTreeCategoryNode).children).toEqual([]);
+    expect((moved.children[1] as WatchTreeCategoryNode).children.map((child) => child.id))
+      .toEqual(["stock"]);
+  });
+
+  it("keeps the tree unchanged when a stock would mix with category siblings", () => {
+    const tree: WatchTreeCategoryNode = {
+      id: "root",
+      type: "category",
+      name: "根",
+      children: [
+        { id: "stock", type: "stock", name: "股票", secid: "1.600001" },
+        {
+          id: "target",
+          type: "category",
+          name: "目标",
+          children: [{ id: "child-category", type: "category", name: "子分类", children: [] }]
+        }
+      ]
+    };
+
+    expect(moveWatchTreeNode(tree, "stock", "target")).toBe(tree);
+  });
+
+  it("keeps the tree unchanged when a category would mix with stock siblings", () => {
+    const tree: WatchTreeCategoryNode = {
+      id: "root",
+      type: "category",
+      name: "根",
+      children: [
+        { id: "category", type: "category", name: "分类", children: [] },
+        {
+          id: "target",
+          type: "category",
+          name: "目标",
+          children: [{ id: "stock", type: "stock", name: "股票", secid: "1.600001" }]
+        }
+      ]
+    };
+
+    expect(moveWatchTreeNode(tree, "category", "target")).toBe(tree);
+  });
+
+  it("keeps the tree unchanged when moving onto a stock or descendant node", () => {
+    const tree: WatchTreeCategoryNode = {
+      id: "root",
+      type: "category",
+      name: "根",
+      children: [{
+        id: "category",
+        type: "category",
+        name: "分类",
+        children: [{ id: "stock", type: "stock", name: "股票", secid: "1.600001" }]
+      }]
+    };
+
+    expect(moveWatchTreeNode(tree, "category", "stock")).toBe(tree);
+    expect(moveWatchTreeNode(tree, "root", "category")).toBe(tree);
   });
 
   it("rejects stock top-level nodes, duplicate ids and invalid secids", () => {

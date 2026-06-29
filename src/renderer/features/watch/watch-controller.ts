@@ -12,6 +12,7 @@ import {
   appendWatchTreeChild,
   collectStockSecids,
   findWatchTreeNode,
+  moveWatchTreeNode,
   removeWatchTreeNode,
   replaceWatchTreeNode,
   validateSecid
@@ -52,6 +53,16 @@ interface WatchPanState {
   dragged: boolean;
 }
 
+interface WatchNodeDragState {
+  pointerId: number;
+  nodeId: string;
+  startX: number;
+  startY: number;
+  dragged: boolean;
+  sourceElement: HTMLElement;
+  targetElement?: HTMLElement;
+}
+
 export function createWatchController(options: WatchControllerOptions): WatchController {
   const { api, elements, isActive } = options;
   const connectors = createWatchConnectors(elements.watchTree);
@@ -65,6 +76,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   let dialogAction: WatchDialogAction | undefined;
   let selectedStock: StockSearchResult | undefined;
   let pan: WatchPanState | undefined;
+  let nodeDrag: WatchNodeDragState | undefined;
   let suppressNodeClick = false;
   const collapsedNodes = new Set<string>();
 
@@ -254,6 +266,132 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       collapsedNodes.add(id);
     }
     render();
+  }
+
+  function handlePointerDown(event: PointerEvent): void {
+    if (beginNodeDrag(event)) {
+      return;
+    }
+    beginPan(event);
+  }
+
+  function handlePointerMove(event: PointerEvent): void {
+    if (moveNodeDrag(event)) {
+      return;
+    }
+    movePan(event);
+  }
+
+  function handlePointerUp(event: PointerEvent): void {
+    if (nodeDrag) {
+      void endNodeDrag(event, true);
+      return;
+    }
+    endPan(event);
+  }
+
+  function handlePointerCancel(event: PointerEvent): void {
+    if (nodeDrag) {
+      void endNodeDrag(event, false);
+      return;
+    }
+    endPan(event);
+  }
+
+  function beginNodeDrag(event: PointerEvent): boolean {
+    if (event.button !== 0) {
+      return false;
+    }
+    const element = event.target instanceof Element
+      ? event.target.closest<HTMLElement>(".watch-node")
+      : undefined;
+    const nodeId = element?.dataset.watchNodeId ?? "";
+    if (!nodeId || !findWatchTreeNode(config.root, nodeId) || !element) {
+      return false;
+    }
+    closeWatchContextMenu(elements.watchContextMenu);
+    nodeDrag = {
+      pointerId: event.pointerId,
+      nodeId,
+      startX: event.clientX,
+      startY: event.clientY,
+      dragged: false,
+      sourceElement: element
+    };
+    return true;
+  }
+
+  function moveNodeDrag(event: PointerEvent): boolean {
+    if (!nodeDrag || nodeDrag.pointerId !== event.pointerId) {
+      return false;
+    }
+    const offsetX = event.clientX - nodeDrag.startX;
+    const offsetY = event.clientY - nodeDrag.startY;
+    if (!nodeDrag.dragged && Math.hypot(offsetX, offsetY) < 4) {
+      return true;
+    }
+    nodeDrag.dragged = true;
+    event.preventDefault();
+    elements.watchPanel.classList.add("node-dragging");
+    nodeDrag.sourceElement.classList.add("drag-source");
+    elements.watchPanel.setPointerCapture(event.pointerId);
+    syncNodeDragTarget(event.clientX, event.clientY);
+    return true;
+  }
+
+  async function endNodeDrag(event: PointerEvent, shouldDrop: boolean): Promise<void> {
+    if (!nodeDrag || nodeDrag.pointerId !== event.pointerId) {
+      return;
+    }
+    const drag = nodeDrag;
+    if (drag.dragged) {
+      suppressNodeClick = true;
+    }
+    nodeDrag = undefined;
+    clearNodeDragClasses(drag);
+    if (elements.watchPanel.hasPointerCapture(event.pointerId)) {
+      elements.watchPanel.releasePointerCapture(event.pointerId);
+    }
+    if (drag.dragged && shouldDrop && config.root) {
+      const target = findDropTarget(event.clientX, event.clientY);
+      const targetId = target?.dataset.watchNodeId ?? "";
+      const nextRoot = targetId
+        ? moveWatchTreeNode(config.root, drag.nodeId, targetId)
+        : config.root;
+      if (nextRoot !== config.root) {
+        config = { root: nextRoot };
+        await persistTree();
+      }
+    }
+    window.setTimeout(() => {
+      suppressNodeClick = false;
+    }, 0);
+  }
+
+  function syncNodeDragTarget(clientX: number, clientY: number): void {
+    if (!nodeDrag) {
+      return;
+    }
+    const target = findDropTarget(clientX, clientY);
+    if (nodeDrag.targetElement === target) {
+      return;
+    }
+    nodeDrag.targetElement?.classList.remove("drag-target");
+    nodeDrag.targetElement = target;
+    nodeDrag.targetElement?.classList.add("drag-target");
+  }
+
+  function findDropTarget(clientX: number, clientY: number): HTMLElement | undefined {
+    const element = document.elementFromPoint(clientX, clientY);
+    return element instanceof Element
+      ? element.closest<HTMLElement>(".watch-node") ?? undefined
+      : undefined;
+  }
+
+  function clearNodeDragClasses(drag: WatchNodeDragState): void {
+    elements.watchPanel.classList.remove("node-dragging");
+    drag.sourceElement.classList.remove("drag-source");
+    drag.targetElement?.classList.remove("drag-target");
   }
 
   function beginPan(event: PointerEvent): void {
@@ -475,10 +613,10 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       elements.watchTree.addEventListener("contextmenu", handleNodeContextMenu);
       elements.watchContextMenu.addEventListener("click", handleContextMenuClick);
       elements.watchPanel.addEventListener("contextmenu", handlePanelContextMenu);
-      elements.watchPanel.addEventListener("pointerdown", beginPan);
-      elements.watchPanel.addEventListener("pointermove", movePan);
-      elements.watchPanel.addEventListener("pointerup", endPan);
-      elements.watchPanel.addEventListener("pointercancel", endPan);
+      elements.watchPanel.addEventListener("pointerdown", handlePointerDown);
+      elements.watchPanel.addEventListener("pointermove", handlePointerMove);
+      elements.watchPanel.addEventListener("pointerup", handlePointerUp);
+      elements.watchPanel.addEventListener("pointercancel", handlePointerCancel);
       elements.watchPanel.addEventListener("scroll", () => closeWatchContextMenu(elements.watchContextMenu));
       document.addEventListener("click", () => closeWatchContextMenu(elements.watchContextMenu));
       window.addEventListener("resize", connectors.schedule);

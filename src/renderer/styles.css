@@ -83,6 +83,7 @@ h2 { margin: 0; font-size: 15px; }
 .watch-workspace { grid-template-rows: auto minmax(0, 1fr); }
 .watch-panel { min-height: 0; overflow: auto; padding: 22px; background: #eef1ed; cursor: grab; }
 .watch-panel.dragging, .watch-panel.dragging * { cursor: grabbing !important; user-select: none; }
+.watch-panel.node-dragging, .watch-panel.node-dragging * { cursor: grabbing !important; user-select: none; }
 .watch-tree { min-width: max-content; }
 .watch-graph { position: relative; width: max-content; min-width: 100%; padding: 16px 20px 26px; }
 .watch-root, .watch-children { margin: 0; padding: 0; list-style: none; }
@@ -94,6 +95,8 @@ h2 { margin: 0; font-size: 15px; }
 .watch-node-wrap { position: relative; z-index: 1; display: flex; align-items: center; gap: 3px; }
 .watch-node { position: relative; z-index: 1; display: flex; align-items: center; gap: 8px; width: fit-content; min-width: 72px; max-width: 280px; overflow: hidden; border: 1px solid #cad8d0; border-radius: 16px; padding: 5px 10px; background: #fff; color: #26434b; text-align: center; text-overflow: ellipsis; white-space: nowrap; box-shadow: 0 2px 8px #17343d0d; }
 .watch-node.category { background: #f8fbf5; cursor: pointer; }
+.watch-node.drag-source { opacity: .55; transform: scale(.98); }
+.watch-node.drag-target { border-color: #86ae68; box-shadow: 0 0 0 3px #b9d49a55, 0 2px 8px #17343d0d; }
 .watch-node strong { font-size: 13px; }
 .watch-node.stock .watch-stock-name strong { display: block; max-width: 86px; overflow: hidden; text-overflow: ellipsis; }
 .watch-stock-name { position: relative; display: inline-block; flex: 0 1 auto; min-width: 0; }

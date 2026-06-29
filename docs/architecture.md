@@ -215,7 +215,7 @@ interface AppConfig {
 
 - 节点校验。
 - `secid` 校验。
-- 节点查找、替换、删除、追加。
+- 节点查找、替换、删除、追加、拖拽换父节点。
 - 收集股票 `secid`。
 - 分类平均涨跌幅计算。
 - 分类上涨/下跌股票数统计。
@@ -227,6 +227,8 @@ interface AppConfig {
 - 涨跌幅样式 class 计算。
 
 这些函数不依赖 DOM 或 Electron，可在 main、renderer、测试中复用。
+
+拖拽换父节点由 `moveWatchTreeNode(root, nodeId, targetParentId)` 统一执行并校验。合法规则是：被拖节点和目标节点必须存在；目标节点必须是分类；被拖节点不能是根节点，不能拖到自身或自身后代；分类节点只能整体挂到另一个分类节点下面，保留自身下属层次；股票节点只能作为叶子节点移动；目标分类已有子节点时，所有现有子节点类型必须与被拖节点类型一致。任一规则不满足时函数返回原始 root 引用，调用方不保存配置，界面保持原样。
 
 `src/shared/data-calc-helper.ts` 放置 provider 无关的通用行情计算：
 
@@ -467,6 +469,7 @@ src/renderer/features/watch/watch-controller.ts
 - 维护节点编辑弹窗状态。
 - 在股票节点编辑弹窗中管理“持仓股”选项：新增股票默认“否”，编辑时回填已有状态，保存“否”时省略 `isHolding`，保存“是”时写入 `isHolding: true`。该控件只对股票节点显示。
 - 维护面板拖拽平移状态。
+- 维护节点左键拖拽状态。用户按住分类或股票节点拖到另一个节点上松开时，Controller 只负责识别被拖节点和投放目标，然后调用 `moveWatchTreeNode()` 生成新树；合法移动后保存 `watch-tree.json` 并刷新行情，非法移动不修改配置。
 - 绑定盯盘相关 DOM 事件。
 - 从 bootstrap 中 hydrate 初始脑图。
 - 激活盯盘时加载行情并启动 10 秒轮询。
