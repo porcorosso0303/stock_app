@@ -61,6 +61,7 @@ interface WatchNodeDragState {
   dragged: boolean;
   sourceElement: HTMLElement;
   targetElement?: HTMLElement;
+  ghostElement?: HTMLElement;
 }
 
 export function createWatchController(options: WatchControllerOptions): WatchController {
@@ -334,6 +335,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     event.preventDefault();
     elements.watchPanel.classList.add("node-dragging");
     nodeDrag.sourceElement.classList.add("drag-source");
+    positionNodeDragGhost(ensureNodeDragGhost(nodeDrag), event.clientX, event.clientY);
     elements.watchPanel.setPointerCapture(event.pointerId);
     syncNodeDragTarget(event.clientX, event.clientY);
     return true;
@@ -392,6 +394,26 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     elements.watchPanel.classList.remove("node-dragging");
     drag.sourceElement.classList.remove("drag-source");
     drag.targetElement?.classList.remove("drag-target");
+    drag.ghostElement?.remove();
+  }
+
+  function ensureNodeDragGhost(drag: WatchNodeDragState): HTMLElement {
+    if (drag.ghostElement) {
+      return drag.ghostElement;
+    }
+    const ghost = drag.sourceElement.cloneNode(true) as HTMLElement;
+    ghost.classList.add("drag-ghost");
+    ghost.removeAttribute("data-watch-node-id");
+    ghost.removeAttribute("data-watch-parent-id");
+    ghost.setAttribute("aria-hidden", "true");
+    elements.watchPanel.append(ghost);
+    drag.ghostElement = ghost;
+    return ghost;
+  }
+
+  function positionNodeDragGhost(ghost: HTMLElement, clientX: number, clientY: number): void {
+    ghost.style.left = `${clientX}px`;
+    ghost.style.top = `${clientY}px`;
   }
 
   function beginPan(event: PointerEvent): void {

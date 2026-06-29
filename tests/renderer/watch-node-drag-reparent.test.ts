@@ -28,9 +28,13 @@ class TestElement {
   dataset: Record<string, string | undefined> = {};
   style = { left: "", top: "" };
   classList = { add: vi.fn(), remove: vi.fn() };
+  children: TestElement[] = [];
   showModal = vi.fn();
   close = vi.fn();
   focus = vi.fn();
+  remove = vi.fn(() => {
+    this.dataset.removed = "true";
+  });
 
   private readonly listeners = new Map<string, Array<(event: TestPointerEvent) => void>>();
 
@@ -70,6 +74,24 @@ class TestElement {
 
   querySelectorAll<T>(): T[] {
     return [];
+  }
+
+  append(child: TestElement): void {
+    this.children.push(child);
+  }
+
+  cloneNode(): TestElement {
+    const clone = new TestElement();
+    clone.dataset = { ...this.dataset };
+    return clone;
+  }
+
+  setAttribute(name: string, value: string): void {
+    this.dataset[name] = value;
+  }
+
+  removeAttribute(name: string): void {
+    delete this.dataset[name];
   }
 
   hasPointerCapture(): boolean {
@@ -123,6 +145,30 @@ describe("watch node drag reparent", () => {
     expect((savedRoot?.children[0] as WatchTreeCategoryNode).children).toEqual([]);
     expect((savedRoot?.children[1] as WatchTreeCategoryNode).children.map((child) => child.id))
       .toEqual(["stock"]);
+  });
+
+  it("creates a translucent drag ghost that follows the pointer while dragging a node", () => {
+    const sourceStock = watchNodeElement("stock");
+    const targetCategory = watchNodeElement("target");
+    const { elements } = createFixture(stockMoveConfig());
+    vi.mocked(document.elementFromPoint).mockReturnValue(targetCategory as unknown as Element);
+
+    elements.watchPanel.emitPointer("pointerdown", sourceStock, { clientX: 10, clientY: 10 });
+    elements.watchPanel.emitPointer("pointermove", sourceStock, { clientX: 28, clientY: 34 });
+
+    const ghost = elements.watchPanel.children[0];
+    expect(elements.watchPanel.classList.add).toHaveBeenCalledWith("node-dragging");
+    expect(sourceStock.classList.add).toHaveBeenCalledWith("drag-source");
+    expect(ghost.classList.add).toHaveBeenCalledWith("drag-ghost");
+    expect(ghost.style.left).toBe("28px");
+    expect(ghost.style.top).toBe("34px");
+
+    elements.watchPanel.emitPointer("pointermove", sourceStock, { clientX: 48, clientY: 58 });
+    expect(ghost.style.left).toBe("48px");
+    expect(ghost.style.top).toBe("58px");
+
+    elements.watchPanel.emitPointer("pointerup", targetCategory, { clientX: 48, clientY: 58 });
+    expect(ghost.remove).toHaveBeenCalledOnce();
   });
 
   it("does not save when the dropped node would mix sibling node types", async () => {

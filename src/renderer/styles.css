@@ -97,6 +97,7 @@ h2 { margin: 0; font-size: 15px; }
 .watch-node.category { background: #f8fbf5; cursor: pointer; }
 .watch-node.drag-source { opacity: .55; transform: scale(.98); }
 .watch-node.drag-target { border-color: #86ae68; box-shadow: 0 0 0 3px #b9d49a55, 0 2px 8px #17343d0d; }
+.watch-node.drag-ghost { position: fixed; z-index: 30; pointer-events: none; opacity: .72; transform: translate(-45%, -50%) scale(1.03); box-shadow: 0 10px 28px #17343d33; }
 .watch-node strong { font-size: 13px; }
 .watch-node.stock .watch-stock-name strong { display: block; max-width: 86px; overflow: hidden; text-overflow: ellipsis; }
 .watch-stock-name { position: relative; display: inline-block; flex: 0 1 auto; min-width: 0; }
