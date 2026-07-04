@@ -1,4 +1,4 @@
-import { IPC } from "../../../shared/ipc";
+import { IPC, type WatchMarketRefreshOptions } from "../../../shared/ipc";
 import type {
   StockQuote,
   StockSearchResult,
@@ -25,7 +25,7 @@ export interface QuoteServiceLike {
 
 export interface WatchMarketServiceLike {
   get(secids: string[]): Promise<WatchMarketData>;
-  refresh(secids: string[]): Promise<WatchMarketData>;
+  refresh(secids: string[], options?: WatchMarketRefreshOptions): Promise<WatchMarketData>;
 }
 
 export interface DialogLike {
@@ -79,7 +79,9 @@ export function registerWatchIpc(dependencies: WatchIpcDependencies): void {
 
   ipcMain.handle(IPC.refreshWatchMarketData, async (_event, value) => {
     const input = requireObject(value);
-    return await watchMarketService.refresh(requireStringArray(input.secids, "secids"));
+    return await watchMarketService.refresh(requireStringArray(input.secids, "secids"), {
+      forceLatest: input.forceLatest === true
+    });
   });
 
   ipcMain.handle(IPC.searchStocks, async (_event, value) => {

@@ -105,8 +105,18 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     await updateMarketData((secids) => api.getWatchMarketData(secids), "正在加载行情...");
   }
 
-  async function refreshQuotes(): Promise<void> {
-    await updateMarketData((secids) => api.refreshWatchMarketData(secids), "正在刷新行情...");
+  async function refreshQuotes(forceLatest = false): Promise<void> {
+    await updateMarketData(
+      (secids) => api.refreshWatchMarketData(secids, forceLatest ? { forceLatest: true } : undefined),
+      "正在刷新行情..."
+    );
+  }
+
+  async function refreshLatestMarketData(): Promise<void> {
+    await updateMarketData(
+      (secids) => api.refreshWatchMarketData(secids, { forceLatest: true }),
+      "正在校验最近交易日行情..."
+    );
   }
 
   async function exportData(): Promise<void> {
@@ -172,9 +182,10 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
         ? formatDate(marketData.updatedAt)
         : formatDate(marketQuotes[0].fetchedAt);
       const sourceText = marketData.fromCache ? "缓存行情时间" : "行情更新时间";
+      const tradingDateText = marketData.tradingDate ? `展示交易日：${marketData.tradingDate}，` : "";
       elements.watchStatus.textContent = unavailable === 0
-        ? `${sourceText}：${timeText}`
-        : `${sourceText}：${timeText}，${unavailable} 只股票暂无行情`;
+        ? `${tradingDateText}${sourceText}：${timeText}`
+        : `${tradingDateText}${sourceText}：${timeText}，${unavailable} 只股票暂无行情`;
       render();
     } catch (error) {
       elements.watchStatus.textContent = getErrorMessage(error);
@@ -623,7 +634,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
 
   return {
     bindEvents: () => {
-      elements.refreshWatchQuotes.addEventListener("click", () => void refreshQuotes());
+      elements.refreshWatchQuotes.addEventListener("click", () => void refreshQuotes(true));
       elements.exportWatchData.addEventListener("click", () => void exportData());
       elements.importWatchData.addEventListener("click", () => void importData());
       elements.watchNodeType.addEventListener("change", syncSecidVisibility);
@@ -659,6 +670,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       }
       startPolling();
       await loadMarketData();
+      void refreshLatestMarketData();
     },
     deactivate: () => stopPolling()
   };

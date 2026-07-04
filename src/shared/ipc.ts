@@ -39,6 +39,10 @@ export const IPC = {
   researchEvent: "research:event"
 } as const;
 
+export interface WatchMarketRefreshOptions {
+  forceLatest?: boolean;
+}
+
 export interface StockResearchApi {
   getBootstrap(): Promise<AppBootstrap>;
   chooseReportDirectory(): Promise<string | undefined>;
@@ -56,7 +60,7 @@ export interface StockResearchApi {
   saveWatchTree(config: WatchTreeConfig): Promise<WatchTreeConfig>;
   getWatchQuotes(secids: string[]): Promise<StockQuote[]>;
   getWatchMarketData(secids: string[]): Promise<WatchMarketData>;
-  refreshWatchMarketData(secids: string[]): Promise<WatchMarketData>;
+  refreshWatchMarketData(secids: string[], options?: WatchMarketRefreshOptions): Promise<WatchMarketData>;
   searchStocks(query: string): Promise<StockSearchResult[]>;
   exportWatchData(): Promise<WatchDataTransferResult | undefined>;
   importWatchData(): Promise<WatchDataTransferResult | undefined>;

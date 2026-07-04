@@ -5,6 +5,7 @@ import type {
   WatchMarketHistoryCache,
   WatchMarketData
 } from "../shared/types";
+import type { WatchMarketRefreshOptions } from "../shared/ipc";
 import type { MarketDataProvider } from "./modules/watch/market-data/market-data-provider";
 
 interface WatchMarketCacheStoreLike {
@@ -40,9 +41,9 @@ export class WatchMarketService {
     return await this.fetchFresh(secids, currentDate);
   }
 
-  async refresh(secids: string[]): Promise<WatchMarketData> {
+  async refresh(secids: string[], options: WatchMarketRefreshOptions = {}): Promise<WatchMarketData> {
     const now = this.now();
-    if (isTradingSession(now)) {
+    if (options.forceLatest || isTradingSession(now)) {
       return await this.fetchFresh(secids, formatChinaDate(now));
     }
     return await this.get(secids);
@@ -90,9 +91,10 @@ export class WatchMarketService {
     const candidates = history.days.length > 0
       ? history.days
       : [await this.cacheStore.getForDate(currentDate)].filter((cache): cache is WatchMarketCache => !!cache);
+    const requiredCacheDate = requiredLatestCacheTradingDate(now);
     const scopedCandidates = shouldUseCurrentTradingDateOnly(now)
       ? candidates.filter((cache) => cache.tradingDate === currentDate)
-      : candidates;
+      : candidates.filter((cache) => cache.tradingDate === requiredCacheDate);
     return scopedCandidates.find((cache) => shouldConsiderCache(cache, now) && coversSecids(cache, secids, now));
   }
 
@@ -145,6 +147,21 @@ function shouldConsiderCache(cache: WatchMarketCache, now: Date): boolean {
 function shouldUseCurrentTradingDateOnly(now: Date): boolean {
   const day = chinaWeekday(now);
   return day >= 1 && day <= 5 && formatChinaMinute(now.toISOString()) >= "09:30";
+}
+
+function requiredLatestCacheTradingDate(now: Date): string {
+  if (shouldUseCurrentTradingDateOnly(now)) {
+    return formatChinaDate(now);
+  }
+  return previousChinaWeekday(formatChinaDate(now));
+}
+
+function previousChinaWeekday(chinaDate: string): string {
+  let cursor = new Date(`${chinaDate}T00:00:00+08:00`);
+  do {
+    cursor = new Date(cursor.getTime() - 24 * 60 * 60 * 1000);
+  } while (chinaWeekday(cursor) > 5);
+  return formatChinaDate(cursor);
 }
 
 function hasOrderedTrendPoints(trend: StockTrend): boolean {

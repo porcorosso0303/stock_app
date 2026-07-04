@@ -234,6 +234,126 @@ describe("WatchMarketService", () => {
     expect(quoteService.listTrends).not.toHaveBeenCalled();
   });
 
+  it("refetches on a weekend when the latest complete cache is older than the previous weekday", async () => {
+    const oldTrend: StockTrend = {
+      secid: "1.600519",
+      tradingDate: "2026-06-30",
+      fetchedAt: "2026-06-30T07:00:00.000Z",
+      points: [
+        ...minuteRange("09:30", "11:30"),
+        ...minuteRange("13:01", "15:00")
+      ].map((time, index) => ({
+        time,
+        price: 100 + index,
+        changePercent: index
+      }))
+    };
+    const fridayTrend: StockTrend = {
+      secid: "1.600519",
+      tradingDate: "2026-07-03",
+      fetchedAt: "2026-07-04T03:30:00.000Z",
+      points: [
+        ...minuteRange("09:30", "11:30"),
+        ...minuteRange("13:01", "15:00")
+      ].map((time, index) => ({
+        time,
+        price: 200 + index,
+        changePercent: index
+      }))
+    };
+    const cacheStore = {
+      getForDate: vi.fn(),
+      getHistory: vi.fn().mockResolvedValue({
+        version: 2,
+        days: [{
+          tradingDate: "2026-06-30",
+          updatedAt: "2026-06-30T07:00:00.000Z",
+          quotes: [quote(1.2, "2026-06-30T07:00:00.000Z")],
+          trends: [oldTrend]
+        }]
+      }),
+      write: vi.fn()
+    };
+    const quoteService = marketDataProvider({
+      listQuotes: vi.fn().mockResolvedValue([quote(3.4, "2026-07-04T03:30:00.000Z")]),
+      listTrends: vi.fn().mockResolvedValue([fridayTrend])
+    });
+    const service = new WatchMarketService(
+      cacheStore,
+      quoteService,
+      () => new Date("2026-07-04T03:30:00.000Z")
+    );
+
+    await expect(service.get(["1.600519"])).resolves.toMatchObject({
+      tradingDate: "2026-07-03",
+      trends: [fridayTrend],
+      fromCache: false
+    });
+    expect(quoteService.listTrends).toHaveBeenCalledWith(["1.600519"]);
+    expect(cacheStore.write).toHaveBeenCalledWith(expect.objectContaining({
+      tradingDate: "2026-07-03"
+    }));
+  });
+
+  it("force refreshes latest provider data outside trading hours even when a cache is available", async () => {
+    const cachedTrend: StockTrend = {
+      secid: "1.600519",
+      tradingDate: "2026-07-03",
+      fetchedAt: "2026-07-03T07:00:00.000Z",
+      points: [
+        ...minuteRange("09:30", "11:30"),
+        ...minuteRange("13:01", "15:00")
+      ].map((time, index) => ({
+        time,
+        price: 100 + index,
+        changePercent: index
+      }))
+    };
+    const freshTrend: StockTrend = {
+      secid: "1.600519",
+      tradingDate: "2026-07-03",
+      fetchedAt: "2026-07-04T04:00:00.000Z",
+      points: [
+        ...minuteRange("09:30", "11:30"),
+        ...minuteRange("13:01", "15:00")
+      ].map((time, index) => ({
+        time,
+        price: 200 + index,
+        changePercent: index
+      }))
+    };
+    const cacheStore = {
+      getForDate: vi.fn(),
+      getHistory: vi.fn().mockResolvedValue({
+        version: 2,
+        days: [{
+          tradingDate: "2026-07-03",
+          updatedAt: "2026-07-03T07:00:00.000Z",
+          quotes: [quote(1.2, "2026-07-03T07:00:00.000Z")],
+          trends: [cachedTrend]
+        }]
+      }),
+      write: vi.fn()
+    };
+    const quoteService = marketDataProvider({
+      listQuotes: vi.fn().mockResolvedValue([quote(2.5, "2026-07-04T04:00:00.000Z")]),
+      listTrends: vi.fn().mockResolvedValue([freshTrend])
+    });
+    const service = new WatchMarketService(
+      cacheStore,
+      quoteService,
+      () => new Date("2026-07-04T04:00:00.000Z")
+    );
+
+    await expect(service.refresh(["1.600519"], { forceLatest: true })).resolves.toMatchObject({
+      tradingDate: "2026-07-03",
+      quotes: [expect.objectContaining({ changePercent: 2.5 })],
+      trends: [freshTrend],
+      fromCache: false
+    });
+    expect(quoteService.listTrends).toHaveBeenCalledWith(["1.600519"]);
+  });
+
   it("uses completed same-day cache after close when EastMoney omits the 13:00 point", async () => {
     const sameDayTrend: StockTrend = {
       secid: "1.600519",

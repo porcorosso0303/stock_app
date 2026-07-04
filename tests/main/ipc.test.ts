@@ -260,7 +260,10 @@ describe("registerIpcHandlers", () => {
 
     await expect(invoke(IPC.refreshWatchMarketData, { secids: ["1.600519"] }))
       .resolves.toMatchObject({ fromCache: false });
-    expect(refreshWatchMarketData).toHaveBeenCalledWith(["1.600519"]);
+    expect(refreshWatchMarketData).toHaveBeenCalledWith(["1.600519"], { forceLatest: false });
+    await expect(invoke(IPC.refreshWatchMarketData, { secids: ["1.600519"], forceLatest: true }))
+      .resolves.toMatchObject({ fromCache: false });
+    expect(refreshWatchMarketData).toHaveBeenCalledWith(["1.600519"], { forceLatest: true });
     await expect(invoke(IPC.refreshWatchMarketData, { secids: [123] }))
       .rejects.toThrow("secids");
   });
