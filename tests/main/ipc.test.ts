@@ -250,7 +250,7 @@ describe("registerIpcHandlers", () => {
 
     await expect(invoke(IPC.getWatchMarketData, { secids: ["1.600519"] }))
       .resolves.toMatchObject({ fromCache: true });
-    expect(getWatchMarketData).toHaveBeenCalledWith(["1.600519"]);
+    expect(getWatchMarketData).toHaveBeenCalledWith(["1.600519"], { tradingDate: undefined });
     await expect(invoke(IPC.getWatchMarketData, { secids: "1.600519" }))
       .rejects.toThrow("secids");
   });

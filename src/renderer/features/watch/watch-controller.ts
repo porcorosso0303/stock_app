@@ -78,6 +78,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   let selectedStock: StockSearchResult | undefined;
   let pan: WatchPanState | undefined;
   let nodeDrag: WatchNodeDragState | undefined;
+  let selectedTradingDate: string | undefined;
   let suppressNodeClick = false;
   const collapsedNodes = new Set<string>();
 
@@ -102,7 +103,10 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   }
 
   async function loadMarketData(): Promise<void> {
-    await updateMarketData((secids) => api.getWatchMarketData(secids), "正在加载行情...");
+    await updateMarketData(
+      (secids) => api.getWatchMarketData(secids, selectedTradingDate ? { tradingDate: selectedTradingDate } : undefined),
+      "正在加载行情..."
+    );
   }
 
   async function refreshQuotes(forceLatest = false): Promise<void> {
@@ -176,16 +180,19 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       quotes = new Map(marketData.quotes.map((quote) => [quote.secid, quote]));
       trends = new Map(marketData.trends.map((trend) => [trend.secid, trend]));
       marketHistory = marketData.history ?? currentMarketDataAsHistory(marketData);
+      if (marketData.tradingDate) {
+        selectedTradingDate = marketData.tradingDate;
+      }
+      syncTradingDateOptions(marketData);
       const marketQuotes = marketData.quotes;
       const unavailable = marketQuotes.filter((quote) => quote.errorMessage).length;
       const timeText = marketData.updatedAt
         ? formatDate(marketData.updatedAt)
         : formatDate(marketQuotes[0].fetchedAt);
-      const sourceText = marketData.fromCache ? "缓存行情时间" : "行情更新时间";
-      const tradingDateText = marketData.tradingDate ? `展示交易日：${marketData.tradingDate}，` : "";
+      elements.watchCacheTime.textContent = `行情缓存时间：${timeText}`;
       elements.watchStatus.textContent = unavailable === 0
-        ? `${tradingDateText}${sourceText}：${timeText}`
-        : `${tradingDateText}${sourceText}：${timeText}，${unavailable} 只股票暂无行情`;
+        ? ""
+        : `${unavailable} 只股票暂无行情`;
       render();
     } catch (error) {
       elements.watchStatus.textContent = getErrorMessage(error);
@@ -197,6 +204,28 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   function startPolling(): void {
     stopPolling();
     quoteTimer = window.setInterval(() => void refreshQuotes(), 10_000);
+  }
+
+  async function handleTradingDateChange(): Promise<void> {
+    selectedTradingDate = elements.watchTradingDate.value || undefined;
+    await updateMarketData(
+      (secids) => api.getWatchMarketData(secids, selectedTradingDate ? { tradingDate: selectedTradingDate } : undefined),
+      "正在加载所选日期行情..."
+    );
+  }
+
+  function syncTradingDateOptions(marketData: Awaited<ReturnType<StockResearchApi["getWatchMarketData"]>>): void {
+    const dates = new Set<string>([
+      ...recentWeekdayDates(30),
+      ...(marketData.history ?? []).map((day) => day.tradingDate),
+      ...(marketData.tradingDate ? [marketData.tradingDate] : [])
+    ]);
+    const nextValue = marketData.tradingDate ?? selectedTradingDate ?? "";
+    elements.watchTradingDate.innerHTML = [...dates]
+      .sort((left, right) => right.localeCompare(left))
+      .map((date) => `<option value="${escapeHtml(date)}">${escapeHtml(date)}</option>`)
+      .join("");
+    elements.watchTradingDate.value = nextValue;
   }
 
   function stopPolling(): void {
@@ -637,6 +666,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       elements.refreshWatchQuotes.addEventListener("click", () => void refreshQuotes(true));
       elements.exportWatchData.addEventListener("click", () => void exportData());
       elements.importWatchData.addEventListener("click", () => void importData());
+      elements.watchTradingDate.addEventListener("change", () => void handleTradingDateChange());
       elements.watchNodeType.addEventListener("change", syncSecidVisibility);
       elements.watchNodeName.addEventListener("input", handleNodeNameInput);
       elements.searchWatchStock.addEventListener("click", () => void searchStocks());
@@ -682,6 +712,16 @@ function readIndustryPosition(value: string): WatchIndustryPosition | undefined 
     : undefined;
 }
 
+function recentWeekdayDates(days: number, now = new Date()): string[] {
+  return Array.from({ length: days }, (_value, index) => {
+    const date = new Date(now.getTime() - index * 24 * 60 * 60 * 1000);
+    return formatChinaDate(date);
+  }).filter((date) => {
+    const day = new Date(`${date}T00:00:00+08:00`).getDay();
+    return day >= 1 && day <= 5;
+  });
+}
+
 function currentMarketDataAsHistory(
   marketData: Awaited<ReturnType<StockResearchApi["getWatchMarketData"]>>
 ): WatchMarketCache[] {
@@ -701,6 +741,17 @@ function formatDate(value: string): string {
     dateStyle: "short",
     timeStyle: "short"
   }).format(new Date(value));
+}
+
+function formatChinaDate(date: Date): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+  const byType = new Map(parts.map((part) => [part.type, part.value]));
+  return `${byType.get("year")}-${byType.get("month")}-${byType.get("day")}`;
 }
 
 function getErrorMessage(error: unknown): string {

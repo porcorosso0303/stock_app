@@ -3,6 +3,7 @@ import type {
   StockTrend,
   WatchMarketCache,
   WatchMarketHistoryCache,
+  WatchMarketRequestOptions,
   WatchMarketData
 } from "../shared/types";
 import type { WatchMarketRefreshOptions } from "../shared/ipc";
@@ -21,7 +22,10 @@ export class WatchMarketService {
     private readonly now: () => Date = () => new Date()
   ) {}
 
-  async get(secids: string[]): Promise<WatchMarketData> {
+  async get(secids: string[], options: WatchMarketRequestOptions = {}): Promise<WatchMarketData> {
+    if (options.tradingDate) {
+      return await this.getForTradingDate(secids, options.tradingDate);
+    }
     const now = this.now();
     const currentDate = formatChinaDate(now);
     if (!this.usesEphemeralProvider()) {
@@ -76,6 +80,47 @@ export class WatchMarketService {
     };
   }
 
+  private async getForTradingDate(secids: string[], tradingDate: string): Promise<WatchMarketData> {
+    if (!this.usesEphemeralProvider()) {
+      const cache = await this.findUsableCacheForDate(secids, tradingDate);
+      if (cache) {
+        return {
+          tradingDate: cache.tradingDate,
+          quotes: cache.quotes,
+          trends: cache.trends,
+          history: await this.historyWith(cache),
+          updatedAt: cache.updatedAt,
+          fromCache: true
+        };
+      }
+    }
+    return await this.fetchTradingDate(secids, tradingDate);
+  }
+
+  private async fetchTradingDate(secids: string[], tradingDate: string): Promise<WatchMarketData> {
+    const trends = await this.marketDataProvider.listTrends(secids, { tradingDate });
+    const actualTradingDate = selectTradingDate(trends) ?? tradingDate;
+    const updatedAt = this.now().toISOString();
+    const quotes = quotesFromTrends(secids, trends, updatedAt);
+    const cache = {
+      tradingDate: actualTradingDate,
+      quotes,
+      trends,
+      updatedAt
+    };
+    if (!this.usesEphemeralProvider() && hasAnyUsableMarketData(cache)) {
+      await this.cacheStore.write(cache);
+    }
+    return {
+      tradingDate: actualTradingDate,
+      quotes,
+      trends,
+      history: this.usesEphemeralProvider() ? [cache] : await this.historyWith(cache),
+      updatedAt,
+      fromCache: false
+    };
+  }
+
   private usesEphemeralProvider(): boolean {
     return this.marketDataProvider.cacheBehavior === "ephemeral";
   }
@@ -96,6 +141,18 @@ export class WatchMarketService {
       ? candidates.filter((cache) => cache.tradingDate === currentDate)
       : candidates.filter((cache) => cache.tradingDate === requiredCacheDate);
     return scopedCandidates.find((cache) => shouldConsiderCache(cache, now) && coversSecids(cache, secids, now));
+  }
+
+  private async findUsableCacheForDate(
+    secids: string[],
+    tradingDate: string
+  ): Promise<WatchMarketCache | undefined> {
+    const history = this.cacheStore.getHistory
+      ? await this.cacheStore.getHistory()
+      : { version: 2 as const, days: [] };
+    return history.days
+      .filter((cache) => cache.tradingDate === tradingDate)
+      .find((cache) => coversSecids(cache, secids, new Date(`${tradingDate}T15:01:00+08:00`)));
   }
 
   private async historyWith(cache: WatchMarketCache): Promise<WatchMarketCache[]> {
@@ -244,6 +301,32 @@ function fillUnavailableQuotesFromTrends(
       changePercent: latestPoint.changePercent,
       fetchedAt: quote.fetchedAt || trendsBySecid.get(quote.secid)?.fetchedAt || new Date().toISOString(),
       errorMessage: undefined
+    };
+  });
+}
+
+function quotesFromTrends(
+  secids: string[],
+  trends: StockTrend[],
+  fetchedAt: string
+): StockQuote[] {
+  const trendsBySecid = new Map(trends.map((trend) => [trend.secid, trend]));
+  return secids.map((secid) => {
+    const trend = trendsBySecid.get(secid);
+    const latestPoint = latestTrendPoint(trend);
+    if (!trend || !latestPoint) {
+      return {
+        secid,
+        fetchedAt,
+        errorMessage: trend?.errorMessage ?? "未找到该日期行情"
+      };
+    }
+    return {
+      secid,
+      price: latestPoint.price,
+      changePercent: latestPoint.changePercent,
+      fetchedAt: trend.fetchedAt || fetchedAt,
+      errorMessage: trend.errorMessage
     };
   });
 }

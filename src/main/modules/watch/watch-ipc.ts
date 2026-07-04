@@ -4,6 +4,7 @@ import type {
   StockSearchResult,
   WatchDataTransferResult,
   WatchMarketData,
+  WatchMarketRequestOptions,
   WatchTreeConfig
 } from "../../../shared/types";
 import {
@@ -24,7 +25,7 @@ export interface QuoteServiceLike {
 }
 
 export interface WatchMarketServiceLike {
-  get(secids: string[]): Promise<WatchMarketData>;
+  get(secids: string[], options?: WatchMarketRequestOptions): Promise<WatchMarketData>;
   refresh(secids: string[], options?: WatchMarketRefreshOptions): Promise<WatchMarketData>;
 }
 
@@ -74,7 +75,9 @@ export function registerWatchIpc(dependencies: WatchIpcDependencies): void {
 
   ipcMain.handle(IPC.getWatchMarketData, async (_event, value) => {
     const input = requireObject(value);
-    return await watchMarketService.get(requireStringArray(input.secids, "secids"));
+    return await watchMarketService.get(requireStringArray(input.secids, "secids"), {
+      tradingDate: typeof input.tradingDate === "string" ? input.tradingDate : undefined
+    });
   });
 
   ipcMain.handle(IPC.refreshWatchMarketData, async (_event, value) => {

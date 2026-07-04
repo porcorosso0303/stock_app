@@ -152,6 +152,8 @@ function createElements(): Record<string, TestElement> {
     "exportWatchData",
     "importWatchData",
     "watchStatus",
+    "watchTradingDate",
+    "watchCacheTime",
     "watchPanel",
     "watchTree",
     "watchContextMenu",

@@ -27,7 +27,24 @@ describe("watch refresh interval", () => {
     expect(preload).toContain("refreshWatchMarketData: async (secids, options)");
     expect(controller).toContain("void refreshLatestMarketData()");
     expect(controller).toContain("api.refreshWatchMarketData(secids, { forceLatest: true })");
-    expect(controller).toContain("展示交易日：");
+    expect(controller).toContain("行情缓存时间：");
     expect(controller).toContain("setInterval(() => void refreshQuotes(), 10_000)");
+  });
+
+  it("renders a trading-date selector and labels cache update time separately", async () => {
+    const html = await readFile("src/renderer/index.html", "utf8");
+    const dom = await readFile("src/renderer/app/dom.ts", "utf8");
+    const controller = await readFile("src/renderer/features/watch/watch-controller.ts", "utf8");
+
+    expect(html).toContain('for="watch-trading-date"');
+    expect(html).toContain("数据日期");
+    expect(html).toContain('id="watch-trading-date"');
+    expect(html).toContain('id="watch-cache-time"');
+    expect(html).toContain("行情缓存时间");
+    expect(dom).toContain('watchTradingDate: getElement<HTMLSelectElement>("watch-trading-date")');
+    expect(dom).toContain('watchCacheTime: getElement<HTMLElement>("watch-cache-time")');
+    expect(controller).toContain("syncTradingDateOptions");
+    expect(controller).toContain("handleTradingDateChange");
+    expect(controller).toContain("行情缓存时间：");
   });
 });

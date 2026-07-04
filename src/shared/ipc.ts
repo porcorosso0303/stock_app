@@ -8,6 +8,7 @@ import type {
   StockSearchResult,
   WatchDataTransferResult,
   WatchMarketData,
+  WatchMarketRequestOptions,
   WatchMarketProviderId,
   WatchTreeConfig
 } from "./types";
@@ -39,7 +40,7 @@ export const IPC = {
   researchEvent: "research:event"
 } as const;
 
-export interface WatchMarketRefreshOptions {
+export interface WatchMarketRefreshOptions extends WatchMarketRequestOptions {
   forceLatest?: boolean;
 }
 
@@ -59,7 +60,7 @@ export interface StockResearchApi {
   getWatchTree(): Promise<WatchTreeConfig>;
   saveWatchTree(config: WatchTreeConfig): Promise<WatchTreeConfig>;
   getWatchQuotes(secids: string[]): Promise<StockQuote[]>;
-  getWatchMarketData(secids: string[]): Promise<WatchMarketData>;
+  getWatchMarketData(secids: string[], options?: WatchMarketRequestOptions): Promise<WatchMarketData>;
   refreshWatchMarketData(secids: string[], options?: WatchMarketRefreshOptions): Promise<WatchMarketData>;
   searchStocks(query: string): Promise<StockSearchResult[]>;
   exportWatchData(): Promise<WatchDataTransferResult | undefined>;

@@ -116,6 +116,10 @@ export interface WatchMarketData {
   fromCache: boolean;
 }
 
+export interface WatchMarketRequestOptions {
+  tradingDate?: string;
+}
+
 export interface WatchMarketCache {
   tradingDate: string;
   quotes: StockQuote[];

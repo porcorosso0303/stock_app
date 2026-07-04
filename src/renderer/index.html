@@ -98,8 +98,13 @@
 
       <section id="watch-workspace" class="workspace watch-workspace" hidden>
         <header class="toolbar">
-          <div>
+          <div class="watch-toolbar-status">
             <span class="toolbar-label">盯盘脑图</span>
+            <div class="watch-date-row">
+              <label class="toolbar-label" for="watch-trading-date">数据日期</label>
+              <select id="watch-trading-date" aria-label="数据日期"></select>
+              <strong id="watch-cache-time">行情缓存时间：--</strong>
+            </div>
             <strong id="watch-status">打开后自动刷新行情</strong>
           </div>
           <div class="toolbar-actions">

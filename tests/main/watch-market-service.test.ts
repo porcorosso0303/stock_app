@@ -354,6 +354,79 @@ describe("WatchMarketService", () => {
     expect(quoteService.listTrends).toHaveBeenCalledWith(["1.600519"]);
   });
 
+  it("loads a selected trading date from cache before calling the provider", async () => {
+    const selectedTrend = {
+      ...trendWithTimes([
+      ...minuteRange("09:30", "11:30"),
+      ...minuteRange("13:01", "15:00")
+      ], "2026-07-02T07:00:00.000Z"),
+      tradingDate: "2026-07-02"
+    };
+    const selectedCache: WatchMarketCache = {
+      tradingDate: "2026-07-02",
+      updatedAt: "2026-07-02T07:00:00.000Z",
+      quotes: [quote(1.2, "2026-07-02T07:00:00.000Z")],
+      trends: [selectedTrend]
+    };
+    const cacheStore = {
+      getForDate: vi.fn(),
+      getHistory: vi.fn().mockResolvedValue({
+        version: 2,
+        days: [selectedCache]
+      }),
+      write: vi.fn()
+    };
+    const quoteService = marketDataProvider({
+      listQuotes: vi.fn(),
+      listTrends: vi.fn()
+    });
+    const service = new WatchMarketService(
+      cacheStore,
+      quoteService,
+      () => new Date("2026-07-04T04:00:00.000Z")
+    );
+
+    await expect(service.get(["1.600519"], { tradingDate: "2026-07-02" })).resolves.toMatchObject({
+      tradingDate: "2026-07-02",
+      trends: [selectedTrend],
+      fromCache: true
+    });
+    expect(quoteService.listTrends).not.toHaveBeenCalled();
+  });
+
+  it("fetches a selected trading date through the provider when cache is missing", async () => {
+    const selectedTrend = {
+      ...trendWithTimes(["09:31", "15:00"], "2026-07-04T04:00:00.000Z"),
+      tradingDate: "2026-07-02"
+    };
+    const cacheStore = {
+      getForDate: vi.fn(),
+      getHistory: vi.fn().mockResolvedValue({ version: 2, days: [] }),
+      write: vi.fn()
+    };
+    const quoteService = marketDataProvider({
+      listQuotes: vi.fn(),
+      listTrends: vi.fn().mockResolvedValue([selectedTrend])
+    });
+    const service = new WatchMarketService(
+      cacheStore,
+      quoteService,
+      () => new Date("2026-07-04T04:00:00.000Z")
+    );
+
+    await expect(service.get(["1.600519"], { tradingDate: "2026-07-02" })).resolves.toMatchObject({
+      tradingDate: "2026-07-02",
+      quotes: [expect.objectContaining({ changePercent: 1 })],
+      trends: [selectedTrend],
+      fromCache: false
+    });
+    expect(quoteService.listTrends).toHaveBeenCalledWith(["1.600519"], { tradingDate: "2026-07-02" });
+    expect(quoteService.listQuotes).not.toHaveBeenCalled();
+    expect(cacheStore.write).toHaveBeenCalledWith(expect.objectContaining({
+      tradingDate: "2026-07-02"
+    }));
+  });
+
   it("uses completed same-day cache after close when EastMoney omits the 13:00 point", async () => {
     const sameDayTrend: StockTrend = {
       secid: "1.600519",

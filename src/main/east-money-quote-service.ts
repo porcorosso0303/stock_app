@@ -1,4 +1,4 @@
-import type { StockQuote, StockSearchResult, StockTrend } from "../shared/types";
+import type { StockQuote, StockSearchResult, StockTrend, WatchMarketRequestOptions } from "../shared/types";
 import { validateSecid } from "../shared/watch-tree";
 import {
   calculateChangePercent,
@@ -40,11 +40,11 @@ export class EastMoneyQuoteService {
     );
   }
 
-  async listTrends(secids: string[]): Promise<StockTrend[]> {
+  async listTrends(secids: string[], options: WatchMarketRequestOptions = {}): Promise<StockTrend[]> {
     return await mapWithConcurrency(
       [...new Set(secids)],
       this.options.maxConcurrentRequests ?? DEFAULT_MAX_CONCURRENT_REQUESTS,
-      (secid) => this.getTrend(secid)
+      (secid) => this.getTrend(secid, options)
     );
   }
 
@@ -88,7 +88,10 @@ export class EastMoneyQuoteService {
     }
   }
 
-  private async getTrend(input: string): Promise<StockTrend> {
+  private async getTrend(input: string, options: WatchMarketRequestOptions = {}): Promise<StockTrend> {
+    if (options.tradingDate) {
+      return await this.getHistoricalTrend(input, options.tradingDate);
+    }
     const secid = validateSecid(input);
     const fetchedAt = this.now().toISOString();
     try {
@@ -113,6 +116,41 @@ export class EastMoneyQuoteService {
       return {
         secid,
         tradingDate: formatChinaDate(this.now()),
+        fetchedAt,
+        points: [],
+        errorMessage: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+
+  private async getHistoricalTrend(input: string, tradingDate: string): Promise<StockTrend> {
+    const secid = validateSecid(input);
+    const fetchedAt = this.now().toISOString();
+    try {
+      const compactDate = tradingDate.replace(/-/g, "");
+      const url = new URL("https://push2his.eastmoney.com/api/qt/stock/kline/get");
+      url.searchParams.set("secid", secid);
+      url.searchParams.set("klt", "1");
+      url.searchParams.set("fqt", "1");
+      url.searchParams.set("beg", compactDate);
+      url.searchParams.set("end", compactDate);
+      url.searchParams.set("fields1", "f1,f2,f3,f4,f5,f6");
+      url.searchParams.set("fields2", "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61");
+      const trendData = readHistoricalTrendData(
+        await this.fetchJson(url, "历史分时走势请求失败"),
+        tradingDate
+      );
+      return {
+        secid,
+        fetchedAt,
+        tradingDate: trendData.tradingDate,
+        points: trendData.points,
+        errorMessage: trendData.errorMessage
+      };
+    } catch (error) {
+      return {
+        secid,
+        tradingDate,
         fetchedAt,
         points: [],
         errorMessage: error instanceof Error ? error.message : String(error)
@@ -248,6 +286,48 @@ function readTrendData(value: unknown, fallbackTradingDate: string): TrendData {
       tradingDate,
       points: [],
       errorMessage: "分时走势缺少昨收价"
+    };
+  }
+  return {
+    tradingDate,
+    points: normalizeIntradayTrendPoints(rawPoints, previousClose)
+  };
+}
+
+function readHistoricalTrendData(value: unknown, fallbackTradingDate: string): TrendData {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("历史分时走势返回格式错误");
+  }
+  const data = (value as Record<string, unknown>).data;
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error("未找到历史分时走势");
+  }
+  const klines = (data as Record<string, unknown>).klines;
+  if (!Array.isArray(klines)) {
+    throw new Error("历史分时走势返回格式错误");
+  }
+  const rawPoints = klines.flatMap((item): RawIntradayTrendPoint[] => {
+    if (typeof item !== "string") {
+      return [];
+    }
+    const fields = item.split(",");
+    const time = readTrendTime(fields[0]);
+    const price = readTrendPrice(fields[2]);
+    return time ? [{ time, price }] : [];
+  });
+  const firstKline = typeof klines[0] === "string" ? klines[0].split(",") : [];
+  const firstDate = readTrendTradingDate(klines);
+  const openingPrice = readTrendPrice(firstKline[1]);
+  if (firstDate && openingPrice !== undefined && rawPoints[0]?.time !== "09:30") {
+    rawPoints.unshift({ time: "09:30", price: openingPrice });
+  }
+  const tradingDate = readTrendTradingDate(klines) ?? fallbackTradingDate;
+  const previousClose = readTrendPrice((data as Record<string, unknown>).preKPrice);
+  if (previousClose === undefined) {
+    return {
+      tradingDate,
+      points: [],
+      errorMessage: "历史分时走势缺少昨收价"
     };
   }
   return {

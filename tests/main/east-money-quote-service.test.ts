@@ -160,6 +160,40 @@ describe("EastMoneyQuoteService", () => {
     });
   });
 
+  it("loads one-minute historical trends for a requested trading date", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          preKPrice: 694.81,
+          klines: [
+            "2026-07-03 09:31,672.54,672.97,680.00,672.54,28077,1891051008.00,1.07,-3.14,-21.84,0.42",
+            "2026-07-03 15:00,677.77,677.77,677.77,677.77,6191,419584368.00,0.00,-0.37,-2.53,0.09"
+          ]
+        }
+      })
+    });
+    const service = new EastMoneyQuoteService(
+      fetchImpl,
+      () => new Date("2026-07-04T04:01:00.000Z")
+    );
+
+    const [trend] = await service.listTrends(["1.603986"], { tradingDate: "2026-07-03" });
+
+    const requestUrl = new URL(fetchImpl.mock.calls[0][0]);
+    expect(requestUrl.pathname).toContain("/api/qt/stock/kline/get");
+    expect(requestUrl.searchParams.get("beg")).toBe("20260703");
+    expect(requestUrl.searchParams.get("end")).toBe("20260703");
+    expect(requestUrl.searchParams.get("klt")).toBe("1");
+    expect(trend.tradingDate).toBe("2026-07-03");
+    expect(trend.points[0]).toMatchObject({ time: "09:30", price: 672.54 });
+    expect(trend.points[0].changePercent).toBeCloseTo(-3.205, 3);
+    expect(trend.points[1]).toMatchObject({ time: "09:31", price: 672.97 });
+    expect(trend.points[1].changePercent).toBeCloseTo(-3.143, 3);
+    expect(trend.points[2]).toMatchObject({ time: "15:00", price: 677.77 });
+    expect(trend.points[2].changePercent).toBeCloseTo(-2.452, 3);
+  });
+
   it("searches A-share stocks by name and maps the standard secid", async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,

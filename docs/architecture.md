@@ -470,6 +470,7 @@ src/renderer/features/watch/watch-controller.ts
 - 在股票节点编辑弹窗中管理“持仓股”选项：新增股票默认“否”，编辑时回填已有状态，保存“否”时省略 `isHolding`，保存“是”时写入 `isHolding: true`。该控件只对股票节点显示。
 - 维护面板拖拽平移状态。
 - 维护节点左键拖拽状态。用户按住分类或股票节点拖到另一个节点上松开时，Controller 只负责识别被拖节点和投放目标，然后调用 `moveWatchTreeNode()` 生成新树；合法移动后保存 `watch-tree.json` 并刷新行情，非法移动不修改配置。拖拽过程中 Controller 会从源节点 clone 出一个临时 `.drag-ghost` DOM 副本跟随鼠标移动，源节点仅做半透明视觉反馈；该副本不写入脑图数据，也不参与连接线绘制。
+- 维护顶部数据日期下拉框。下拉框显示最近 30 个自然日内的工作日，并合并本地缓存历史中的交易日；用户选择日期后，Controller 调用 `getWatchMarketData(secids, { tradingDate })` 加载该日行情。
 - 绑定盯盘相关 DOM 事件。
 - 从 bootstrap 中 hydrate 初始脑图。
 - 激活盯盘时加载行情并启动 10 秒轮询。
@@ -581,6 +582,7 @@ src/main/watch-market-service.ts
 - 根据中国时区日期判断同日缓存。
 - 同日缓存完整时直接返回缓存。
 - 缓存缺失、缺字段或走势点异常时调用 `MarketDataProvider` 重新获取。
+- 支持按指定 `tradingDate` 读取行情。服务先查 `watch-quotes-cache.json` 中同日期完整缓存；没有或不完整时调用 `MarketDataProvider.listTrends(secids, { tradingDate })` 拉取指定日期分时，并用每只股票最后一个分时点生成该日期的展示 quote。
 - 将走势点价格归一化为相对昨收的涨跌幅。
 - 当 quote 接口不可用但 trend 有最新点时，用 trend 最新点兜底生成可展示 quote，避免有走势数据时仍显示“暂无行情”。
 - 刷新时把最新 quote 合并进同日 trend。
@@ -653,6 +655,7 @@ src/main/east-money-quote-service.ts
 - 股票搜索。
 - 行情快照。快照请求包含最新价、昨收价、涨跌幅、TTM 市盈率、换手率和流通市值；当接口返回的涨跌幅为 0 但最新价和昨收价不一致时，适配器用最新价和昨收价重算涨跌幅。
 - 当日分时走势。分时请求必须包含完整 `fields1=f1...f13`，确保返回中带有 `prePrice` 昨收价；适配器用每个分时价格相对昨收价计算 `StockTrendPoint.changePercent`。
+- 指定交易日历史 1 分钟走势。适配器使用 `push2his.eastmoney.com/api/qt/stock/kline/get?klt=1&beg=YYYYMMDD&end=YYYYMMDD`，用返回的 `preKPrice` 作为昨收价计算涨跌幅。该接口的第一根 1 分钟 K 线通常从 `09:31` 开始，适配器会用第一根 K 线开盘价补一个 `09:30` 点，保证缓存完整性校验仍从开盘时间开始。
 - 东方财富返回格式解析。
 - 失败时返回可展示的 error message。
 
@@ -698,7 +701,7 @@ shell-controller activates watch
 
 缓存命中前，`WatchMarketService` 会校验股票和分时走势是否覆盖当前脑图股票。交易时段至少要求北京时间周一到周五，并且处于 `09:30-11:30` 或 `13:00-15:00`。交易日 `09:30` 之后，包括午休和收盘后，只接受当前自然日对应的交易日缓存，不回退到更早交易日。周末或交易日开盘前，只接受按工作日推算出的最近交易日缓存，例如周六、周日和周一开盘前只接受上一个周五缓存；如果本地没有这份缓存，就调用 provider 拉取并以 provider 返回的真实 `tradingDate` 写入缓存。每次进入盯盘模块后，renderer 在首轮缓存渲染后还会通过 `refreshWatchMarketData(secids, { forceLatest: true })` 后台强制请求 provider 一次，以 provider 返回的最新 `tradingDate` 为准补齐缓存并切换展示。定时轮询不带 `forceLatest`，避免收盘后持续打接口；手动“刷新行情”会带 `forceLatest`。交易时段内，缓存必须从 `09:30` 起按交易分钟连续覆盖到当前交易分钟；午休时段必须连续覆盖到 `11:30`；非交易时段必须连续覆盖到 `15:00`。午休区间 `11:31-13:00` 不属于东财分时返回的连续交易分钟，不要求存在；下午连续分钟从 `13:01` 开始。
 
-顶部盯盘状态栏必须显示当前实际展示的 `tradingDate`，格式为 `展示交易日：YYYY-MM-DD`，并继续显示缓存行情时间或行情更新时间。
+顶部盯盘状态栏必须显示当前实际展示的 `tradingDate`，字段名为 `数据日期`，并以独立文本显示 `行情缓存时间：YYYY/M/D HH:mm`。用户切换 `数据日期` 下拉框时，renderer 用所选日期请求行情；本地没有该日期完整缓存时由 main 侧拉取并写入缓存。
 
 如果缓存中的分时价格有波动、但所有分时涨跌幅都是 `0`，说明 provider 标准化失败，这类缓存会被判为不可用并重新拉取。如果缓存写入时间处于同一交易日交易时段、但走势曲线已经包含写入时间之后的分时点，说明历史完整曲线被当作实时曲线处理过，也会判为不可用并重新拉取。
 
