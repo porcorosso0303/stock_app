@@ -29,7 +29,8 @@ import type { RendererElements } from "../../app/dom";
 import {
   closeWatchContextMenu,
   openEmptyWatchContextMenu,
-  openWatchNodeContextMenu
+  openWatchNodeContextMenu,
+  openWatchWorkspaceContextMenu
 } from "./watch-context-menu";
 import { createWatchConnectors } from "./watch-connectors";
 import { escapeHtml, renderWatchTree } from "./watch-view";
@@ -89,6 +90,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   let selectedTradingDate: string | undefined;
   let dateSelectionPinned = false;
   let suppressNodeClick = false;
+  let renamingWorkspaceId: string | undefined;
   const collapsedNodes = new Set<string>();
 
   function render(): void {
@@ -111,23 +113,33 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     const activeId = config.activeWorkspaceId;
     elements.watchWorkspaceTabs.innerHTML = (config.workspaces ?? []).map((workspace) => `
       <span class="watch-workspace-tab${workspace.id === activeId ? " active" : ""}" role="presentation">
-        <button
-          class="watch-workspace-tab-switch"
-          data-watch-workspace-action="switch"
-          data-watch-workspace-id="${escapeHtml(workspace.id)}"
-          type="button"
-          role="tab"
-          aria-selected="${workspace.id === activeId ? "true" : "false"}"
-          title="双击重命名：${escapeHtml(workspace.name)}"
-        >${escapeHtml(workspace.name)}</button>
-        <button
-          class="watch-workspace-tab-close"
-          data-watch-workspace-action="delete"
-          data-watch-workspace-id="${escapeHtml(workspace.id)}"
-          type="button"
-          title="删除展示区"
-          aria-label="删除 ${escapeHtml(workspace.name)}"
-        >×</button>
+        ${workspace.id === renamingWorkspaceId ? `
+          <input
+            class="watch-workspace-rename-input"
+            data-watch-workspace-action="rename-input"
+            data-watch-workspace-id="${escapeHtml(workspace.id)}"
+            value="${escapeHtml(workspace.name)}"
+            aria-label="重命名展示区"
+          />
+        ` : `
+          <button
+            class="watch-workspace-tab-switch"
+            data-watch-workspace-action="switch"
+            data-watch-workspace-id="${escapeHtml(workspace.id)}"
+            type="button"
+            role="tab"
+            aria-selected="${workspace.id === activeId ? "true" : "false"}"
+            title="双击或右键重命名：${escapeHtml(workspace.name)}"
+          >${escapeHtml(workspace.name)}</button>
+          <button
+            class="watch-workspace-tab-close"
+            data-watch-workspace-action="delete"
+            data-watch-workspace-id="${escapeHtml(workspace.id)}"
+            type="button"
+            title="删除展示区"
+            aria-label="删除 ${escapeHtml(workspace.name)}"
+          >×</button>
+        `}
       </span>
     `).join("");
   }
@@ -312,13 +324,31 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     await persistTree(false);
   }
 
-  async function renameWorkspace(workspaceId: string): Promise<void> {
+  function beginRenameWorkspace(workspaceId: string): void {
     const workspace = config.workspaces?.find((item) => item.id === workspaceId);
     if (!workspace) {
       return;
     }
-    const name = prompt("请输入新的展示区名称", workspace.name)?.trim();
-    if (!name || name === workspace.name) {
+    closeWatchContextMenu(elements.watchContextMenu);
+    renamingWorkspaceId = workspaceId;
+    renderWorkspaceTabs();
+    focusRenameWorkspaceInput();
+  }
+
+  function focusRenameWorkspaceInput(): void {
+    window.setTimeout(() => {
+      const input = elements.watchWorkspaceTabs.querySelector<HTMLInputElement>(".watch-workspace-rename-input");
+      input?.focus();
+      input?.select();
+    }, 0);
+  }
+
+  async function finishRenameWorkspace(workspaceId: string, rawName: string): Promise<void> {
+    const workspace = config.workspaces?.find((item) => item.id === workspaceId);
+    const name = rawName.trim();
+    renamingWorkspaceId = undefined;
+    if (!workspace || !name || name === workspace.name) {
+      renderWorkspaceTabs();
       return;
     }
     try {
@@ -326,6 +356,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       await persistTree(false);
     } catch (error) {
       elements.watchMarketError.textContent = getErrorMessage(error);
+      renderWorkspaceTabs();
     }
   }
 
@@ -350,6 +381,9 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   }
 
   function handleWorkspaceTabsClick(event: MouseEvent): void {
+    if (event.target instanceof Element && event.target.closest('input[data-watch-workspace-action="rename-input"]')) {
+      return;
+    }
     const button = event.target instanceof Element
       ? event.target.closest<HTMLButtonElement>("button[data-watch-workspace-action]")
       : undefined;
@@ -371,7 +405,47 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     if (!button) {
       return;
     }
-    void renameWorkspace(button.dataset.watchWorkspaceId ?? "");
+    event.preventDefault();
+    beginRenameWorkspace(button.dataset.watchWorkspaceId ?? "");
+  }
+
+  function handleWorkspaceTabsContextMenu(event: MouseEvent): void {
+    const target = event.target instanceof Element
+      ? event.target.closest<HTMLElement>("[data-watch-workspace-id]")
+      : undefined;
+    const workspaceId = target?.dataset.watchWorkspaceId ?? "";
+    if (!workspaceId) {
+      return;
+    }
+    event.preventDefault();
+    openWatchWorkspaceContextMenu(elements.watchContextMenu, workspaceId, event);
+  }
+
+  function handleWorkspaceTabsKeyDown(event: KeyboardEvent): void {
+    const input = event.target instanceof Element
+      ? event.target.closest<HTMLInputElement>('input[data-watch-workspace-action="rename-input"]')
+      : undefined;
+    if (!input) {
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void finishRenameWorkspace(input.dataset.watchWorkspaceId ?? "", input.value);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      renamingWorkspaceId = undefined;
+      renderWorkspaceTabs();
+    }
+  }
+
+  function handleWorkspaceTabsFocusOut(event: FocusEvent): void {
+    const input = event.target instanceof Element
+      ? event.target.closest<HTMLInputElement>('input[data-watch-workspace-action="rename-input"]')
+      : undefined;
+    if (!input) {
+      return;
+    }
+    void finishRenameWorkspace(input.dataset.watchWorkspaceId ?? "", input.value);
   }
 
   function handleWorkspaceShortcut(event: KeyboardEvent): void {
@@ -446,6 +520,9 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
         break;
       case "delete":
         void deleteNode(id);
+        break;
+      case "rename-workspace":
+        beginRenameWorkspace(id);
         break;
     }
     closeWatchContextMenu(elements.watchContextMenu);
@@ -824,6 +901,9 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       elements.addWatchWorkspace.addEventListener("click", () => void createWorkspace());
       elements.watchWorkspaceTabs.addEventListener("click", handleWorkspaceTabsClick);
       elements.watchWorkspaceTabs.addEventListener("dblclick", handleWorkspaceTabsDoubleClick);
+      elements.watchWorkspaceTabs.addEventListener("contextmenu", handleWorkspaceTabsContextMenu);
+      elements.watchWorkspaceTabs.addEventListener("keydown", handleWorkspaceTabsKeyDown);
+      elements.watchWorkspaceTabs.addEventListener("focusout", handleWorkspaceTabsFocusOut);
       elements.watchTradingDate.addEventListener("change", () => void handleTradingDateChange());
       elements.watchNodeType.addEventListener("change", syncSecidVisibility);
       elements.watchNodeName.addEventListener("input", handleNodeNameInput);

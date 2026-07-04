@@ -68,11 +68,44 @@ describe("watch workspace tabs", () => {
       ]);
       expect(saveWatchTree.mock.calls[0]?.[0].activeWorkspaceId).toBe("workspace-2");
     });
+
+    it("enters inline rename mode when double-clicking a workspace tab", () => {
+      const { elements } = createFixture({
+        activeWorkspaceId: "default",
+        workspaces: [{ id: "default", name: "默认" }]
+      });
+      const tab = workspaceButton("default", "switch");
+
+      elements.watchWorkspaceTabs.emit("dblclick", tab);
+
+      expect(elements.watchWorkspaceTabs.innerHTML).toContain("watch-workspace-rename-input");
+      expect(elements.watchWorkspaceTabs.innerHTML).toContain('value="默认"');
+    });
+
+    it("shows a rename option when right-clicking a workspace tab", () => {
+      const { elements } = createFixture({
+        activeWorkspaceId: "default",
+        workspaces: [{ id: "default", name: "默认" }]
+      });
+      const tab = workspaceButton("default", "switch");
+
+      const event = elements.watchWorkspaceTabs.emit("contextmenu", tab, { clientX: 20, clientY: 30 });
+
+      expect(event.preventDefault).toHaveBeenCalledOnce();
+      expect(elements.watchContextMenu.innerHTML).toContain('data-watch-menu-action="rename-workspace"');
+      expect(elements.watchContextMenu.innerHTML).toContain("重命名");
+      expect(elements.watchContextMenu.hidden).toBe(false);
+      expect(elements.watchContextMenu.style.left).toBe("20px");
+      expect(elements.watchContextMenu.style.top).toBe("30px");
+    });
   });
 });
 
 interface TestEvent {
   target: TestElement;
+  clientX: number;
+  clientY: number;
+  key: string;
   preventDefault(): void;
 }
 
@@ -101,12 +134,44 @@ class TestElement {
     this.listeners.set(type, listeners);
   }
 
-  emit(type: string, target: TestElement = this): void {
-    const event: TestEvent = { target, preventDefault: vi.fn() };
+  emit(type: string, target: TestElement = this, init: Partial<TestEvent> = {}): TestEvent {
+    const event: TestEvent = {
+      target,
+      clientX: 0,
+      clientY: 0,
+      key: "",
+      preventDefault: vi.fn(),
+      ...init
+    };
     this.listeners.get(type)?.forEach((listener) => listener(event));
+    return event;
   }
 
-  closest<T>(): T | null {
+  closest<T>(selector: string): T | null {
+    if (
+      selector === "button[data-watch-workspace-action]" &&
+      this.dataset.watchWorkspaceAction
+    ) {
+      return this as unknown as T;
+    }
+    if (
+      selector === 'button[data-watch-workspace-action="switch"]' &&
+      this.dataset.watchWorkspaceAction === "switch"
+    ) {
+      return this as unknown as T;
+    }
+    if (
+      selector === "[data-watch-workspace-id]" &&
+      this.dataset.watchWorkspaceId
+    ) {
+      return this as unknown as T;
+    }
+    if (
+      selector === "button[data-watch-menu-action]" &&
+      this.dataset.watchMenuAction
+    ) {
+      return this as unknown as T;
+    }
     return null;
   }
 
@@ -179,6 +244,13 @@ function createElements(): Record<string, TestElement> {
     "watchNodeError",
     "cancelWatchNode"
   ].map((key) => [key, new TestElement()]));
+}
+
+function workspaceButton(workspaceId: string, action: string): TestElement {
+  const element = new TestElement();
+  element.dataset.watchWorkspaceId = workspaceId;
+  element.dataset.watchWorkspaceAction = action;
+  return element;
 }
 
 function createApi(

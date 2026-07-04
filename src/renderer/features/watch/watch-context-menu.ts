@@ -25,6 +25,17 @@ export function openEmptyWatchContextMenu(menu: HTMLElement, event: MouseEvent):
   showMenu(menu, event);
 }
 
+export function openWatchWorkspaceContextMenu(
+  menu: HTMLElement,
+  workspaceId: string,
+  event: MouseEvent
+): void {
+  menu.innerHTML = `
+    <button data-watch-menu-action="rename-workspace" data-watch-id="${escapeHtml(workspaceId)}" type="button">重命名</button>
+  `;
+  showMenu(menu, event);
+}
+
 export function closeWatchContextMenu(menu: HTMLElement): void {
   menu.hidden = true;
 }
