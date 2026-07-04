@@ -281,16 +281,26 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   }
 
   async function createWorkspace(): Promise<void> {
-    const name = prompt("请输入展示区名称", `展示区 ${(config.workspaces?.length ?? 0) + 1}`)?.trim();
-    if (!name) {
-      return;
+    try {
+      config = appendWatchWorkspace(config, {
+        id: crypto.randomUUID(),
+        name: nextWorkspaceName()
+      });
+      collapsedNodes.clear();
+      await persistTree(false);
+    } catch (error) {
+      elements.watchMarketError.textContent = getErrorMessage(error);
     }
-    config = appendWatchWorkspace(config, {
-      id: crypto.randomUUID(),
-      name
-    });
-    collapsedNodes.clear();
-    await persistTree(false);
+  }
+
+  function nextWorkspaceName(): string {
+    const names = new Set((config.workspaces ?? []).map((workspace) => workspace.name));
+    for (let index = (config.workspaces?.length ?? 0) + 1; ; index += 1) {
+      const name = `展示区 ${index}`;
+      if (!names.has(name)) {
+        return name;
+      }
+    }
   }
 
   async function switchWorkspace(workspaceId: string): Promise<void> {
