@@ -98,12 +98,12 @@ export class WatchMarketService {
   }
 
   private async fetchTradingDate(secids: string[], tradingDate: string): Promise<WatchMarketData> {
-    const trends = await this.marketDataProvider.listTrends(secids, { tradingDate });
-    const actualTradingDate = selectTradingDate(trends) ?? tradingDate;
+    const providerTrends = await this.marketDataProvider.listTrends(secids, { tradingDate });
+    const trends = normalizeSelectedDateTrends(secids, providerTrends, tradingDate, this.now().toISOString());
     const updatedAt = this.now().toISOString();
     const quotes = quotesFromTrends(secids, trends, updatedAt);
     const cache = {
-      tradingDate: actualTradingDate,
+      tradingDate,
       quotes,
       trends,
       updatedAt
@@ -112,7 +112,7 @@ export class WatchMarketService {
       await this.cacheStore.write(cache);
     }
     return {
-      tradingDate: actualTradingDate,
+      tradingDate,
       quotes,
       trends,
       history: this.usesEphemeralProvider() ? [cache] : await this.historyWith(cache),
@@ -178,6 +178,28 @@ function sortAndLimitHistory(days: WatchMarketCache[]): WatchMarketCache[] {
 function selectTradingDate(trends: StockTrend[]): string | undefined {
   return trends.find((trend) => !trend.errorMessage && trend.tradingDate)?.tradingDate ??
     trends.find((trend) => trend.tradingDate)?.tradingDate;
+}
+
+function normalizeSelectedDateTrends(
+  secids: string[],
+  trends: StockTrend[],
+  tradingDate: string,
+  fetchedAt: string
+): StockTrend[] {
+  const trendsBySecid = new Map(trends.map((trend) => [trend.secid, trend]));
+  return secids.map((secid) => {
+    const trend = trendsBySecid.get(secid);
+    if (trend?.tradingDate === tradingDate && trend.points.length > 0 && !trend.errorMessage) {
+      return trend;
+    }
+    return {
+      secid,
+      tradingDate,
+      fetchedAt: trend?.fetchedAt ?? fetchedAt,
+      points: [],
+      errorMessage: trend?.errorMessage ?? `未找到 ${tradingDate} 行情`
+    };
+  });
 }
 
 function coversSecids(cache: WatchMarketCache, secids: string[], now: Date): boolean {

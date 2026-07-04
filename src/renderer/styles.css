@@ -56,6 +56,8 @@ h2 { margin: 0; font-size: 15px; }
 .watch-date-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .watch-date-row select { border: 1px solid #bdcac5; border-radius: 6px; padding: 5px 8px; background: #fff; color: #26434b; font: inherit; }
 .watch-date-row strong { display: inline; max-width: none; margin-top: 0; }
+.watch-date-label { color: #4f6970; font-size: 12px; font-weight: 800; }
+.watch-market-error { color: #b42318; font-size: 14px; font-weight: 800; }
 .tabs { display: flex; gap: 18px; border-bottom: 1px solid #d6dfda; padding: 0 22px; background: #fff; }
 .tab { border: 0; border-bottom: 3px solid transparent; border-radius: 0; padding: 13px 1px 10px; background: transparent; color: #617478; }
 .tab.active { border-bottom-color: #5f865a; color: #23454b; font-weight: 700; }

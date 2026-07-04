@@ -79,6 +79,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   let pan: WatchPanState | undefined;
   let nodeDrag: WatchNodeDragState | undefined;
   let selectedTradingDate: string | undefined;
+  let dateSelectionPinned = false;
   let suppressNodeClick = false;
   const collapsedNodes = new Set<string>();
 
@@ -110,6 +111,10 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   }
 
   async function refreshQuotes(forceLatest = false): Promise<void> {
+    if (dateSelectionPinned && selectedTradingDate) {
+      await loadMarketData();
+      return;
+    }
     await updateMarketData(
       (secids) => api.refreshWatchMarketData(secids, forceLatest ? { forceLatest: true } : undefined),
       "正在刷新行情..."
@@ -117,6 +122,9 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   }
 
   async function refreshLatestMarketData(): Promise<void> {
+    if (dateSelectionPinned) {
+      return;
+    }
     await updateMarketData(
       (secids) => api.refreshWatchMarketData(secids, { forceLatest: true }),
       "正在校验最近交易日行情..."
@@ -169,33 +177,35 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       quotes = new Map();
       trends = new Map();
       marketHistory = [];
+      elements.watchMarketError.textContent = "";
       elements.watchStatus.textContent = "尚未配置股票叶子节点";
       render();
       return;
     }
     marketUpdateInFlight = true;
+    elements.watchMarketError.textContent = "";
     elements.watchStatus.textContent = loadingMessage;
     try {
       const marketData = await load(secids);
       quotes = new Map(marketData.quotes.map((quote) => [quote.secid, quote]));
       trends = new Map(marketData.trends.map((trend) => [trend.secid, trend]));
       marketHistory = marketData.history ?? currentMarketDataAsHistory(marketData);
-      if (marketData.tradingDate) {
+      if (marketData.tradingDate && !dateSelectionPinned) {
         selectedTradingDate = marketData.tradingDate;
       }
       syncTradingDateOptions(marketData);
       const marketQuotes = marketData.quotes;
       const unavailable = marketQuotes.filter((quote) => quote.errorMessage).length;
-      const timeText = marketData.updatedAt
-        ? formatDate(marketData.updatedAt)
-        : formatDate(marketQuotes[0].fetchedAt);
-      elements.watchCacheTime.textContent = `行情缓存时间：${timeText}`;
-      elements.watchStatus.textContent = unavailable === 0
+      elements.watchMarketError.textContent = unavailable === 0
         ? ""
         : `${unavailable} 只股票暂无行情`;
+      elements.watchStatus.textContent = unavailable === 0
+        ? ""
+        : "";
       render();
     } catch (error) {
-      elements.watchStatus.textContent = getErrorMessage(error);
+      elements.watchMarketError.textContent = getErrorMessage(error);
+      elements.watchStatus.textContent = "";
     } finally {
       marketUpdateInFlight = false;
     }
@@ -208,6 +218,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
 
   async function handleTradingDateChange(): Promise<void> {
     selectedTradingDate = elements.watchTradingDate.value || undefined;
+    dateSelectionPinned = true;
     await updateMarketData(
       (secids) => api.getWatchMarketData(secids, selectedTradingDate ? { tradingDate: selectedTradingDate } : undefined),
       "正在加载所选日期行情..."
@@ -220,7 +231,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       ...(marketData.history ?? []).map((day) => day.tradingDate),
       ...(marketData.tradingDate ? [marketData.tradingDate] : [])
     ]);
-    const nextValue = marketData.tradingDate ?? selectedTradingDate ?? "";
+    const nextValue = selectedTradingDate ?? marketData.tradingDate ?? "";
     elements.watchTradingDate.innerHTML = [...dates]
       .sort((left, right) => right.localeCompare(left))
       .map((date) => `<option value="${escapeHtml(date)}">${escapeHtml(date)}</option>`)
@@ -734,13 +745,6 @@ function currentMarketDataAsHistory(
     quotes: marketData.quotes,
     trends: marketData.trends
   }];
-}
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat("zh-CN", {
-    dateStyle: "short",
-    timeStyle: "short"
-  }).format(new Date(value));
 }
 
 function formatChinaDate(date: Date): string {

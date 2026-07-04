@@ -427,6 +427,43 @@ describe("WatchMarketService", () => {
     }));
   });
 
+  it("returns an unavailable selected date instead of replacing it with provider fallback data", async () => {
+    const fallbackTrend = {
+      ...trendWithTimes(["09:31", "15:00"], "2026-07-04T04:00:00.000Z"),
+      tradingDate: "2026-07-03"
+    };
+    const cacheStore = {
+      getForDate: vi.fn(),
+      getHistory: vi.fn().mockResolvedValue({ version: 2, days: [] }),
+      write: vi.fn()
+    };
+    const quoteService = marketDataProvider({
+      listQuotes: vi.fn(),
+      listTrends: vi.fn().mockResolvedValue([fallbackTrend])
+    });
+    const service = new WatchMarketService(
+      cacheStore,
+      quoteService,
+      () => new Date("2026-07-04T04:00:00.000Z")
+    );
+
+    await expect(service.get(["1.600519"], { tradingDate: "2026-07-02" })).resolves.toMatchObject({
+      tradingDate: "2026-07-02",
+      quotes: [expect.objectContaining({
+        secid: "1.600519",
+        errorMessage: "未找到 2026-07-02 行情"
+      })],
+      trends: [expect.objectContaining({
+        secid: "1.600519",
+        tradingDate: "2026-07-02",
+        points: [],
+        errorMessage: "未找到 2026-07-02 行情"
+      })],
+      fromCache: false
+    });
+    expect(cacheStore.write).not.toHaveBeenCalled();
+  });
+
   it("uses completed same-day cache after close when EastMoney omits the 13:00 point", async () => {
     const sameDayTrend: StockTrend = {
       secid: "1.600519",

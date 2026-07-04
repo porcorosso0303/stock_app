@@ -26,7 +26,7 @@ export const elements = {
   watchWorkspace: getElement<HTMLElement>("watch-workspace"),
   watchStatus: getElement<HTMLElement>("watch-status"),
   watchTradingDate: getElement<HTMLSelectElement>("watch-trading-date"),
-  watchCacheTime: getElement<HTMLElement>("watch-cache-time"),
+  watchMarketError: getElement<HTMLElement>("watch-market-error"),
   refreshWatchQuotes: getElement<HTMLButtonElement>("refresh-watch-quotes"),
   exportWatchData: getElement<HTMLButtonElement>("export-watch-data"),
   importWatchData: getElement<HTMLButtonElement>("import-watch-data"),

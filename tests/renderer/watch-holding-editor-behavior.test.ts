@@ -153,7 +153,7 @@ function createElements(): Record<string, TestElement> {
     "importWatchData",
     "watchStatus",
     "watchTradingDate",
-    "watchCacheTime",
+    "watchMarketError",
     "watchPanel",
     "watchTree",
     "watchContextMenu",
