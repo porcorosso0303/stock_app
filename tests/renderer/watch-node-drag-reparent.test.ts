@@ -227,6 +227,8 @@ function createElements(): Record<string, TestElement> {
     "exportWatchData",
     "importWatchData",
     "watchStatus",
+    "watchWorkspaceTabs",
+    "addWatchWorkspace",
     "watchTradingDate",
     "watchMarketError",
     "watchPanel",

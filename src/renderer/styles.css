@@ -53,6 +53,15 @@ h2 { margin: 0; font-size: 15px; }
 .toolbar strong { display: block; max-width: 560px; margin-top: 4px; overflow: hidden; color: #34525a; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .toolbar-actions { display: flex; gap: 8px; }
 .watch-toolbar-status { display: grid; gap: 4px; }
+.watch-workspace-tabs-row { display: flex; align-items: center; gap: 6px; min-height: 30px; }
+.watch-workspace-tabs { display: flex; max-width: min(760px, 58vw); overflow-x: auto; gap: 4px; padding-bottom: 2px; }
+.watch-workspace-tab { display: inline-flex; align-items: center; overflow: hidden; border: 1px solid #c8d6cf; border-radius: 8px 8px 0 0; background: #f4f7f4; color: #527078; }
+.watch-workspace-tab.active { border-color: #9fb8aa; background: #fff; color: #17343d; box-shadow: 0 -1px 0 #fff inset; }
+.watch-workspace-tab-switch, .watch-workspace-tab-close, .watch-workspace-add { border: 0; border-radius: 0; background: transparent; color: inherit; font-size: 12px; font-weight: 800; }
+.watch-workspace-tab-switch { max-width: 150px; overflow: hidden; padding: 6px 10px; text-overflow: ellipsis; white-space: nowrap; }
+.watch-workspace-tab-close { padding: 6px 8px 6px 2px; color: #789095; }
+.watch-workspace-tab-close:hover { color: #b42318; }
+.watch-workspace-add { display: inline-grid; width: 26px; height: 26px; place-content: center; border: 1px solid #c8d6cf; border-radius: 7px; background: #fff; color: #17343d; }
 .watch-date-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .watch-date-row select { border: 1px solid #bdcac5; border-radius: 6px; padding: 5px 8px; background: #fff; color: #26434b; font: inherit; }
 .watch-date-row strong { display: inline; max-width: none; margin-top: 0; }

@@ -9,12 +9,20 @@ import type {
   WatchTreeNode
 } from "../../../shared/types";
 import {
+  appendWatchWorkspace,
   appendWatchTreeChild,
   collectStockSecids,
+  deleteWatchWorkspace,
+  ensureWatchWorkspaceConfig,
   findWatchTreeNode,
+  getActiveWatchRoot,
+  getActiveWatchWorkspace,
   moveWatchTreeNode,
+  renameWatchWorkspace,
   removeWatchTreeNode,
   replaceWatchTreeNode,
+  switchWatchWorkspace,
+  updateActiveWatchRoot,
   validateSecid
 } from "../../../shared/watch-tree";
 import type { RendererElements } from "../../app/dom";
@@ -84,8 +92,10 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   const collapsedNodes = new Set<string>();
 
   function render(): void {
+    config = ensureWatchWorkspaceConfig(config);
+    renderWorkspaceTabs();
     renderWatchTree(elements.watchTree, {
-      config,
+      config: { root: activeRoot() },
       quotes,
       trends,
       marketHistory,
@@ -93,9 +103,38 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     }, connectors.schedule);
   }
 
+  function activeRoot(): WatchTreeConfig["root"] {
+    return getActiveWatchRoot(config);
+  }
+
+  function renderWorkspaceTabs(): void {
+    const activeId = config.activeWorkspaceId;
+    elements.watchWorkspaceTabs.innerHTML = (config.workspaces ?? []).map((workspace) => `
+      <span class="watch-workspace-tab${workspace.id === activeId ? " active" : ""}" role="presentation">
+        <button
+          class="watch-workspace-tab-switch"
+          data-watch-workspace-action="switch"
+          data-watch-workspace-id="${escapeHtml(workspace.id)}"
+          type="button"
+          role="tab"
+          aria-selected="${workspace.id === activeId ? "true" : "false"}"
+          title="双击重命名：${escapeHtml(workspace.name)}"
+        >${escapeHtml(workspace.name)}</button>
+        <button
+          class="watch-workspace-tab-close"
+          data-watch-workspace-action="delete"
+          data-watch-workspace-id="${escapeHtml(workspace.id)}"
+          type="button"
+          title="删除展示区"
+          aria-label="删除 ${escapeHtml(workspace.name)}"
+        >×</button>
+      </span>
+    `).join("");
+  }
+
   async function loadTree(): Promise<void> {
     try {
-      config = await api.getWatchTree();
+      config = ensureWatchWorkspaceConfig(await api.getWatchTree());
       loaded = true;
       render();
     } catch (error) {
@@ -152,7 +191,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       if (!result) {
         return;
       }
-      config = await api.getWatchTree();
+      config = ensureWatchWorkspaceConfig(await api.getWatchTree());
       loaded = true;
       render();
       await loadMarketData();
@@ -172,7 +211,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     if (marketUpdateInFlight) {
       return;
     }
-    const secids = collectStockSecids(config.root);
+    const secids = collectStockSecids(activeRoot());
     if (secids.length === 0) {
       quotes = new Map();
       trends = new Map();
@@ -241,6 +280,102 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     quoteTimer = undefined;
   }
 
+  async function createWorkspace(): Promise<void> {
+    const name = prompt("请输入展示区名称", `展示区 ${(config.workspaces?.length ?? 0) + 1}`)?.trim();
+    if (!name) {
+      return;
+    }
+    config = appendWatchWorkspace(config, {
+      id: crypto.randomUUID(),
+      name
+    });
+    collapsedNodes.clear();
+    await persistTree(false);
+  }
+
+  async function switchWorkspace(workspaceId: string): Promise<void> {
+    if (!workspaceId || workspaceId === config.activeWorkspaceId) {
+      return;
+    }
+    config = switchWatchWorkspace(config, workspaceId);
+    collapsedNodes.clear();
+    await persistTree(false);
+  }
+
+  async function renameWorkspace(workspaceId: string): Promise<void> {
+    const workspace = config.workspaces?.find((item) => item.id === workspaceId);
+    if (!workspace) {
+      return;
+    }
+    const name = prompt("请输入新的展示区名称", workspace.name)?.trim();
+    if (!name || name === workspace.name) {
+      return;
+    }
+    try {
+      config = renameWatchWorkspace(config, workspaceId, name);
+      await persistTree(false);
+    } catch (error) {
+      elements.watchMarketError.textContent = getErrorMessage(error);
+    }
+  }
+
+  async function removeWorkspace(workspaceId: string): Promise<void> {
+    const workspace = config.workspaces?.find((item) => item.id === workspaceId);
+    if (!workspace || !confirm(`确定删除展示区「${workspace.name}」吗？`)) {
+      return;
+    }
+    config = deleteWatchWorkspace(config, workspaceId);
+    collapsedNodes.clear();
+    await persistTree(false);
+  }
+
+  async function switchWorkspaceByOffset(offset: number): Promise<void> {
+    const workspaces = config.workspaces ?? [];
+    if (workspaces.length < 2) {
+      return;
+    }
+    const currentIndex = Math.max(0, workspaces.findIndex((workspace) => workspace.id === config.activeWorkspaceId));
+    const nextIndex = (currentIndex + offset + workspaces.length) % workspaces.length;
+    await switchWorkspace(workspaces[nextIndex].id);
+  }
+
+  function handleWorkspaceTabsClick(event: MouseEvent): void {
+    const button = event.target instanceof Element
+      ? event.target.closest<HTMLButtonElement>("button[data-watch-workspace-action]")
+      : undefined;
+    if (!button) {
+      return;
+    }
+    const workspaceId = button.dataset.watchWorkspaceId ?? "";
+    if (button.dataset.watchWorkspaceAction === "switch") {
+      void switchWorkspace(workspaceId);
+    } else if (button.dataset.watchWorkspaceAction === "delete") {
+      void removeWorkspace(workspaceId);
+    }
+  }
+
+  function handleWorkspaceTabsDoubleClick(event: MouseEvent): void {
+    const button = event.target instanceof Element
+      ? event.target.closest<HTMLButtonElement>('button[data-watch-workspace-action="switch"]')
+      : undefined;
+    if (!button) {
+      return;
+    }
+    void renameWorkspace(button.dataset.watchWorkspaceId ?? "");
+  }
+
+  function handleWorkspaceShortcut(event: KeyboardEvent): void {
+    if (!isActive() || !event.ctrlKey || event.altKey || event.metaKey || isEditableTarget(event.target)) {
+      return;
+    }
+    const key = event.key.toLowerCase();
+    if (key !== "a" && key !== "d") {
+      return;
+    }
+    event.preventDefault();
+    void switchWorkspaceByOffset(key === "a" ? -1 : 1);
+  }
+
   function handleNodeClick(event: MouseEvent): void {
     if (suppressNodeClick) {
       suppressNodeClick = false;
@@ -249,7 +384,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     const element = event.target instanceof Element
       ? event.target.closest<HTMLElement>(".watch-node")
       : undefined;
-    const node = findWatchTreeNode(config.root, element?.dataset.watchNodeId ?? "");
+    const node = findWatchTreeNode(activeRoot(), element?.dataset.watchNodeId ?? "");
     if (node?.type === "category" && node.children.length > 0) {
       toggleCollapsedNode(node.id);
     }
@@ -259,7 +394,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     const element = event.target instanceof Element
       ? event.target.closest<HTMLElement>(".watch-node")
       : undefined;
-    const node = findWatchTreeNode(config.root, element?.dataset.watchNodeId ?? "");
+    const node = findWatchTreeNode(activeRoot(), element?.dataset.watchNodeId ?? "");
     if (!node) {
       return;
     }
@@ -268,7 +403,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   }
 
   function handlePanelContextMenu(event: MouseEvent): void {
-    if (config.root) {
+    if (activeRoot()) {
       return;
     }
     if (event.target instanceof Element && event.target.closest(".watch-node")) {
@@ -353,7 +488,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       ? event.target.closest<HTMLElement>(".watch-node")
       : undefined;
     const nodeId = element?.dataset.watchNodeId ?? "";
-    if (!nodeId || !findWatchTreeNode(config.root, nodeId) || !element) {
+    if (!nodeId || !findWatchTreeNode(activeRoot(), nodeId) || !element) {
       return false;
     }
     closeWatchContextMenu(elements.watchContextMenu);
@@ -400,14 +535,15 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     if (elements.watchPanel.hasPointerCapture(event.pointerId)) {
       elements.watchPanel.releasePointerCapture(event.pointerId);
     }
-    if (drag.dragged && shouldDrop && config.root) {
+    const root = activeRoot();
+    if (drag.dragged && shouldDrop && root) {
       const target = findDropTarget(event.clientX, event.clientY);
       const targetId = target?.dataset.watchNodeId ?? "";
       const nextRoot = targetId
-        ? moveWatchTreeNode(config.root, drag.nodeId, targetId)
-        : config.root;
-      if (nextRoot !== config.root) {
-        config = { root: nextRoot };
+        ? moveWatchTreeNode(root, drag.nodeId, targetId)
+        : root;
+      if (nextRoot !== root) {
+        config = updateActiveWatchRoot(config, nextRoot);
         await persistTree();
       }
     }
@@ -510,7 +646,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
 
   function openNodeDialog(action: WatchDialogAction): void {
     const existing = action.kind === "edit"
-      ? findWatchTreeNode(config.root, action.nodeId)
+      ? findWatchTreeNode(activeRoot(), action.nodeId)
       : undefined;
     dialogAction = action;
     elements.watchNodeDialogTitle.textContent = action.kind === "edit"
@@ -610,7 +746,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     try {
       const type = elements.watchNodeType.value === "stock" ? "stock" : "category";
       const existing = dialogAction.kind === "edit"
-        ? findWatchTreeNode(config.root, dialogAction.nodeId)
+        ? findWatchTreeNode(activeRoot(), dialogAction.nodeId)
         : undefined;
       const node: WatchTreeNode = type === "stock"
         ? {
@@ -631,19 +767,19 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
         if (node.type !== "category") {
           throw new Error("请创建分类节点");
         }
-        config = { root: node };
+        config = updateActiveWatchRoot(config, node);
       } else if (dialogAction.kind === "add") {
-        if (!config.root) {
+        const root = activeRoot();
+        if (!root) {
           throw new Error("请先创建分类");
         }
-        config = {
-          root: appendWatchTreeChild(config.root, dialogAction.parentId, node)
-        };
+        config = updateActiveWatchRoot(config, appendWatchTreeChild(root, dialogAction.parentId, node));
       } else {
-        if (!config.root) {
+        const root = activeRoot();
+        if (!root) {
           throw new Error("盯盘脑图尚未配置");
         }
-        config = { root: replaceWatchTreeNode(config.root, node) };
+        config = updateActiveWatchRoot(config, replaceWatchTreeNode(root, node));
       }
       await persistTree();
       elements.watchNodeDialog.close();
@@ -653,18 +789,21 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   }
 
   async function deleteNode(id: string): Promise<void> {
-    if (!config.root || !confirm("确定删除该节点及其所有子节点吗？")) {
+    const root = activeRoot();
+    if (!root || !confirm("确定删除该节点及其所有子节点吗？")) {
       return;
     }
-    config = { root: removeWatchTreeNode(config.root, id) };
+    config = updateActiveWatchRoot(config, removeWatchTreeNode(root, id));
     collapsedNodes.delete(id);
     await persistTree();
   }
 
-  async function persistTree(): Promise<void> {
-    config = await api.saveWatchTree(config);
+  async function persistTree(reloadMarketData = true): Promise<void> {
+    config = ensureWatchWorkspaceConfig(await api.saveWatchTree(ensureWatchWorkspaceConfig(config)));
     render();
-    await loadMarketData();
+    if (reloadMarketData) {
+      await loadMarketData();
+    }
   }
 
   return {
@@ -672,6 +811,9 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       elements.refreshWatchQuotes.addEventListener("click", () => void refreshQuotes(true));
       elements.exportWatchData.addEventListener("click", () => void exportData());
       elements.importWatchData.addEventListener("click", () => void importData());
+      elements.addWatchWorkspace.addEventListener("click", () => void createWorkspace());
+      elements.watchWorkspaceTabs.addEventListener("click", handleWorkspaceTabsClick);
+      elements.watchWorkspaceTabs.addEventListener("dblclick", handleWorkspaceTabsDoubleClick);
       elements.watchTradingDate.addEventListener("change", () => void handleTradingDateChange());
       elements.watchNodeType.addEventListener("change", syncSecidVisibility);
       elements.watchNodeName.addEventListener("input", handleNodeNameInput);
@@ -688,6 +830,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       elements.watchPanel.addEventListener("pointercancel", handlePointerCancel);
       elements.watchPanel.addEventListener("scroll", () => closeWatchContextMenu(elements.watchContextMenu));
       document.addEventListener("click", () => closeWatchContextMenu(elements.watchContextMenu));
+      document.addEventListener("keydown", handleWorkspaceShortcut);
       window.addEventListener("resize", connectors.schedule);
       api.onWatchMarketProviderChanged(() => {
         if (isActive()) {
@@ -696,7 +839,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       });
     },
     hydrate: (nextConfig) => {
-      config = nextConfig;
+      config = ensureWatchWorkspaceConfig(nextConfig);
       loaded = true;
       render();
     },
@@ -754,6 +897,10 @@ export function summarizeMarketErrors(marketQuotes: StockQuote[]): string {
   return uniqueErrors.length === 1
     ? `${baseMessage}：${uniqueErrors[0]}`
     : baseMessage;
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && !!target.closest("input, textarea, select, [contenteditable='true']");
 }
 
 function formatChinaDate(date: Date): string {

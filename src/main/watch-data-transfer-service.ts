@@ -5,7 +5,7 @@ import type {
   WatchMarketHistoryCache,
   WatchTreeConfig
 } from "../shared/types";
-import { collectStockSecids, validateWatchTreeConfig } from "../shared/watch-tree";
+import { collectWatchTreeConfigSecids, validateWatchTreeConfig } from "../shared/watch-tree";
 
 interface WatchTreeStoreLike {
   get(): Promise<WatchTreeConfig>;
@@ -71,7 +71,7 @@ function summarize(
   return {
     directory,
     tradingDates: history.days.map((day) => day.tradingDate),
-    stockCount: collectStockSecids(tree.root).length
+    stockCount: collectWatchTreeConfigSecids(tree).length
   };
 }
 

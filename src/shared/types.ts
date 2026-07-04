@@ -73,7 +73,18 @@ export interface WatchTreeStockNode {
 export type WatchTreeNode = WatchTreeCategoryNode | WatchTreeStockNode;
 export type WatchIndustryPosition = "leader1" | "leader2" | "leader3";
 
+export interface WatchTreeWorkspace {
+  id: string;
+  name: string;
+  root?: WatchTreeCategoryNode;
+}
+
 export interface WatchTreeConfig {
+  activeWorkspaceId?: string;
+  workspaces?: WatchTreeWorkspace[];
+  /**
+   * Legacy single-workspace mirror. New code should use workspaces plus activeWorkspaceId.
+   */
   root?: WatchTreeCategoryNode;
 }
 

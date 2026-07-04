@@ -68,6 +68,46 @@ describe("WatchDataTransferService", () => {
       await rm(directory, { recursive: true, force: true });
     }
   });
+
+  it("counts unique stocks across all exported watch workspaces", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "watch-data-transfer-"));
+    try {
+      const userData = join(directory, "user-data");
+      const exportDirectory = join(directory, "export");
+      const treeStore = new WatchTreeStore(join(userData, "watch-tree.json"));
+      const cacheStore = new WatchMarketCacheStore(join(userData, "watch-quotes-cache.json"));
+      await treeStore.set({
+        activeWorkspaceId: "first",
+        workspaces: [{
+          id: "first",
+          name: "第一",
+          root: watchTree().root
+        }, {
+          id: "second",
+          name: "第二",
+          root: {
+            id: "second-root",
+            type: "category",
+            name: "第二组",
+            children: [{
+              id: "other-stock",
+              type: "stock",
+              name: "中控技术",
+              secid: "1.688777"
+            }]
+          }
+        }]
+      });
+      await cacheStore.write(day("2026-06-05"));
+      const service = new WatchDataTransferService(treeStore, cacheStore);
+
+      await expect(service.exportToDirectory(exportDirectory)).resolves.toMatchObject({
+        stockCount: 2
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 });
 
 function watchTree(): WatchTreeConfig {

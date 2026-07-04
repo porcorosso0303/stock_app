@@ -3,17 +3,25 @@ import type { StockQuote, WatchTreeCategoryNode } from "../../src/shared/types";
 import {
   appendWatchTreeChild,
   averageChangePercent,
+  collectWatchTreeConfigSecids,
   categoryStrengthHistory,
   categoryStrengthIndex,
   collectStockSecids,
   countUpDownStocks,
+  deleteWatchWorkspace,
+  ensureWatchWorkspaceConfig,
   formatTrendPercentClass,
+  getActiveWatchRoot,
+  getActiveWatchWorkspace,
   mergeQuoteIntoTrend,
   moveWatchTreeNode,
   normalizeTrendSegments,
   renderTrendSparklineSvg,
   removeWatchTreeNode,
+  renameWatchWorkspace,
   sortWatchChildrenByChangePercent,
+  switchWatchWorkspace,
+  updateActiveWatchRoot,
   validateWatchTreeConfig
 } from "../../src/shared/watch-tree";
 
@@ -453,6 +461,89 @@ describe("watch tree", () => {
         }]
       }
     })).toThrow("持仓股");
+  });
+
+  it("promotes a legacy single tree config into one default workspace", () => {
+    expect(ensureWatchWorkspaceConfig({ root })).toEqual({
+      activeWorkspaceId: "default",
+      workspaces: [{
+        id: "default",
+        name: "默认",
+        root
+      }],
+      root
+    });
+  });
+
+  it("validates workspace configs and mirrors the active workspace root", () => {
+    const secondRoot: WatchTreeCategoryNode = {
+      id: "hardware",
+      type: "category",
+      name: "硬件",
+      children: [{ id: "chip", type: "stock", name: "芯片股", secid: "1.603986" }]
+    };
+
+    expect(validateWatchTreeConfig({
+      activeWorkspaceId: "second",
+      workspaces: [
+        { id: "first", name: "软件", root },
+        { id: "second", name: "硬件", root: secondRoot }
+      ]
+    })).toEqual({
+      activeWorkspaceId: "second",
+      workspaces: [
+        { id: "first", name: "软件", root },
+        { id: "second", name: "硬件", root: secondRoot }
+      ],
+      root: secondRoot
+    });
+  });
+
+  it("switches, renames, updates and deletes watch workspaces", () => {
+    const config = ensureWatchWorkspaceConfig({ root });
+    const withSecond = {
+      activeWorkspaceId: "second",
+      workspaces: [
+        ...config.workspaces ?? [],
+        { id: "second", name: "硬件" }
+      ]
+    };
+
+    expect(getActiveWatchWorkspace(withSecond)).toMatchObject({ id: "second", name: "硬件" });
+    expect(getActiveWatchRoot(withSecond)).toBeUndefined();
+    expect(updateActiveWatchRoot(withSecond, root)).toMatchObject({ root });
+    expect(renameWatchWorkspace(withSecond, "second", "  存储  ").workspaces?.[1]).toMatchObject({ name: "存储" });
+    expect(switchWatchWorkspace(withSecond, "default")).toMatchObject({
+      activeWorkspaceId: "default",
+      root
+    });
+    expect(deleteWatchWorkspace(withSecond, "second")).toMatchObject({
+      activeWorkspaceId: "default",
+      workspaces: [{ id: "default", name: "默认", root }],
+      root
+    });
+  });
+
+  it("collects unique secids from all watch workspaces", () => {
+    expect(collectWatchTreeConfigSecids({
+      activeWorkspaceId: "first",
+      workspaces: [
+        { id: "first", name: "第一", root },
+        {
+          id: "second",
+          name: "第二",
+          root: {
+            id: "other-root",
+            type: "category",
+            name: "其他",
+            children: [
+              { id: "three", type: "stock", name: "股票三", secid: "1.603986" },
+              { id: "duplicate", type: "stock", name: "股票二", secid: "0.300750" }
+            ]
+          }
+        }
+      ]
+    })).toEqual(["1.600519", "0.300750", "1.603986"]);
   });
 
   it("merges the latest quote into a trend without duplicating fetchedAt minutes", () => {
