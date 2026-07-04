@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RendererElements } from "../../src/renderer/app/dom";
 import { createWatchController } from "../../src/renderer/features/watch/watch-controller";
 import type { StockResearchApi } from "../../src/shared/ipc";
-import type { WatchMarketData, WatchTreeConfig } from "../../src/shared/types";
+import type { WatchMarketData, WatchMarketRequestOptions, WatchTreeConfig } from "../../src/shared/types";
 
 describe("watch workspace tabs", () => {
   it("renders workspace tab controls in the watch toolbar", async () => {
@@ -97,6 +97,58 @@ describe("watch workspace tabs", () => {
       expect(elements.watchContextMenu.hidden).toBe(false);
       expect(elements.watchContextMenu.style.left).toBe("20px");
       expect(elements.watchContextMenu.style.top).toBe("30px");
+    });
+
+    it("uses the first workspace as active on startup without persisting the active tab", async () => {
+      const getWatchMarketData = vi.fn(async () => marketData("2026-07-03"));
+      const { controller, saveWatchTree } = createFixture(workspaceConfig("second"), {
+        isActive: true,
+        getWatchMarketData
+      });
+
+      await controller.activate();
+
+      expect(getWatchMarketData).toHaveBeenCalledWith(["1.600001"], undefined);
+      expect(saveWatchTree).not.toHaveBeenCalled();
+    });
+
+    it("switches workspace tabs without persisting the active tab", async () => {
+      const { elements, saveWatchTree } = createFixture(workspaceConfig("default"));
+
+      elements.watchWorkspaceTabs.emit("click", workspaceButton("second", "switch"));
+
+      await Promise.resolve();
+      expect(saveWatchTree).not.toHaveBeenCalled();
+      expect(elements.watchWorkspaceTabs.innerHTML).toContain('data-watch-workspace-id="second"');
+      expect(elements.watchWorkspaceTabs.innerHTML).toContain('aria-selected="true"');
+    });
+
+    it("keeps selected trading dates isolated per workspace and does not persist date selection", async () => {
+      const getWatchMarketData = vi.fn(async (_secids: string[], options?: WatchMarketRequestOptions) =>
+        marketData(options?.tradingDate ?? "2026-07-03")
+      );
+      const { elements, saveWatchTree } = createFixture(workspaceConfig("default"), {
+        isActive: true,
+        getWatchMarketData
+      });
+      elements.watchTradingDate.value = "2026-07-02";
+
+      elements.watchTradingDate.emit("change");
+      await vi.waitFor(() => expect(getWatchMarketData).toHaveBeenCalledWith(
+        ["1.600001"],
+        { tradingDate: "2026-07-02" }
+      ));
+
+      elements.watchWorkspaceTabs.emit("click", workspaceButton("second", "switch"));
+
+      await Promise.resolve();
+      expect(saveWatchTree).not.toHaveBeenCalled();
+      expect(elements.watchTradingDate.value).toBe("2026-07-03");
+
+      elements.watchWorkspaceTabs.emit("click", workspaceButton("default", "switch"));
+
+      await Promise.resolve();
+      expect(elements.watchTradingDate.value).toBe("2026-07-02");
     });
   });
 });
@@ -199,20 +251,25 @@ const emptyMarketData: WatchMarketData = {
   fromCache: false
 };
 
-function createFixture(config: WatchTreeConfig): {
+function createFixture(config: WatchTreeConfig, options: {
+  isActive?: boolean;
+  getWatchMarketData?: StockResearchApi["getWatchMarketData"];
+  refreshWatchMarketData?: StockResearchApi["refreshWatchMarketData"];
+} = {}): {
+  controller: ReturnType<typeof createWatchController>;
   elements: Record<string, TestElement>;
   saveWatchTree: ReturnType<typeof vi.fn<(config: WatchTreeConfig) => Promise<WatchTreeConfig>>>;
 } {
   const elements = createElements();
   const saveWatchTree = vi.fn(async (nextConfig: WatchTreeConfig) => nextConfig);
   const controller = createWatchController({
-    api: createApi(saveWatchTree),
+    api: createApi(saveWatchTree, options),
     elements: elements as unknown as RendererElements,
-    isActive: () => false
+    isActive: () => options.isActive ?? false
   });
   controller.hydrate(config);
   controller.bindEvents();
-  return { elements, saveWatchTree };
+  return { controller, elements, saveWatchTree };
 }
 
 function createElements(): Record<string, TestElement> {
@@ -254,7 +311,11 @@ function workspaceButton(workspaceId: string, action: string): TestElement {
 }
 
 function createApi(
-  saveWatchTree: (config: WatchTreeConfig) => Promise<WatchTreeConfig>
+  saveWatchTree: (config: WatchTreeConfig) => Promise<WatchTreeConfig>,
+  options: {
+    getWatchMarketData?: StockResearchApi["getWatchMarketData"];
+    refreshWatchMarketData?: StockResearchApi["refreshWatchMarketData"];
+  } = {}
 ): StockResearchApi {
   return {
     getBootstrap: async () => ({
@@ -295,8 +356,8 @@ function createApi(
     getWatchTree: async () => ({}),
     saveWatchTree,
     getWatchQuotes: async () => [],
-    getWatchMarketData: async () => emptyMarketData,
-    refreshWatchMarketData: async () => emptyMarketData,
+    getWatchMarketData: options.getWatchMarketData ?? (async () => emptyMarketData),
+    refreshWatchMarketData: options.refreshWatchMarketData ?? (async () => emptyMarketData),
     searchStocks: async () => [],
     exportWatchData: async () => undefined,
     importWatchData: async () => undefined,
@@ -304,5 +365,44 @@ function createApi(
     onOpenWatchMarketProviderSettings: () => () => undefined,
     onWatchMarketProviderChanged: () => () => undefined,
     onResearchEvent: () => () => undefined
+  };
+}
+
+function workspaceConfig(activeWorkspaceId: string): WatchTreeConfig {
+  return {
+    activeWorkspaceId,
+    workspaces: [{
+      id: "default",
+      name: "默认",
+      root: {
+        id: "root-a",
+        type: "category",
+        name: "第一组",
+        children: [{ id: "stock-a", type: "stock", name: "股票A", secid: "1.600001" }]
+      }
+    }, {
+      id: "second",
+      name: "展示区 2",
+      root: {
+        id: "root-b",
+        type: "category",
+        name: "第二组",
+        children: [{ id: "stock-b", type: "stock", name: "股票B", secid: "1.600002" }]
+      }
+    }]
+  };
+}
+
+function marketData(tradingDate: string): WatchMarketData {
+  return {
+    tradingDate,
+    quotes: [],
+    trends: [],
+    history: [
+      { tradingDate: "2026-07-03", quotes: [], trends: [], updatedAt: "2026-07-04T00:00:00.000Z" },
+      { tradingDate: "2026-07-02", quotes: [], trends: [], updatedAt: "2026-07-04T00:00:00.000Z" }
+    ],
+    updatedAt: "2026-07-04T00:00:00.000Z",
+    fromCache: false
   };
 }

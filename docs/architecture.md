@@ -191,7 +191,7 @@ interface WatchTreeStockNode {
 
 `isHolding: true` 表示持仓股；`false` 或字段缺失均表示非持仓股，并在脑图配置规范化时省略。`validateWatchTreeConfig()` 只接受布尔值，其他类型会作为无效配置拒绝。该字段和节点其他属性一起保存在 `watch-tree.json` 中。
 
-盯盘脑图支持多个展示区标签。新格式使用 `WatchTreeConfig.workspaces` 保存多个独立脑图，每个 `WatchTreeWorkspace` 包含 `id`、`name` 和可选 `root`；`activeWorkspaceId` 表示当前展示区。旧格式 `{ root }` 仍可读取，renderer 会通过 `ensureWatchWorkspaceConfig()` 提升为单个名为“默认”的展示区。为兼容旧调用，规范化后的配置会把当前展示区的 `root` 镜像到顶层 `root` 字段；新逻辑应优先使用 workspace helper 获取和更新当前展示区。
+盯盘脑图支持多个展示区标签。新格式使用 `WatchTreeConfig.workspaces` 保存多个独立脑图，每个 `WatchTreeWorkspace` 包含 `id`、`name` 和可选 `root`；`activeWorkspaceId` 只作为运行期当前展示区镜像，不作为用户配置长期语义。旧格式 `{ root }` 仍可读取，renderer 会通过 `ensureWatchWorkspaceConfig()` 提升为单个名为“默认”的展示区。为兼容旧调用，规范化后的配置会把当前展示区的 `root` 镜像到顶层 `root` 字段；新逻辑应优先使用 workspace helper 获取和更新当前展示区。每次启动 renderer 都强制以第一个展示区作为 active，并默认加载最新交易日行情，不持久化上次切到的展示区。
 
 `StockQuote` 是 provider 返回给上层的标准化行情快照。除价格和涨跌幅外，当前可选包含：
 
@@ -466,7 +466,7 @@ src/renderer/features/watch/watch-controller.ts
 职责：
 
 - 维护当前脑图配置 `WatchTreeConfig`。
-- 维护顶部展示区标签。每个标签对应一个独立 `WatchTreeWorkspace.root`；创建、删除、重命名和切换标签都会保存到 `watch-tree.json`。用户点击标签切换展示区，双击标签或右键选择“重命名”进入内联编辑，点击 `+` 会立即创建一个自动命名的展示区，点击标签 `×` 删除展示区；至少保留一个展示区。标签切换只更新当前展示区并重绘脑图，不主动拉取行情，避免切换卡顿；行情更新仍由定时轮询或手动“刷新行情”触发。
+- 维护顶部展示区标签。每个标签对应一个独立 `WatchTreeWorkspace.root`；创建、删除、重命名会保存到 `watch-tree.json`，切换标签只修改 renderer 内存中的 active 展示区，不持久化。用户点击标签切换展示区，双击标签或右键选择“重命名”进入内联编辑，点击 `+` 会立即创建一个自动命名的展示区，点击标签 `×` 删除展示区；至少保留一个展示区。标签切换只更新当前展示区并重绘脑图，不主动拉取行情，避免切换卡顿；行情更新仍由定时轮询或手动“刷新行情”触发。
 - 维护当前行情 `quotes` 和 `trends`。
 - 维护折叠节点集合。
 - 维护股票搜索选择状态。
@@ -474,7 +474,7 @@ src/renderer/features/watch/watch-controller.ts
 - 在股票节点编辑弹窗中管理“持仓股”选项：新增股票默认“否”，编辑时回填已有状态，保存“否”时省略 `isHolding`，保存“是”时写入 `isHolding: true`。该控件只对股票节点显示。
 - 维护面板拖拽平移状态。
 - 维护节点左键拖拽状态。用户按住分类或股票节点拖到另一个节点上松开时，Controller 只负责识别被拖节点和投放目标，然后调用 `moveWatchTreeNode()` 生成新树；合法移动后保存 `watch-tree.json` 并刷新行情，非法移动不修改配置。拖拽过程中 Controller 会从源节点 clone 出一个临时 `.drag-ghost` DOM 副本跟随鼠标移动，源节点仅做半透明视觉反馈；该副本不写入脑图数据，也不参与连接线绘制。
-- 维护顶部数据日期下拉框。下拉框显示最近 30 个自然日内的工作日，并合并本地缓存历史中的交易日；用户选择日期后，Controller 调用 `getWatchMarketData(secids, { tradingDate })` 加载该日行情。
+- 维护顶部数据日期下拉框。下拉框显示最近 30 个自然日内的工作日，并合并本地缓存历史中的交易日；用户选择日期后，Controller 调用 `getWatchMarketData(secids, { tradingDate })` 加载该日行情。所选日期是按展示区标签隔离的 renderer 内存态，不写入 `watch-tree.json`；切换到另一个展示区时恢复该展示区自己的日期状态，未手动选择过日期的展示区默认使用当前已知最新交易日。
 - 绑定 `Ctrl+A` 和 `Ctrl+D` 快捷键，在盯盘页面激活且焦点不在输入控件内时，分别切换到左侧和右侧展示区标签。
 - 绑定盯盘相关 DOM 事件。
 - 从 bootstrap 中 hydrate 初始脑图。
