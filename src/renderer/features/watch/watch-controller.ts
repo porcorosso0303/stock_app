@@ -195,13 +195,8 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       }
       syncTradingDateOptions(marketData);
       const marketQuotes = marketData.quotes;
-      const unavailable = marketQuotes.filter((quote) => quote.errorMessage).length;
-      elements.watchMarketError.textContent = unavailable === 0
-        ? ""
-        : `${unavailable} 只股票暂无行情`;
-      elements.watchStatus.textContent = unavailable === 0
-        ? ""
-        : "";
+      elements.watchMarketError.textContent = summarizeMarketErrors(marketQuotes);
+      elements.watchStatus.textContent = "";
       render();
     } catch (error) {
       elements.watchMarketError.textContent = getErrorMessage(error);
@@ -745,6 +740,20 @@ function currentMarketDataAsHistory(
     quotes: marketData.quotes,
     trends: marketData.trends
   }];
+}
+
+export function summarizeMarketErrors(marketQuotes: StockQuote[]): string {
+  const errors = marketQuotes
+    .map((quote) => quote.errorMessage?.trim())
+    .filter((error): error is string => !!error);
+  if (errors.length === 0) {
+    return "";
+  }
+  const uniqueErrors = [...new Set(errors)];
+  const baseMessage = `${errors.length} 只股票暂无行情`;
+  return uniqueErrors.length === 1
+    ? `${baseMessage}：${uniqueErrors[0]}`
+    : baseMessage;
 }
 
 function formatChinaDate(date: Date): string {
