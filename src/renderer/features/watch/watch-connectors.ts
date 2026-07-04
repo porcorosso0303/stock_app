@@ -2,7 +2,13 @@ export interface WatchConnectors {
   schedule(): void;
 }
 
-const watchConnectorColors = ["#5278c7", "#6f55bb", "#4e9858", "#bf7654"];
+export type WatchConnectorTrendKind = "positive" | "negative" | "neutral";
+
+const watchConnectorColors: Record<WatchConnectorTrendKind, string> = {
+  positive: "#e3483b",
+  negative: "#169b62",
+  neutral: "#789095"
+};
 
 export function createWatchConnectors(watchTree: HTMLElement): WatchConnectors {
   let frame: number | undefined;
@@ -44,7 +50,7 @@ export function createWatchConnectors(watchTree: HTMLElement): WatchConnectors {
       );
       path.setAttribute(
         "stroke",
-        watchConnectorColors[Number(child.dataset.watchDepth ?? 1) % watchConnectorColors.length]
+        watchConnectorStrokeColor(readConnectorTrendKind(child.dataset.watchConnectorTrend))
       );
       path.setAttribute("class", "watch-connector");
       svg.append(path);
@@ -62,4 +68,12 @@ export function createWatchConnectors(watchTree: HTMLElement): WatchConnectors {
       });
     }
   };
+}
+
+export function watchConnectorStrokeColor(kind: WatchConnectorTrendKind): string {
+  return watchConnectorColors[kind];
+}
+
+function readConnectorTrendKind(value: string | undefined): WatchConnectorTrendKind {
+  return value === "positive" || value === "negative" ? value : "neutral";
 }

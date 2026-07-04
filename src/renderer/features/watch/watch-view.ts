@@ -80,6 +80,7 @@ function renderWatchNode(
         data-watch-node-id="${escapeHtml(node.id)}"
         data-watch-parent-id="${escapeHtml(parentId ?? "")}"
         data-watch-depth="${depth}"
+        data-watch-connector-trend="${connectorTrendKind(node, state)}"
         title="${escapeHtml(renderWatchNodeTooltip(node, isCollapsed, state))}"
       >
         ${renderWatchNodeContent(node, state)}
@@ -165,6 +166,16 @@ export function formatStrengthScore(value: number | undefined): string {
     return "暂无指数";
   }
   return `${value > 0 ? "+" : ""}${value.toFixed(1)}`;
+}
+
+function connectorTrendKind(node: WatchTreeNode, state: WatchViewState): "positive" | "negative" | "neutral" {
+  const changePercent = node.type === "stock"
+    ? state.quotes.get(node.secid)?.changePercent
+    : averageChangePercent(node, state.quotes);
+  if (changePercent === undefined || changePercent === 0) {
+    return "neutral";
+  }
+  return changePercent > 0 ? "positive" : "negative";
 }
 
 function renderIndustryPositionStar(value: WatchIndustryPosition | undefined): string {
