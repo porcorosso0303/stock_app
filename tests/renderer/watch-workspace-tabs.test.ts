@@ -174,6 +174,36 @@ describe("watch workspace tabs", () => {
       expect(elements.watchTree.innerHTML).toContain("+1.23%");
       expect(elements.watchTree.innerHTML).not.toContain("暂无行情");
     });
+
+    it("continues refreshing inactive workspace market data", async () => {
+      let defaultRefreshCount = 0;
+      const refreshWatchMarketData = vi.fn(async (secids: string[]) => {
+        if (secids.includes("1.600001")) {
+          defaultRefreshCount += 1;
+          return marketDataWithQuote("1.600001", defaultRefreshCount === 1 ? 1.23 : 3.45);
+        }
+        return marketDataWithQuote("1.600002", 2.34);
+      });
+      const { elements } = createFixture(workspaceConfig("default"), {
+        isActive: true,
+        refreshWatchMarketData
+      });
+
+      elements.refreshWatchQuotes.emit("click");
+      await vi.waitFor(() => expect(elements.watchTree.innerHTML).toContain("+1.23%"));
+
+      elements.watchWorkspaceTabs.emit("click", workspaceButton("second", "switch"));
+      await Promise.resolve();
+      expect(elements.watchTree.innerHTML).toContain("+2.34%");
+
+      elements.refreshWatchQuotes.emit("click");
+      await vi.waitFor(() => expect(refreshWatchMarketData).toHaveBeenCalledWith(["1.600001"], { forceLatest: true }));
+
+      elements.watchWorkspaceTabs.emit("click", workspaceButton("default", "switch"));
+
+      expect(elements.watchTree.innerHTML).toContain("+3.45%");
+      expect(elements.watchTree.innerHTML).not.toContain("+1.23%");
+    });
   });
 });
 

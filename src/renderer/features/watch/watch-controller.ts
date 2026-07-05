@@ -119,6 +119,11 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     return getActiveWatchRoot(config);
   }
 
+  function workspaceRoot(workspaceId: string | undefined): WatchTreeConfig["root"] {
+    config = ensureWatchWorkspaceConfig(config);
+    return config.workspaces?.find((workspace) => workspace.id === workspaceId)?.root;
+  }
+
   function activeWorkspaceId(): string | undefined {
     config = ensureWatchWorkspaceConfig(config);
     return config.activeWorkspaceId ?? config.workspaces?.[0]?.id;
@@ -218,23 +223,23 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   }
 
   async function refreshQuotes(forceLatest = false): Promise<void> {
-    const state = getWorkspaceDateState();
-    if (state.pinned && state.selectedTradingDate) {
-      await loadMarketData();
-      return;
-    }
-    await updateMarketData(
-      (secids) => api.refreshWatchMarketData(secids, forceLatest ? { forceLatest: true } : undefined),
+    await updateAllWorkspaceMarketData(
+      (secids, workspaceId) => {
+        const state = getWorkspaceDateState(workspaceId);
+        if (state.pinned && state.selectedTradingDate) {
+          return api.getWatchMarketData(secids, { tradingDate: state.selectedTradingDate });
+        }
+        return api.refreshWatchMarketData(secids, forceLatest ? { forceLatest: true } : undefined);
+      },
       "正在刷新行情..."
     );
   }
 
   async function refreshLatestMarketData(): Promise<void> {
-    if (getWorkspaceDateState().pinned) {
-      return;
-    }
-    await updateMarketData(
-      (secids) => api.refreshWatchMarketData(secids, { forceLatest: true }),
+    await updateAllWorkspaceMarketData(
+      (secids, workspaceId) => getWorkspaceDateState(workspaceId).pinned
+        ? undefined
+        : api.refreshWatchMarketData(secids, { forceLatest: true }),
       "正在校验最近交易日行情..."
     );
   }
@@ -284,19 +289,75 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       return;
     }
     const workspaceId = activeWorkspaceId();
-    const secids = collectStockSecids(activeRoot());
-    if (secids.length === 0) {
-      setWorkspaceMarketState(workspaceId, emptyWorkspaceMarketState());
-      elements.watchMarketError.textContent = "";
-      elements.watchStatus.textContent = "尚未配置股票叶子节点";
-      render();
+    marketUpdateInFlight = true;
+    try {
+      await updateWorkspaceMarketData(workspaceId, load, loadingMessage);
+    } finally {
+      marketUpdateInFlight = false;
+    }
+  }
+
+  async function updateAllWorkspaceMarketData(
+    load: (
+      secids: string[],
+      workspaceId: string
+    ) => ReturnType<typeof api.getWatchMarketData> | undefined,
+    loadingMessage: string
+  ): Promise<void> {
+    if (!isActive()) {
+      return;
+    }
+    if (marketUpdateInFlight) {
+      return;
+    }
+    const workspaceIds = ensureWatchWorkspaceConfig(config).workspaces?.map((workspace) => workspace.id) ?? [];
+    if (workspaceIds.length === 0) {
       return;
     }
     marketUpdateInFlight = true;
     elements.watchMarketError.textContent = "";
     elements.watchStatus.textContent = loadingMessage;
     try {
+      for (const workspaceId of workspaceIds) {
+        await updateWorkspaceMarketData(
+          workspaceId,
+          (secids) => load(secids, workspaceId),
+          loadingMessage
+        );
+      }
+      if (activeWorkspaceId()) {
+        elements.watchStatus.textContent = "";
+      }
+    } finally {
+      marketUpdateInFlight = false;
+    }
+  }
+
+  async function updateWorkspaceMarketData(
+    workspaceId: string | undefined,
+    load: (secids: string[]) => ReturnType<typeof api.getWatchMarketData> | undefined,
+    loadingMessage: string
+  ): Promise<void> {
+    const shouldUpdateVisibleUi = workspaceId === activeWorkspaceId();
+    const secids = collectStockSecids(workspaceRoot(workspaceId));
+    if (secids.length === 0) {
+      setWorkspaceMarketState(workspaceId, emptyWorkspaceMarketState());
+      if (shouldUpdateVisibleUi) {
+        elements.watchMarketError.textContent = "";
+        elements.watchStatus.textContent = "尚未配置股票叶子节点";
+        render();
+      }
+      return;
+    }
+    if (shouldUpdateVisibleUi) {
+      elements.watchMarketError.textContent = "";
+      elements.watchStatus.textContent = loadingMessage;
+    }
+    try {
       const marketData = await load(secids);
+      if (!marketData) {
+        return;
+      }
       setWorkspaceMarketState(workspaceId, {
         quotes: new Map(marketData.quotes.map((quote) => [quote.secid, quote])),
         trends: new Map(marketData.trends.map((trend) => [trend.secid, trend])),
@@ -306,18 +367,17 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       if (marketData.tradingDate && !state.pinned) {
         state.selectedTradingDate = marketData.tradingDate;
       }
-      const marketQuotes = marketData.quotes;
       if (workspaceId === activeWorkspaceId()) {
         syncTradingDateOptions(marketData, workspaceId);
-        elements.watchMarketError.textContent = summarizeMarketErrors(marketQuotes);
+        elements.watchMarketError.textContent = summarizeMarketErrors(marketData.quotes);
         elements.watchStatus.textContent = "";
         render();
       }
     } catch (error) {
-      elements.watchMarketError.textContent = getErrorMessage(error);
-      elements.watchStatus.textContent = "";
-    } finally {
-      marketUpdateInFlight = false;
+      if (workspaceId === activeWorkspaceId()) {
+        elements.watchMarketError.textContent = getErrorMessage(error);
+        elements.watchStatus.textContent = "";
+      }
     }
   }
 
