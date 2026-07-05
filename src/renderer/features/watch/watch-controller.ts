@@ -78,6 +78,12 @@ interface WorkspaceDateState {
   pinned: boolean;
 }
 
+interface WorkspaceMarketState {
+  quotes: Map<string, StockQuote>;
+  trends: Map<string, StockTrend>;
+  marketHistory: WatchMarketCache[];
+}
+
 export function createWatchController(options: WatchControllerOptions): WatchController {
   const { api, elements, isActive } = options;
   const connectors = createWatchConnectors(elements.watchTree);
@@ -85,9 +91,6 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   let loaded = false;
   let quoteTimer: number | undefined;
   let marketUpdateInFlight = false;
-  let quotes = new Map<string, StockQuote>();
-  let trends = new Map<string, StockTrend>();
-  let marketHistory: WatchMarketCache[] = [];
   let dialogAction: WatchDialogAction | undefined;
   let selectedStock: StockSearchResult | undefined;
   let pan: WatchPanState | undefined;
@@ -96,16 +99,18 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   let suppressNodeClick = false;
   let renamingWorkspaceId: string | undefined;
   const workspaceDateStates = new Map<string, WorkspaceDateState>();
+  const workspaceMarketStates = new Map<string, WorkspaceMarketState>();
   const collapsedNodes = new Set<string>();
 
   function render(): void {
     config = ensureWatchWorkspaceConfig(config);
+    const marketState = getWorkspaceMarketState();
     renderWorkspaceTabs();
     renderWatchTree(elements.watchTree, {
       config: { root: activeRoot() },
-      quotes,
-      trends,
-      marketHistory,
+      quotes: marketState.quotes,
+      trends: marketState.trends,
+      marketHistory: marketState.marketHistory,
       collapsedNodes
     }, connectors.schedule);
   }
@@ -126,6 +131,29 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     const state = workspaceDateStates.get(workspaceId) ?? { pinned: false };
     workspaceDateStates.set(workspaceId, state);
     return state;
+  }
+
+  function getWorkspaceMarketState(workspaceId = activeWorkspaceId()): WorkspaceMarketState {
+    if (!workspaceId) {
+      return emptyWorkspaceMarketState();
+    }
+    const state = workspaceMarketStates.get(workspaceId) ?? emptyWorkspaceMarketState();
+    workspaceMarketStates.set(workspaceId, state);
+    return state;
+  }
+
+  function setWorkspaceMarketState(workspaceId: string | undefined, state: WorkspaceMarketState): void {
+    if (workspaceId) {
+      workspaceMarketStates.set(workspaceId, state);
+    }
+  }
+
+  function emptyWorkspaceMarketState(): WorkspaceMarketState {
+    return {
+      quotes: new Map(),
+      trends: new Map(),
+      marketHistory: []
+    };
   }
 
   function useFirstWorkspace(configValue: WatchTreeConfig): WatchTreeConfig {
@@ -234,6 +262,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       }
       config = useFirstWorkspace(await api.getWatchTree());
       workspaceDateStates.clear();
+      workspaceMarketStates.clear();
       tradingDateOptions = [];
       loaded = true;
       render();
@@ -254,11 +283,10 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     if (marketUpdateInFlight) {
       return;
     }
+    const workspaceId = activeWorkspaceId();
     const secids = collectStockSecids(activeRoot());
     if (secids.length === 0) {
-      quotes = new Map();
-      trends = new Map();
-      marketHistory = [];
+      setWorkspaceMarketState(workspaceId, emptyWorkspaceMarketState());
       elements.watchMarketError.textContent = "";
       elements.watchStatus.textContent = "尚未配置股票叶子节点";
       render();
@@ -269,19 +297,22 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     elements.watchStatus.textContent = loadingMessage;
     try {
       const marketData = await load(secids);
-      quotes = new Map(marketData.quotes.map((quote) => [quote.secid, quote]));
-      trends = new Map(marketData.trends.map((trend) => [trend.secid, trend]));
-      marketHistory = marketData.history ?? currentMarketDataAsHistory(marketData);
-      const workspaceId = activeWorkspaceId();
+      setWorkspaceMarketState(workspaceId, {
+        quotes: new Map(marketData.quotes.map((quote) => [quote.secid, quote])),
+        trends: new Map(marketData.trends.map((trend) => [trend.secid, trend])),
+        marketHistory: marketData.history ?? currentMarketDataAsHistory(marketData)
+      });
       const state = getWorkspaceDateState(workspaceId);
       if (marketData.tradingDate && !state.pinned) {
         state.selectedTradingDate = marketData.tradingDate;
       }
-      syncTradingDateOptions(marketData, workspaceId);
       const marketQuotes = marketData.quotes;
-      elements.watchMarketError.textContent = summarizeMarketErrors(marketQuotes);
-      elements.watchStatus.textContent = "";
-      render();
+      if (workspaceId === activeWorkspaceId()) {
+        syncTradingDateOptions(marketData, workspaceId);
+        elements.watchMarketError.textContent = summarizeMarketErrors(marketQuotes);
+        elements.watchStatus.textContent = "";
+        render();
+      }
     } catch (error) {
       elements.watchMarketError.textContent = getErrorMessage(error);
       elements.watchStatus.textContent = "";
@@ -977,6 +1008,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     hydrate: (nextConfig) => {
       config = useFirstWorkspace(nextConfig);
       workspaceDateStates.clear();
+      workspaceMarketStates.clear();
       tradingDateOptions = [];
       loaded = true;
       render();

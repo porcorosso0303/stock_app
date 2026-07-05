@@ -150,6 +150,30 @@ describe("watch workspace tabs", () => {
       await Promise.resolve();
       expect(elements.watchTradingDate.value).toBe("2026-07-02");
     });
+
+    it("keeps rendered market data isolated per workspace while switching tabs", async () => {
+      const refreshWatchMarketData = vi.fn(async (secids: string[]) =>
+        secids.includes("1.600001")
+          ? marketDataWithQuote("1.600001", 1.23)
+          : marketDataWithQuote("1.600002", 2.34)
+      );
+      const { elements } = createFixture(workspaceConfig("default"), {
+        isActive: true,
+        refreshWatchMarketData
+      });
+
+      elements.refreshWatchQuotes.emit("click");
+      await vi.waitFor(() => expect(elements.watchTree.innerHTML).toContain("+1.23%"));
+
+      elements.watchWorkspaceTabs.emit("click", workspaceButton("second", "switch"));
+      elements.refreshWatchQuotes.emit("click");
+      await vi.waitFor(() => expect(elements.watchTree.innerHTML).toContain("+2.34%"));
+
+      elements.watchWorkspaceTabs.emit("click", workspaceButton("default", "switch"));
+
+      expect(elements.watchTree.innerHTML).toContain("+1.23%");
+      expect(elements.watchTree.innerHTML).not.toContain("暂无行情");
+    });
   });
 });
 
@@ -404,5 +428,29 @@ function marketData(tradingDate: string): WatchMarketData {
     ],
     updatedAt: "2026-07-04T00:00:00.000Z",
     fromCache: false
+  };
+}
+
+function marketDataWithQuote(secid: string, changePercent: number): WatchMarketData {
+  return {
+    ...marketData("2026-07-03"),
+    quotes: [{
+      secid,
+      price: 10,
+      changePercent,
+      peTtm: 20,
+      turnoverRate: 1,
+      floatMarketCap: 1_000_000_000,
+      fetchedAt: "2026-07-04T00:00:00.000Z"
+    }],
+    trends: [{
+      secid,
+      tradingDate: "2026-07-03",
+      fetchedAt: "2026-07-04T00:00:00.000Z",
+      points: [
+        { time: "09:30", changePercent: 0 },
+        { time: "15:00", changePercent }
+      ]
+    }]
   };
 }
