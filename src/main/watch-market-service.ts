@@ -164,8 +164,7 @@ export class WatchMarketService {
 }
 
 function hasAnyUsableMarketData(cache: WatchMarketCache): boolean {
-  return cache.quotes.some((quote) => quote.changePercent !== undefined && !quote.errorMessage) ||
-    cache.trends.some((trend) => trend.points.length > 0 && !trend.errorMessage);
+  return cache.trends.some((trend) => trend.points.length > 0 && !trend.errorMessage);
 }
 
 function sortAndLimitHistory(days: WatchMarketCache[]): WatchMarketCache[] {

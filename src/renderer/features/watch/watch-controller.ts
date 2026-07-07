@@ -358,6 +358,14 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       if (!marketData) {
         return;
       }
+      const currentState = getWorkspaceMarketState(workspaceId);
+      if (!hasRenderableTrends(marketData.trends) && hasRenderableTrends([...currentState.trends.values()])) {
+        if (workspaceId === activeWorkspaceId()) {
+          elements.watchMarketError.textContent = summarizeMarketErrors(marketData.quotes, marketData.trends);
+          elements.watchStatus.textContent = "";
+        }
+        return;
+      }
       setWorkspaceMarketState(workspaceId, {
         quotes: new Map(marketData.quotes.map((quote) => [quote.secid, quote])),
         trends: new Map(marketData.trends.map((trend) => [trend.secid, trend])),
@@ -369,7 +377,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       }
       if (workspaceId === activeWorkspaceId()) {
         syncTradingDateOptions(marketData, workspaceId);
-        elements.watchMarketError.textContent = summarizeMarketErrors(marketData.quotes);
+        elements.watchMarketError.textContent = summarizeMarketErrors(marketData.quotes, marketData.trends);
         elements.watchStatus.textContent = "";
         render();
       }
@@ -1115,10 +1123,26 @@ function currentMarketDataAsHistory(
   }];
 }
 
-export function summarizeMarketErrors(marketQuotes: StockQuote[]): string {
-  const errors = marketQuotes
-    .map((quote) => quote.errorMessage?.trim())
-    .filter((error): error is string => !!error);
+function hasRenderableTrends(marketTrends: StockTrend[]): boolean {
+  return marketTrends.some((trend) => trend.points.length > 0 && !trend.errorMessage);
+}
+
+export function summarizeMarketErrors(marketQuotes: StockQuote[], marketTrends: StockTrend[] = []): string {
+  const errors: string[] = [];
+  const quoteErrorSecids = new Set<string>();
+  for (const quote of marketQuotes) {
+    const error = quote.errorMessage?.trim();
+    if (error) {
+      errors.push(error);
+      quoteErrorSecids.add(quote.secid);
+    }
+  }
+  for (const trend of marketTrends) {
+    const error = trend.errorMessage?.trim();
+    if (error && !quoteErrorSecids.has(trend.secid)) {
+      errors.push(error);
+    }
+  }
   if (errors.length === 0) {
     return "";
   }

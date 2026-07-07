@@ -597,6 +597,37 @@ describe("WatchMarketService", () => {
     expect(cacheStore.write).not.toHaveBeenCalled();
   });
 
+  it("does not cache quote-only market data when every intraday trend failed", async () => {
+    const cacheStore = {
+      getForDate: vi.fn().mockResolvedValue(undefined),
+      getHistory: vi.fn().mockResolvedValue({ version: 2, days: [] }),
+      write: vi.fn()
+    };
+    const quoteService = marketDataProvider({
+      listQuotes: vi.fn().mockResolvedValue([quote(-4.15, "2026-07-07T03:38:00.000Z")]),
+      listTrends: vi.fn().mockResolvedValue([{
+        secid: "1.600519",
+        tradingDate: "2026-07-07",
+        fetchedAt: "2026-07-07T03:38:00.000Z",
+        points: [],
+        errorMessage: "net::ERR_EMPTY_RESPONSE"
+      }])
+    });
+    const service = new WatchMarketService(
+      cacheStore,
+      quoteService,
+      () => new Date("2026-07-07T03:38:00.000Z")
+    );
+
+    await expect(service.get(["1.600519"])).resolves.toMatchObject({
+      tradingDate: "2026-07-07",
+      quotes: [expect.objectContaining({ changePercent: -4.15 })],
+      trends: [expect.objectContaining({ points: [], errorMessage: "net::ERR_EMPTY_RESPONSE" })],
+      fromCache: false
+    });
+    expect(cacheStore.write).not.toHaveBeenCalled();
+  });
+
   it("bypasses cache reads and writes for ephemeral market data providers", async () => {
     const fullCache: WatchMarketCache = {
       tradingDate: "2026-06-17",

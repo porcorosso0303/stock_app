@@ -178,6 +178,46 @@ describe("watch workspace tabs", () => {
       expect(elements.watchTree.innerHTML).not.toContain("暂无行情");
     });
 
+    it("keeps the previous rendered market data when a later refresh has no usable trends", async () => {
+      let defaultRefreshCount = 0;
+      const refreshWatchMarketData = vi.fn(async (secids: string[]) => {
+        if (!secids.includes("1.600001")) {
+          return marketDataWithQuote("1.600002", 2.34);
+        }
+        defaultRefreshCount += 1;
+        return defaultRefreshCount === 1
+          ? marketDataWithQuote("1.600001", 1.23)
+          : {
+              ...marketData("2026-07-07"),
+              quotes: [{
+                secid: "1.600001",
+                fetchedAt: "2026-07-07T03:38:00.000Z",
+                errorMessage: "行情服务请求失败"
+              }],
+              trends: [{
+                secid: "1.600001",
+                tradingDate: "2026-07-07",
+                fetchedAt: "2026-07-07T03:38:00.000Z",
+                points: [],
+                errorMessage: "net::ERR_EMPTY_RESPONSE"
+              }]
+            };
+      });
+      const { elements } = createFixture(workspaceConfig("default"), {
+        isActive: true,
+        refreshWatchMarketData
+      });
+
+      elements.refreshWatchQuotes.emit("click");
+      await vi.waitFor(() => expect(elements.watchTree.innerHTML).toContain("+1.23%"));
+
+      elements.refreshWatchQuotes.emit("click");
+      await vi.waitFor(() => expect(elements.watchMarketError.textContent).toContain("行情服务请求失败"));
+
+      expect(elements.watchTree.innerHTML).toContain("+1.23%");
+      expect(elements.watchTree.innerHTML).not.toContain("暂无行情");
+    });
+
     it("continues refreshing inactive workspace market data", async () => {
       let defaultRefreshCount = 0;
       const refreshWatchMarketData = vi.fn(async (secids: string[]) => {
