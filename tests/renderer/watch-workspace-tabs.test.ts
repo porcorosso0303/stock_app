@@ -36,6 +36,8 @@ describe("watch workspace tabs", () => {
 
   describe("controller behavior", () => {
     beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-07-04T12:00:00+08:00"));
       vi.stubGlobal("Element", TestElement);
       vi.stubGlobal("crypto", { randomUUID: vi.fn(() => "workspace-2") });
       vi.stubGlobal("document", { addEventListener: vi.fn() });
@@ -51,6 +53,7 @@ describe("watch workspace tabs", () => {
 
     afterEach(() => {
       vi.unstubAllGlobals();
+      vi.useRealTimers();
     });
 
     it("creates a visible workspace immediately when clicking the add tab button", async () => {

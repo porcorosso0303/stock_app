@@ -6,17 +6,38 @@ import {
 } from "../../src/shared/data-calc-helper";
 
 describe("sector strength index algorithm", () => {
-  it("uses the full base score range when no stock reaches its limit", () => {
+  it("keeps normal stock moves visible when no stock reaches its limit", () => {
     const result = calculateSectorStrengthIndex([
       quote("1.600001", 5),
       quote("1.600002", 3)
     ]);
 
     expect(result.changeStrengthScore).toBe(40);
+    expect(result.absoluteSeverityScore).toBeCloseTo(74.1716, 4);
+    expect(result.magnitudeScore).toBeCloseTo(58.7944, 4);
     expect(result.breadthScore).toBe(100);
-    expect(result.baseScore).toBe(64);
+    expect(result.breadthWeight).toBeCloseTo(0.2974, 4);
+    expect(result.baseScore).toBeCloseTo(71.0504, 4);
     expect(result.limitImpactScore).toBe(0);
-    expect(result.score).toBe(64);
+    expect(result.score).toBeCloseTo(71.0504, 4);
+  });
+
+  it("separates fully declining sectors by absolute decline severity", () => {
+    const milderDecline = calculateSectorStrengthIndex([
+      quote("1.600001", -3.02),
+      quote("1.600002", -3.46)
+    ]);
+    const deeperDecline = calculateSectorStrengthIndex([
+      quote("1.600003", -3.07),
+      quote("1.688001", -4.94),
+      quote("1.600004", -5.57)
+    ]);
+
+    expect(milderDecline.breadthScore).toBe(-100);
+    expect(deeperDecline.breadthScore).toBe(-100);
+    expect(milderDecline.score).toBeCloseTo(-65.8174, 4);
+    expect(deeperDecline.score).toBeCloseTo(-72.4442, 4);
+    expect((milderDecline.score ?? 0) - (deeperDecline.score ?? 0)).toBeGreaterThan(6);
   });
 
   it("adds a visible positive event impact when a limit-up stock appears", () => {
@@ -35,9 +56,9 @@ describe("sector strength index algorithm", () => {
 
     expect(result.limitUp).toBe(1);
     expect(result.limitDown).toBe(0);
-    expect(result.baseScore).toBeCloseTo(5.4, 4);
+    expect(result.baseScore).toBeCloseTo(5.2347, 4);
     expect(result.limitImpactScore).toBe(20);
-    expect(result.score).toBeCloseTo(25.4, 4);
+    expect(result.score).toBeCloseTo(25.2347, 4);
   });
 
   it("adds a symmetric negative event impact when a limit-down stock appears", () => {
@@ -56,9 +77,9 @@ describe("sector strength index algorithm", () => {
 
     expect(result.limitUp).toBe(0);
     expect(result.limitDown).toBe(1);
-    expect(result.baseScore).toBeCloseTo(-5.4, 4);
+    expect(result.baseScore).toBeCloseTo(-5.2347, 4);
     expect(result.limitImpactScore).toBe(-20);
-    expect(result.score).toBeCloseTo(-25.4, 4);
+    expect(result.score).toBeCloseTo(-25.2347, 4);
   });
 
   it("caps the limit event impact so extreme breadth does not dominate the score", () => {

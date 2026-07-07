@@ -21,7 +21,10 @@ export interface SectorStrengthIndex {
   limitUp: number;
   limitDown: number;
   changeStrengthScore?: number;
+  absoluteSeverityScore?: number;
+  magnitudeScore?: number;
   breadthScore?: number;
+  breadthWeight?: number;
   baseScore?: number;
   limitImpactScore?: number;
   score?: number;
@@ -35,6 +38,12 @@ export interface SuddenStockMove {
 const LIMIT_EVENT_BASE_IMPACT = 12;
 const LIMIT_EVENT_DIFFUSION_MULTIPLIER = 80;
 const LIMIT_EVENT_IMPACT_CAP = 35;
+const LIMIT_RELATIVE_MAGNITUDE_WEIGHT = 0.45;
+const ABSOLUTE_SEVERITY_MAGNITUDE_WEIGHT = 0.55;
+const ABSOLUTE_SEVERITY_SCALE_PERCENT = 4;
+const MIN_BREADTH_WEIGHT = 0.25;
+const BREADTH_SAMPLE_WEIGHT_BONUS = 0.15;
+const BREADTH_SAMPLE_REFERENCE_SIZE = 20;
 const LIMIT_STATUS_THRESHOLD = 0.995;
 const SUDDEN_MOVE_WINDOW_MINUTES = 5;
 const SUDDEN_MOVE_THRESHOLD_PERCENT = 1.2;
@@ -92,8 +101,9 @@ export function calculateSectorStrengthIndex(
     }
     const limitRate = resolveLimitRate(quote);
     const normalizedChange = clamp(changePercent / limitRate, -1, 1);
+    const absoluteSeverity = Math.tanh(changePercent / ABSOLUTE_SEVERITY_SCALE_PERCENT);
     const limitStatus = resolveLimitStatus(quote, limitRate);
-    return [{ changePercent, normalizedChange, limitStatus }];
+    return [{ changePercent, normalizedChange, absoluteSeverity, limitStatus }];
   });
 
   if (availableQuotes.length === 0) {
@@ -122,8 +132,16 @@ export function calculateSectorStrengthIndex(
   const changeStrengthScore = (
     availableQuotes.reduce((sum, quote) => sum + quote.normalizedChange, 0) / available
   ) * 100;
+  const absoluteSeverityScore = (
+    availableQuotes.reduce((sum, quote) => sum + quote.absoluteSeverity, 0) / available
+  ) * 100;
+  const magnitudeScore = (
+    changeStrengthScore * LIMIT_RELATIVE_MAGNITUDE_WEIGHT +
+    absoluteSeverityScore * ABSOLUTE_SEVERITY_MAGNITUDE_WEIGHT
+  );
   const breadthScore = ((counts.up - counts.down) / available) * 100;
-  const baseScore = changeStrengthScore * 0.6 + breadthScore * 0.4;
+  const breadthWeight = calculateBreadthWeight(available);
+  const baseScore = magnitudeScore * (1 - breadthWeight) + breadthScore * breadthWeight;
   const limitImpactScore = calculateLimitEventImpact(
     counts.limitUp,
     counts.limitDown,
@@ -135,7 +153,10 @@ export function calculateSectorStrengthIndex(
     ...counts,
     available,
     changeStrengthScore,
+    absoluteSeverityScore,
+    magnitudeScore,
     breadthScore,
+    breadthWeight,
     baseScore,
     limitImpactScore,
     score: clamp(baseScore + limitImpactScore, -100, 100)
@@ -196,6 +217,11 @@ function calculateLimitEventImpact(limitUp: number, limitDown: number, total: nu
   const baseImpact = LIMIT_EVENT_BASE_IMPACT * direction;
   const diffusionImpact = LIMIT_EVENT_DIFFUSION_MULTIPLIER * (netLimit / total);
   return clamp(baseImpact + diffusionImpact, -LIMIT_EVENT_IMPACT_CAP, LIMIT_EVENT_IMPACT_CAP);
+}
+
+function calculateBreadthWeight(available: number): number {
+  const sampleRatio = Math.sqrt(Math.min(available, BREADTH_SAMPLE_REFERENCE_SIZE) / BREADTH_SAMPLE_REFERENCE_SIZE);
+  return MIN_BREADTH_WEIGHT + BREADTH_SAMPLE_WEIGHT_BONUS * sampleRatio;
 }
 
 function resolveLimitStatus(
