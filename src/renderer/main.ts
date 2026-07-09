@@ -48,9 +48,15 @@ async function initialize(): Promise<void> {
 
   const state = await api.getBootstrap();
   bindMarketProviderSettings(resolveWatchMarketProviderId(state.config.watchMarketProviderId));
+  bindWatchNewsSettings(state.config.watchNewsIntervalHours ?? 3);
   watchController.hydrate(state.watchTree);
   researchController.initialize(state, await api.getResearchSpec());
   api.onResearchEvent(researchController.handleProgress);
+  api.onWatchNewsUpdated(() => {
+    if (activeFeature === "watch") {
+      void watchController.refreshNewsState();
+    }
+  });
 }
 
 function bindMarketProviderSettings(initialProviderId: WatchMarketProviderId): void {
@@ -84,8 +90,47 @@ function bindMarketProviderSettings(initialProviderId: WatchMarketProviderId): v
   }
 }
 
+function bindWatchNewsSettings(initialIntervalHours: number): void {
+  let currentIntervalHours = normalizeWatchNewsIntervalHours(initialIntervalHours);
+  elements.watchNewsIntervalHours.value = String(currentIntervalHours);
+  api.onOpenWatchNewsSettings(() => {
+    elements.watchNewsIntervalHours.value = String(currentIntervalHours);
+    elements.watchNewsSettingsStatus.textContent = "";
+    elements.watchNewsSettingsDialog.showModal();
+  });
+  elements.cancelWatchNewsSettings.addEventListener("click", () => {
+    elements.watchNewsSettingsDialog.close();
+  });
+  elements.watchNewsSettingsForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void saveWatchNewsSettings();
+  });
+
+  async function saveWatchNewsSettings(): Promise<void> {
+    const intervalHours = normalizeWatchNewsIntervalHours(Number(elements.watchNewsIntervalHours.value));
+    elements.watchNewsSettingsStatus.textContent = "正在保存...";
+    try {
+      const config = await api.setWatchNewsSettings({ intervalHours });
+      currentIntervalHours = normalizeWatchNewsIntervalHours(config.watchNewsIntervalHours ?? intervalHours);
+      elements.watchNewsIntervalHours.value = String(currentIntervalHours);
+      elements.watchNewsSettingsStatus.textContent = "";
+      elements.watchNewsSettingsDialog.close();
+    } catch (error) {
+      elements.watchNewsSettingsStatus.textContent = getErrorMessage(error);
+    }
+  }
+}
+
 function resolveWatchMarketProviderId(value: unknown): WatchMarketProviderId {
   return value === "mock-cache" ? "mock-cache" : "east-money";
+}
+
+function normalizeWatchNewsIntervalHours(value: unknown): number {
+  const interval = Number(value);
+  if (!Number.isFinite(interval) || interval <= 0) {
+    return 3;
+  }
+  return Math.min(168, Math.max(0.1, interval));
 }
 
 function getErrorMessage(error: unknown): string {

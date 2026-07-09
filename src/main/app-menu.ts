@@ -4,6 +4,7 @@ import type { WatchMarketProviderId } from "../shared/types";
 interface ApplicationMenuOptions {
   selectedWatchMarketProviderId: WatchMarketProviderId;
   onOpenWatchMarketProviderSettings(): void;
+  onOpenWatchNewsSettings(): void;
 }
 
 export function buildApplicationMenuTemplate(
@@ -14,10 +15,16 @@ export function buildApplicationMenuTemplate(
     submenu: [{ role: "quit" }]
   }, {
     label: "Setting",
-    submenu: [{
-      label: "数据源",
-      click: () => options.onOpenWatchMarketProviderSettings()
-    }]
+    submenu: [
+      {
+        label: "数据源",
+        click: () => options.onOpenWatchMarketProviderSettings()
+      },
+      {
+        label: "持仓股消息",
+        click: () => options.onOpenWatchNewsSettings()
+      }
+    ]
   }, {
     label: "View",
     submenu: [

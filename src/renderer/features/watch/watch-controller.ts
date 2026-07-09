@@ -5,6 +5,7 @@ import type {
   StockTrend,
   WatchIndustryPosition,
   WatchMarketCache,
+  WatchNewsMessage,
   WatchTreeConfig,
   WatchTreeNode
 } from "../../../shared/types";
@@ -39,6 +40,7 @@ export interface WatchController {
   bindEvents(): void;
   hydrate(config: WatchTreeConfig): void;
   activate(): Promise<void>;
+  refreshNewsState(): Promise<void>;
   deactivate(): void;
 }
 
@@ -84,6 +86,13 @@ interface WorkspaceMarketState {
   marketHistory: WatchMarketCache[];
 }
 
+interface WatchNewsPanelDragState {
+  startX: number;
+  startY: number;
+  left: number;
+  top: number;
+}
+
 export function createWatchController(options: WatchControllerOptions): WatchController {
   const { api, elements, isActive } = options;
   const connectors = createWatchConnectors(elements.watchTree);
@@ -98,6 +107,8 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   let tradingDateOptions: string[] = [];
   let suppressNodeClick = false;
   let renamingWorkspaceId: string | undefined;
+  let newsPanelDrag: WatchNewsPanelDragState | undefined;
+  const newsBySecid = new Map<string, WatchNewsMessage[]>();
   const workspaceDateStates = new Map<string, WorkspaceDateState>();
   const workspaceMarketStates = new Map<string, WorkspaceMarketState>();
   const collapsedNodes = new Set<string>();
@@ -111,6 +122,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       quotes: marketState.quotes,
       trends: marketState.trends,
       marketHistory: marketState.marketHistory,
+      newsBySecid,
       collapsedNodes
     }, connectors.schedule);
   }
@@ -276,6 +288,130 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     } catch (error) {
       elements.watchStatus.textContent = getErrorMessage(error);
     }
+  }
+
+  async function refreshNewsState(): Promise<void> {
+    const secids = collectStockSecids(activeRoot());
+    if (secids.length === 0) {
+      newsBySecid.clear();
+      render();
+      return;
+    }
+    const messages = await api.listWatchNews(secids);
+    replaceNewsState(messages);
+    render();
+  }
+
+  async function refreshHoldingNews(): Promise<void> {
+    elements.watchStatus.textContent = "正在捕捉持仓股消息...";
+    try {
+      const result = await api.analyzeHoldingWatchNews();
+      mergeNewsState(result.messages);
+      elements.watchStatus.textContent = formatNewsAnalysisStatus(result);
+      if (result.messages.length > 0) {
+        await refreshNewsState();
+      } else {
+        render();
+      }
+    } catch (error) {
+      elements.watchStatus.textContent = getErrorMessage(error);
+    }
+  }
+
+  async function refreshStockNews(nodeId: string): Promise<void> {
+    const node = findWatchTreeNode(activeRoot(), nodeId);
+    if (!node || node.type !== "stock") {
+      return;
+    }
+    elements.watchStatus.textContent = `正在捕捉 ${node.name} 最新消息...`;
+    try {
+      const result = await api.analyzeWatchStockNews({ secid: node.secid, stockName: node.name });
+      mergeNewsState(result.messages);
+      elements.watchStatus.textContent = formatNewsAnalysisStatus(result);
+      await refreshNewsState();
+    } catch (error) {
+      elements.watchStatus.textContent = getErrorMessage(error);
+    }
+  }
+
+  async function showStockNewsHistory(nodeId: string): Promise<void> {
+    const node = findWatchTreeNode(activeRoot(), nodeId);
+    if (!node || node.type !== "stock") {
+      return;
+    }
+    try {
+      const messages = await api.listWatchNews([node.secid]);
+      replaceNewsState(messages, node.secid);
+      renderNewsHistoryPanel(node.name, messages);
+    } catch (error) {
+      elements.watchStatus.textContent = getErrorMessage(error);
+    }
+  }
+
+  async function markNewsReadFromAlert(alert: HTMLElement): Promise<void> {
+    const secid = alert.dataset.watchNewsSecid ?? "";
+    const messageId = alert.dataset.watchNewsId ?? "";
+    const message = newsBySecid.get(secid)?.find((item) => item.id === messageId);
+    if (!message) {
+      return;
+    }
+    showNewsTooltip(alert, message);
+    const updated = await api.markWatchNewsRead(secid, [messageId]);
+    replaceNewsState(updated, secid);
+    render();
+  }
+
+  function replaceNewsState(messages: WatchNewsMessage[], secid?: string): void {
+    if (secid) {
+      newsBySecid.set(secid, messages);
+      return;
+    }
+    newsBySecid.clear();
+    mergeNewsState(messages);
+  }
+
+  function mergeNewsState(messages: WatchNewsMessage[]): void {
+    for (const message of messages) {
+      const current = newsBySecid.get(message.secid) ?? [];
+      const byId = new Map(current.map((item) => [item.id, item]));
+      byId.set(message.id, message);
+      newsBySecid.set(message.secid, [...byId.values()].sort((left, right) => right.fetchedAt.localeCompare(left.fetchedAt)));
+    }
+  }
+
+  function showNewsTooltip(anchor: HTMLElement, message: WatchNewsMessage): void {
+    const rect = anchor.getBoundingClientRect();
+    elements.watchNewsTooltip.innerHTML = `
+      <strong>${escapeHtml(message.title)}</strong>
+      <div>${escapeHtml(message.summary)}</div>
+      <time>${escapeHtml(formatDateTime(message.fetchedAt))}</time>
+    `;
+    elements.watchNewsTooltip.style.left = `${Math.min(rect.left, window.innerWidth - 380)}px`;
+    elements.watchNewsTooltip.style.top = `${rect.bottom + 8}px`;
+    elements.watchNewsTooltip.hidden = false;
+    window.setTimeout(() => {
+      elements.watchNewsTooltip.hidden = true;
+    }, 6000);
+  }
+
+  function renderNewsHistoryPanel(stockName: string, messages: WatchNewsMessage[]): void {
+    elements.watchNewsHistoryTitle.textContent = `${stockName} 历史消息`;
+    elements.watchNewsHistoryContent.innerHTML = messages.length === 0
+      ? '<p class="watch-news-history-meta">暂无历史消息。</p>'
+      : messages.map((message) => `
+        <article class="watch-news-history-item">
+          <h3>${escapeHtml(message.title)}</h3>
+          <p>${escapeHtml(message.summary)}</p>
+          <p>${escapeHtml(message.analysis)}</p>
+          <div class="watch-news-history-meta">
+            ${escapeHtml(formatDateTime(message.fetchedAt))}
+            · ${escapeHtml(message.sourceName)}
+            · 可信度 ${escapeHtml(formatConfidence(message.confidence))}
+            ${message.sourceUrl ? ` · <a href="${escapeHtml(message.sourceUrl)}" target="_blank" rel="noreferrer">来源</a>` : ""}
+          </div>
+        </article>
+      `).join("");
+    elements.watchNewsHistoryPanel.hidden = false;
   }
 
   async function updateMarketData(
@@ -467,6 +603,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     collapsedNodes.clear();
     render();
     syncTradingDateOptions(undefined, workspaceId);
+    void refreshNewsState();
   }
 
   function beginRenameWorkspace(workspaceId: string): void {
@@ -666,6 +803,12 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       case "delete":
         void deleteNode(id);
         break;
+      case "refresh-news":
+        void refreshStockNews(id);
+        break;
+      case "show-news":
+        void showStockNewsHistory(id);
+        break;
       case "rename-workspace":
         beginRenameWorkspace(id);
         break;
@@ -710,6 +853,43 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       return;
     }
     endPan(event);
+  }
+
+  function handleNewsAlertMouseOver(event: MouseEvent): void {
+    const alert = event.target instanceof Element
+      ? event.target.closest<HTMLElement>(".watch-news-alert")
+      : undefined;
+    if (!alert) {
+      return;
+    }
+    void markNewsReadFromAlert(alert);
+  }
+
+  function beginNewsPanelDrag(event: PointerEvent): void {
+    if (event.button !== 0) {
+      return;
+    }
+    const rect = elements.watchNewsHistoryPanel.getBoundingClientRect();
+    newsPanelDrag = {
+      startX: event.clientX,
+      startY: event.clientY,
+      left: rect.left,
+      top: rect.top
+    };
+    elements.watchNewsHistoryHeader.setPointerCapture(event.pointerId);
+  }
+
+  function moveNewsPanelDrag(event: PointerEvent): void {
+    if (!newsPanelDrag) {
+      return;
+    }
+    event.preventDefault();
+    elements.watchNewsHistoryPanel.style.left = `${Math.max(8, newsPanelDrag.left + event.clientX - newsPanelDrag.startX)}px`;
+    elements.watchNewsHistoryPanel.style.top = `${Math.max(8, newsPanelDrag.top + event.clientY - newsPanelDrag.startY)}px`;
+  }
+
+  function endNewsPanelDrag(): void {
+    newsPanelDrag = undefined;
   }
 
   function beginNodeDrag(event: PointerEvent): boolean {
@@ -1041,6 +1221,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   return {
     bindEvents: () => {
       elements.refreshWatchQuotes.addEventListener("click", () => void refreshQuotes(true));
+      elements.refreshWatchNews.addEventListener("click", () => void refreshHoldingNews());
       elements.exportWatchData.addEventListener("click", () => void exportData());
       elements.importWatchData.addEventListener("click", () => void importData());
       elements.addWatchWorkspace.addEventListener("click", () => void createWorkspace());
@@ -1056,8 +1237,16 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       elements.watchNodeForm.addEventListener("submit", (event) => void saveNode(event));
       elements.cancelWatchNode.addEventListener("click", () => elements.watchNodeDialog.close());
       elements.watchTree.addEventListener("click", handleNodeClick);
+      elements.watchTree.addEventListener("mouseover", handleNewsAlertMouseOver);
       elements.watchTree.addEventListener("contextmenu", handleNodeContextMenu);
       elements.watchContextMenu.addEventListener("click", handleContextMenuClick);
+      elements.closeWatchNewsHistory.addEventListener("click", () => {
+        elements.watchNewsHistoryPanel.hidden = true;
+      });
+      elements.watchNewsHistoryHeader.addEventListener("pointerdown", beginNewsPanelDrag);
+      elements.watchNewsHistoryHeader.addEventListener("pointermove", moveNewsPanelDrag);
+      elements.watchNewsHistoryHeader.addEventListener("pointerup", endNewsPanelDrag);
+      elements.watchNewsHistoryHeader.addEventListener("pointercancel", endNewsPanelDrag);
       elements.watchPanel.addEventListener("contextmenu", handlePanelContextMenu);
       elements.watchPanel.addEventListener("pointerdown", handlePointerDown);
       elements.watchPanel.addEventListener("pointermove", handlePointerMove);
@@ -1077,6 +1266,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       config = useFirstWorkspace(nextConfig);
       workspaceDateStates.clear();
       workspaceMarketStates.clear();
+      newsBySecid.clear();
       tradingDateOptions = [];
       loaded = true;
       render();
@@ -1087,10 +1277,39 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       }
       startPolling();
       await loadMarketData();
+      await refreshNewsState();
       void refreshLatestMarketData();
     },
-    deactivate: () => stopPolling()
+    refreshNewsState,
+    deactivate: () => {
+      stopPolling();
+      elements.watchNewsTooltip.hidden = true;
+    }
   };
+}
+
+function formatNewsAnalysisStatus(result: Awaited<ReturnType<StockResearchApi["analyzeHoldingWatchNews"]>>): string {
+  const errorText = result.errors.length > 0 ? `，${result.errors.length} 只失败` : "";
+  return `已分析 ${result.stockCount} 只股票，新增 ${result.newMessageCount} 条消息${errorText}`;
+}
+
+function formatDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
+}
+
+function formatConfidence(value: WatchNewsMessage["confidence"]): string {
+  return value === "high" ? "高" : value === "low" ? "低" : "中";
 }
 
 function readIndustryPosition(value: string): WatchIndustryPosition | undefined {

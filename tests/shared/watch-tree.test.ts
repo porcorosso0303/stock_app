@@ -3,6 +3,7 @@ import type { StockQuote, WatchTreeCategoryNode } from "../../src/shared/types";
 import {
   appendWatchTreeChild,
   averageChangePercent,
+  collectHoldingStocks,
   collectWatchTreeConfigSecids,
   categoryStrengthHistory,
   categoryStrengthIndex,
@@ -60,6 +61,36 @@ describe("watch tree", () => {
     expect(collectStockSecids(root)).toEqual(["1.600519", "0.300750"]);
     expect(averageChangePercent(root, quotes)).toBe(0.5);
     expect(countUpDownStocks(root, quotes)).toEqual({ up: 1, down: 1 });
+  });
+
+  it("collects unique holding stocks across workspaces", () => {
+    expect(collectHoldingStocks({
+      workspaces: [{
+        id: "a",
+        name: "A",
+        root: {
+          id: "root-a",
+          type: "category",
+          name: "A",
+          children: [
+            { id: "one", type: "stock", name: "股票一", secid: "1.600519", isHolding: true },
+            { id: "two", type: "stock", name: "股票二", secid: "0.300750" }
+          ]
+        }
+      }, {
+        id: "b",
+        name: "B",
+        root: {
+          id: "root-b",
+          type: "category",
+          name: "B",
+          children: [
+            { id: "dup", type: "stock", name: "股票一重复", secid: "1.600519", isHolding: true },
+            { id: "three", type: "stock", name: "股票三", secid: "0.000001", isHolding: true }
+          ]
+        }
+      }]
+    }).map((stock) => stock.secid)).toEqual(["1.600519", "0.000001"]);
   });
 
   it("counts up and down stocks across nested category leaves", () => {

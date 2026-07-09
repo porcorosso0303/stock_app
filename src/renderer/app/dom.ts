@@ -30,11 +30,18 @@ export const elements = {
   watchTradingDate: getElement<HTMLSelectElement>("watch-trading-date"),
   watchMarketError: getElement<HTMLElement>("watch-market-error"),
   refreshWatchQuotes: getElement<HTMLButtonElement>("refresh-watch-quotes"),
+  refreshWatchNews: getElement<HTMLButtonElement>("refresh-watch-news"),
   exportWatchData: getElement<HTMLButtonElement>("export-watch-data"),
   importWatchData: getElement<HTMLButtonElement>("import-watch-data"),
   watchPanel: getElement<HTMLElement>("watch-panel"),
   watchTree: getElement<HTMLElement>("watch-tree"),
   watchContextMenu: getElement<HTMLElement>("watch-context-menu"),
+  watchNewsTooltip: getElement<HTMLElement>("watch-news-tooltip"),
+  watchNewsHistoryPanel: getElement<HTMLElement>("watch-news-history-panel"),
+  watchNewsHistoryHeader: getElement<HTMLElement>("watch-news-history-header"),
+  watchNewsHistoryTitle: getElement<HTMLElement>("watch-news-history-title"),
+  watchNewsHistoryContent: getElement<HTMLElement>("watch-news-history-content"),
+  closeWatchNewsHistory: getElement<HTMLButtonElement>("close-watch-news-history"),
   watchNodeDialog: getElement<HTMLDialogElement>("watch-node-dialog"),
   watchNodeForm: getElement<HTMLFormElement>("watch-node-form"),
   watchNodeDialogTitle: getElement<HTMLElement>("watch-node-dialog-title"),
@@ -54,7 +61,12 @@ export const elements = {
   marketProviderForm: getElement<HTMLFormElement>("market-provider-form"),
   marketProviderSelect: getElement<HTMLSelectElement>("market-provider-select"),
   marketProviderStatus: getElement<HTMLElement>("market-provider-status"),
-  cancelMarketProvider: getElement<HTMLButtonElement>("cancel-market-provider")
+  cancelMarketProvider: getElement<HTMLButtonElement>("cancel-market-provider"),
+  watchNewsSettingsDialog: getElement<HTMLDialogElement>("watch-news-settings-dialog"),
+  watchNewsSettingsForm: getElement<HTMLFormElement>("watch-news-settings-form"),
+  watchNewsIntervalHours: getElement<HTMLInputElement>("watch-news-interval-hours"),
+  watchNewsSettingsStatus: getElement<HTMLElement>("watch-news-settings-status"),
+  cancelWatchNewsSettings: getElement<HTMLButtonElement>("cancel-watch-news-settings")
 };
 
 export type RendererElements = typeof elements;

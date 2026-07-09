@@ -10,6 +10,9 @@ import type {
   WatchMarketData,
   WatchMarketRequestOptions,
   WatchMarketProviderId,
+  WatchNewsAnalysisResult,
+  WatchNewsMessage,
+  WatchNewsSettings,
   WatchTreeConfig
 } from "./types";
 
@@ -34,6 +37,14 @@ export const IPC = {
   searchStocks: "watch-stocks:search",
   exportWatchData: "watch-data:export",
   importWatchData: "watch-data:import",
+  analyzeWatchStockNews: "watch-news:analyze-stock",
+  analyzeHoldingWatchNews: "watch-news:analyze-holdings",
+  listWatchNews: "watch-news:list",
+  markWatchNewsRead: "watch-news:mark-read",
+  getWatchNewsSettings: "watch-news-settings:get",
+  setWatchNewsSettings: "watch-news-settings:set",
+  openWatchNewsSettings: "watch-news-settings:open",
+  watchNewsUpdated: "watch-news:updated",
   openWatchMarketProviderSettings: "watch-market-provider:open-settings",
   setWatchMarketProvider: "watch-market-provider:set",
   watchMarketProviderChanged: "watch-market-provider:changed",
@@ -65,8 +76,16 @@ export interface StockResearchApi {
   searchStocks(query: string): Promise<StockSearchResult[]>;
   exportWatchData(): Promise<WatchDataTransferResult | undefined>;
   importWatchData(): Promise<WatchDataTransferResult | undefined>;
+  analyzeWatchStockNews(stock: { secid: string; stockName: string }): Promise<WatchNewsAnalysisResult>;
+  analyzeHoldingWatchNews(): Promise<WatchNewsAnalysisResult>;
+  listWatchNews(secids?: string[]): Promise<WatchNewsMessage[]>;
+  markWatchNewsRead(secid: string, messageIds?: string[]): Promise<WatchNewsMessage[]>;
+  getWatchNewsSettings(): Promise<WatchNewsSettings>;
+  setWatchNewsSettings(settings: WatchNewsSettings): Promise<AppConfig>;
   setWatchMarketProvider(providerId: WatchMarketProviderId): Promise<AppConfig>;
+  onOpenWatchNewsSettings(callback: () => void): () => void;
   onOpenWatchMarketProviderSettings(callback: () => void): () => void;
   onWatchMarketProviderChanged(callback: () => void): () => void;
+  onWatchNewsUpdated(callback: () => void): () => void;
   onResearchEvent(callback: (event: ResearchProgressEvent) => void): () => void;
 }

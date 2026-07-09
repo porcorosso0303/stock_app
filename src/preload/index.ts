@@ -23,6 +23,14 @@ const IPC = {
   searchStocks: "watch-stocks:search",
   exportWatchData: "watch-data:export",
   importWatchData: "watch-data:import",
+  analyzeWatchStockNews: "watch-news:analyze-stock",
+  analyzeHoldingWatchNews: "watch-news:analyze-holdings",
+  listWatchNews: "watch-news:list",
+  markWatchNewsRead: "watch-news:mark-read",
+  getWatchNewsSettings: "watch-news-settings:get",
+  setWatchNewsSettings: "watch-news-settings:set",
+  openWatchNewsSettings: "watch-news-settings:open",
+  watchNewsUpdated: "watch-news:updated",
   openWatchMarketProviderSettings: "watch-market-provider:open-settings",
   setWatchMarketProvider: "watch-market-provider:set",
   watchMarketProviderChanged: "watch-market-provider:changed",
@@ -50,7 +58,18 @@ const api: StockResearchApi = {
   searchStocks: async (query) => await ipcRenderer.invoke(IPC.searchStocks, { query }),
   exportWatchData: async () => await ipcRenderer.invoke(IPC.exportWatchData),
   importWatchData: async () => await ipcRenderer.invoke(IPC.importWatchData),
+  analyzeWatchStockNews: async (stock) => await ipcRenderer.invoke(IPC.analyzeWatchStockNews, stock),
+  analyzeHoldingWatchNews: async () => await ipcRenderer.invoke(IPC.analyzeHoldingWatchNews),
+  listWatchNews: async (secids) => await ipcRenderer.invoke(IPC.listWatchNews, { secids }),
+  markWatchNewsRead: async (secid, messageIds) => await ipcRenderer.invoke(IPC.markWatchNewsRead, { secid, messageIds }),
+  getWatchNewsSettings: async () => await ipcRenderer.invoke(IPC.getWatchNewsSettings),
+  setWatchNewsSettings: async (settings) => await ipcRenderer.invoke(IPC.setWatchNewsSettings, settings),
   setWatchMarketProvider: async (providerId) => await ipcRenderer.invoke(IPC.setWatchMarketProvider, { providerId }),
+  onOpenWatchNewsSettings: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on(IPC.openWatchNewsSettings, listener);
+    return () => ipcRenderer.removeListener(IPC.openWatchNewsSettings, listener);
+  },
   onOpenWatchMarketProviderSettings: (callback) => {
     const listener = () => callback();
     ipcRenderer.on(IPC.openWatchMarketProviderSettings, listener);
@@ -60,6 +79,11 @@ const api: StockResearchApi = {
     const listener = () => callback();
     ipcRenderer.on(IPC.watchMarketProviderChanged, listener);
     return () => ipcRenderer.removeListener(IPC.watchMarketProviderChanged, listener);
+  },
+  onWatchNewsUpdated: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on(IPC.watchNewsUpdated, listener);
+    return () => ipcRenderer.removeListener(IPC.watchNewsUpdated, listener);
   },
   onResearchEvent: (callback) => {
     const listener = (_event: unknown, progress: ResearchProgressEvent) => callback(progress);

@@ -17,6 +17,14 @@ const SECID_PATTERN = /^[01]\.\d{6}$/;
 const DEFAULT_WATCH_WORKSPACE_ID = "default";
 const DEFAULT_WATCH_WORKSPACE_NAME = "默认";
 
+export interface WatchHoldingStock {
+  secid: string;
+  stockName: string;
+  nodeId: string;
+  workspaceId: string;
+  workspaceName: string;
+}
+
 export function validateWatchTreeConfig(value: unknown): WatchTreeConfig {
   const config = requireObject(value, "盯盘脑图配置");
   if (Array.isArray(config.workspaces)) {
@@ -155,6 +163,19 @@ export function collectWatchTreeConfigSecids(config: WatchTreeConfig): string[] 
   return [...secids];
 }
 
+export function collectHoldingStocks(config: WatchTreeConfig): WatchHoldingStock[] {
+  const normalized = ensureWatchWorkspaceConfig(config);
+  const bySecid = new Map<string, WatchHoldingStock>();
+  for (const workspace of normalized.workspaces ?? []) {
+    for (const stock of collectHoldingStocksFromNode(workspace.root, workspace)) {
+      if (!bySecid.has(stock.secid)) {
+        bySecid.set(stock.secid, stock);
+      }
+    }
+  }
+  return [...bySecid.values()];
+}
+
 export function validateSecid(secid: string): string {
   const value = secid.trim();
   if (!SECID_PATTERN.test(value)) {
@@ -218,6 +239,27 @@ export function collectStockSecids(root?: WatchTreeNode): string[] {
     return [root.secid];
   }
   return root.children.flatMap(collectStockSecids);
+}
+
+function collectHoldingStocksFromNode(
+  root: WatchTreeNode | undefined,
+  workspace: WatchTreeWorkspace
+): WatchHoldingStock[] {
+  if (!root) {
+    return [];
+  }
+  if (root.type === "stock") {
+    return root.isHolding
+      ? [{
+          secid: root.secid,
+          stockName: root.name,
+          nodeId: root.id,
+          workspaceId: workspace.id,
+          workspaceName: workspace.name
+        }]
+      : [];
+  }
+  return root.children.flatMap((child) => collectHoldingStocksFromNode(child, workspace));
 }
 
 export function averageChangePercent(

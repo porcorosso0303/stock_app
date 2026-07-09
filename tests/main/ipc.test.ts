@@ -29,6 +29,7 @@ function createHarness(options: {
 } = {}) {
   const handlers = new Map<string, (_event: unknown, value?: unknown) => unknown>();
   const setReportDirectory = vi.fn().mockResolvedValue({});
+  const setWatchNewsIntervalHours = vi.fn().mockResolvedValue({ watchNewsIntervalHours: 3 });
   const setResearchSpec = vi.fn().mockResolvedValue(undefined);
   const resetResearchSpec = vi.fn().mockResolvedValue("default spec");
   const openPath = vi.fn().mockResolvedValue(options.openPathResult ?? "");
@@ -72,7 +73,8 @@ function createHarness(options: {
     shell: { openPath },
     configStore: {
       get: async () => ({}),
-      setReportDirectory
+      setReportDirectory,
+      setWatchNewsIntervalHours
     },
     researchSpecStore: {
       get: async () => "current spec",
@@ -112,6 +114,12 @@ function createHarness(options: {
     watchDataTransferService: {
       exportToDirectory: exportWatchData,
       importFromDirectory: importWatchData
+    },
+    watchNewsService: {
+      list: vi.fn().mockResolvedValue([]),
+      markRead: vi.fn().mockResolvedValue([]),
+      analyzeStock: vi.fn().mockResolvedValue({ stockCount: 1, newMessageCount: 0, messages: [], errors: [] }),
+      analyzeHoldingStocks: vi.fn().mockResolvedValue({ stockCount: 0, newMessageCount: 0, messages: [], errors: [] })
     }
   });
 

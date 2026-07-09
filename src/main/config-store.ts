@@ -23,4 +23,13 @@ export class ConfigStore {
     await this.store.write(config);
     return config;
   }
+
+  async setWatchNewsIntervalHours(watchNewsIntervalHours: number): Promise<AppConfig> {
+    if (!Number.isFinite(watchNewsIntervalHours) || watchNewsIntervalHours <= 0) {
+      throw new Error("持仓股消息周期必须大于 0 小时");
+    }
+    const config = { ...await this.get(), watchNewsIntervalHours };
+    await this.store.write(config);
+    return config;
+  }
 }

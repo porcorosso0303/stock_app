@@ -68,6 +68,18 @@ describe("ConfigStore", () => {
     await expect(new ConfigStore(path).get()).resolves.toEqual(updated);
   });
 
+  it("persists the watch news interval", async () => {
+    const directory = await createTempDirectory();
+    const path = join(directory, "config.json");
+
+    const updated = await new ConfigStore(path).setWatchNewsIntervalHours(2.5);
+
+    expect(updated).toEqual({
+      watchNewsIntervalHours: 2.5
+    });
+    await expect(new ConfigStore(path).get()).resolves.toEqual(updated);
+  });
+
   it("reports a damaged JSON file with its path", async () => {
     const directory = await createTempDirectory();
     const path = join(directory, "config.json");

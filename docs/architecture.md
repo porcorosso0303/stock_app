@@ -566,6 +566,7 @@ src/main/modules/watch/watch-ipc.ts
 - 校验 `secids`、`query`、`config` 参数。
 - 调用 `WatchTreeStore`、`MarketDataProvider`、`WatchMarketService`。
 - 弹出目录选择框并调用盯盘数据导入导出服务。
+- 调用 `WatchNewsService` 执行持仓股消息面捕捉、历史消息读取、已读标记和周期设置。
 
 ### WatchTreeStore
 
@@ -618,6 +619,27 @@ src/main/watch-data-transfer-service.ts
 - 导入成功后覆盖本机盯盘脑图和行情历史缓存。
 
 持仓状态属于 `watch-tree.json` 股票节点字段，因此会随现有脑图数据包直接导出；导入时经过 `validateWatchTreeConfig()` 校验并规范化，不需要单独的数据迁移或附加文件。
+
+### WatchNewsService
+
+文件：
+
+```text
+src/main/watch-news-service.ts
+src/main/watch-news-store.ts
+src/main/watch-news-analysis-provider.ts
+```
+
+职责：
+
+- 从 `WatchTreeConfig` 中收集所有 `isHolding: true` 的唯一股票，作为批量消息捕捉目标。
+- 通过 `WatchNewsAnalysisProvider` 调用默认 GPT/Codex 分析通道，对单只股票执行最近 48 小时消息捕捉与分析。
+- 消息源和筛选规则由 provider prompt 约束：公司官网、上证 e 互动、深交所互动易、官方投资者问答、东方财富、澎湃、界面新闻、科创板日报、雪球当日交易时段帖子及其权威渠道查证。
+- `WatchNewsStore` 维护 `watch-news.json`，按 `secid + 来源/标题/链接/摘要` 生成去重 key，重复消息不再写入。
+- 消息是否未读由 `readAt` 判断。Renderer 鼠标悬停新消息感叹号后调用 `markWatchNewsRead()`，写入 `readAt` 并隐藏感叹号。
+- Main 进程根据 `config.json.watchNewsIntervalHours` 设置后台定时任务，默认 3 小时。手动“持仓股消息”按钮和股票右键“最新消息”不会依赖定时器。
+
+`WatchNewsAnalysisProvider` 是消息面 AI 适配层。当前实现是 `CodexWatchNewsAnalysisProvider`，复用现有 Codex CLI 只读联网能力，要求模型只输出 JSON 数组。未来接入 OpenAI API、Tushare 新闻接口或券商资讯接口时，应新增 provider 实现并保持 `WatchNewsService`、renderer 和 `watch-news.json` 格式不变。
 
 导出目录包含：
 
@@ -813,6 +835,8 @@ user_data/history.json
 user_data/stock_research_spec.md
 user_data/watch-tree.json
 user_data/watch-quotes-cache.json
+user_data/watch-news.json
+user_data/watch-news-runs/<run-id>/report.md
 user_data/runs/<run-id>/report.md
 user_data/runs/<run-id>/events.jsonl
 user_data/runs/<run-id>/stderr.log
@@ -832,8 +856,10 @@ user_data/runs/<run-id>/.agents/skills/research-a-share-stock/
 - `reportDirectory`
 - `watchMarketProviderId`
 - `researchProviderId`
+- `watchNewsIntervalHours`
 
 `watchMarketProviderId` 已用于持久化用户在数据源设置弹窗中的选择，并由 main 装配的 `SelectableMarketDataProvider` 执行运行时切换。`researchProviderId` 仍是自定义调研 provider 的扩展预留。
+`watchNewsIntervalHours` 是持仓股消息面后台捕捉周期，默认 3 小时；Setting -> 持仓股消息 打开独立设置弹窗修改该值，保存后 main 侧定时器立即重建。
 
 ### history.json
 
@@ -866,6 +892,31 @@ interface WatchMarketHistoryCache {
 - `trends`
 
 每条 `StockTrend.tradingDate` 必须与所在 `WatchMarketCache.tradingDate` 一致。旧测试数据不作为长期兼容目标。读取到非 `version: 2` 或 trend 缺少交易日标签的缓存时，会按空历史处理；下一次成功刷新会写入新格式。
+
+### watch-news.json
+
+由 `WatchNewsStore` 维护。保存持仓股消息面历史：
+
+```ts
+interface WatchNewsHistory {
+  version: 1;
+  messages: WatchNewsMessage[];
+}
+```
+
+每条消息包含：
+
+- `secid`、`stockName`
+- `title`、`summary`
+- `sourceName`、可选 `sourceUrl`
+- 可选 `occurredAt`
+- `fetchedAt`
+- `analysis`
+- `confidence`: `high | medium | low`
+- `dedupeKey`
+- 可选 `readAt`
+
+消息历史最多保留 500 条。`readAt` 缺失表示未读；未读消息会让持仓股名称上显示感叹号。用户悬停查看新消息摘要后，renderer 调用 IPC 标记已读，感叹号消失。右键“显示消息”只读取历史，不改变已读状态。
 
 ### 盯盘导出数据包
 
@@ -912,6 +963,15 @@ watch-market-history.json
 2. 实现 `ResearchProvider`。
 3. provider 内部处理 token、base URL、模型参数、请求协议和取消逻辑。
 4. `ResearchService` 仍只处理 run、历史、报告和 PDF。
+
+### 新增持仓股消息 AI provider
+
+新增持仓股消息 provider 时：
+
+1. 实现 `WatchNewsAnalysisProvider`。
+2. provider 内部负责消息源抓取、模型 token/base URL、模型选择、请求协议、输出解析和错误归一化。
+3. 输出统一转换为 `WatchNewsDraft[]`，由 `WatchNewsService` 统一去重、落库和返回结果。
+4. 不修改 `watch-view`、`watch-controller` 的消息展示逻辑，除非新增共享类型字段。
 
 ### 新增主功能模块
 

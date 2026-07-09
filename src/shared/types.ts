@@ -9,6 +9,7 @@ export interface AppConfig {
   reportDirectory?: string;
   watchMarketProviderId?: WatchMarketProviderId;
   researchProviderId?: string;
+  watchNewsIntervalHours?: number;
 }
 
 export type WatchMarketProviderId = "east-money" | "mock-cache";
@@ -147,6 +148,44 @@ export interface WatchDataTransferResult {
   directory: string;
   tradingDates: string[];
   stockCount: number;
+}
+
+export type WatchNewsConfidence = "high" | "medium" | "low";
+
+export interface WatchNewsMessage {
+  id: string;
+  secid: string;
+  stockName: string;
+  title: string;
+  summary: string;
+  sourceName: string;
+  sourceUrl?: string;
+  occurredAt?: string;
+  fetchedAt: string;
+  analysis: string;
+  confidence: WatchNewsConfidence;
+  dedupeKey: string;
+  readAt?: string;
+}
+
+export interface WatchNewsHistory {
+  version: 1;
+  messages: WatchNewsMessage[];
+}
+
+export interface WatchNewsSettings {
+  intervalHours: number;
+}
+
+export interface WatchNewsAnalysisResult {
+  stockCount: number;
+  newMessageCount: number;
+  messages: WatchNewsMessage[];
+  errors: Array<{
+    secid: string;
+    stockName: string;
+    errorMessage: string;
+  }>;
 }
 
 export interface StockSearchResult {

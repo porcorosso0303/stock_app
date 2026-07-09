@@ -4,6 +4,7 @@ import type {
   StockTrendPoint,
   WatchIndustryPosition,
   WatchMarketCache,
+  WatchNewsMessage,
   WatchTreeConfig,
   WatchTreeCategoryNode,
   WatchTreeNode
@@ -28,6 +29,7 @@ export interface WatchViewState {
   quotes: Map<string, StockQuote>;
   trends: Map<string, StockTrend>;
   marketHistory: WatchMarketCache[];
+  newsBySecid?: Map<string, WatchNewsMessage[]>;
   collapsedNodes: Set<string>;
 }
 
@@ -120,10 +122,12 @@ function renderWatchNodeContent(node: WatchTreeNode, state: WatchViewState): str
   const quote = state.quotes.get(node.secid);
   const trend = state.trends.get(node.secid);
   const suddenMove = calculateSuddenStockMove(trend?.points ?? []);
+  const unreadNews = latestUnreadNews(state.newsBySecid?.get(node.secid) ?? []);
   return `
     <span class="watch-stock-name${node.isHolding ? " is-holding" : ""}">
       <strong>${escapeHtml(node.name)}</strong>
       ${node.isHolding ? '<span class="watch-visually-hidden">持仓股</span>' : ""}
+      ${renderNewsAlert(node.secid, unreadNews)}
       ${renderSuddenMoveArrow(suddenMove)}
     </span>
     <span class="watch-trend-inline">
@@ -132,6 +136,27 @@ function renderWatchNodeContent(node: WatchTreeNode, state: WatchViewState): str
       ${renderIndustryPositionStar(node.industryPosition)}
     </span>
   `;
+}
+
+function renderNewsAlert(secid: string, message: WatchNewsMessage | undefined): string {
+  if (!message) {
+    return "";
+  }
+  return `
+    <span
+      class="watch-news-alert"
+      data-watch-news-secid="${escapeHtml(secid)}"
+      data-watch-news-id="${escapeHtml(message.id)}"
+      title="${escapeHtml(message.title)}"
+      aria-label="持仓股新消息"
+    >!</span>
+  `;
+}
+
+function latestUnreadNews(messages: WatchNewsMessage[]): WatchNewsMessage | undefined {
+  return messages
+    .filter((message) => !message.readAt)
+    .sort((left, right) => right.fetchedAt.localeCompare(left.fetchedAt))[0];
 }
 
 function renderWatchNodeTooltip(

@@ -5,6 +5,9 @@ import type {
   WatchDataTransferResult,
   WatchMarketData,
   WatchMarketRequestOptions,
+  WatchNewsAnalysisResult,
+  WatchNewsMessage,
+  WatchNewsSettings,
   WatchTreeConfig
 } from "../../../shared/types";
 import {
@@ -29,6 +32,18 @@ export interface WatchMarketServiceLike {
   refresh(secids: string[], options?: WatchMarketRefreshOptions): Promise<WatchMarketData>;
 }
 
+export interface WatchNewsServiceLike {
+  list(secids?: string[]): Promise<WatchNewsMessage[]>;
+  markRead(secid: string, messageIds?: string[]): Promise<WatchNewsMessage[]>;
+  analyzeStock(stock: { secid: string; stockName: string }): Promise<WatchNewsAnalysisResult>;
+  analyzeHoldingStocks(config: WatchTreeConfig): Promise<WatchNewsAnalysisResult>;
+}
+
+export interface ConfigStoreLike {
+  get(): Promise<{ watchNewsIntervalHours?: number }>;
+  setWatchNewsIntervalHours(value: number): Promise<unknown>;
+}
+
 export interface DialogLike {
   showOpenDialog(options: {
     title?: string;
@@ -49,6 +64,10 @@ export interface WatchIpcDependencies {
   quoteService: QuoteServiceLike;
   watchMarketService: WatchMarketServiceLike;
   watchDataTransferService: WatchDataTransferServiceLike;
+  watchNewsService: WatchNewsServiceLike;
+  configStore: ConfigStoreLike;
+  onWatchNewsSettingsChanged?: () => void;
+  onWatchNewsUpdated?: () => void;
 }
 
 export function registerWatchIpc(dependencies: WatchIpcDependencies): void {
@@ -58,7 +77,11 @@ export function registerWatchIpc(dependencies: WatchIpcDependencies): void {
     watchTreeStore,
     quoteService,
     watchMarketService,
-    watchDataTransferService
+    watchDataTransferService,
+    watchNewsService,
+    configStore,
+    onWatchNewsSettingsChanged,
+    onWatchNewsUpdated
   } = dependencies;
 
   ipcMain.handle(IPC.getWatchTree, async () => await watchTreeStore.get());
@@ -113,6 +136,58 @@ export function registerWatchIpc(dependencies: WatchIpcDependencies): void {
       ? await watchDataTransferService.importFromDirectory(directory)
       : undefined;
   });
+
+  ipcMain.handle(IPC.analyzeWatchStockNews, async (_event, value) => {
+    const input = requireObject(value);
+    const result = await watchNewsService.analyzeStock({
+      secid: requireString(input.secid, "secid"),
+      stockName: requireString(input.stockName, "stockName")
+    });
+    onWatchNewsUpdated?.();
+    return result;
+  });
+
+  ipcMain.handle(IPC.analyzeHoldingWatchNews, async () => {
+    const result = await watchNewsService.analyzeHoldingStocks(await watchTreeStore.get());
+    onWatchNewsUpdated?.();
+    return result;
+  });
+
+  ipcMain.handle(IPC.listWatchNews, async (_event, value) => {
+    const input = value === undefined ? {} : requireObject(value);
+    return await watchNewsService.list(Array.isArray(input.secids)
+      ? requireStringArray(input.secids, "secids")
+      : undefined);
+  });
+
+  ipcMain.handle(IPC.markWatchNewsRead, async (_event, value) => {
+    const input = requireObject(value);
+    return await watchNewsService.markRead(
+      requireString(input.secid, "secid"),
+      Array.isArray(input.messageIds) ? requireStringArray(input.messageIds, "messageIds") : undefined
+    );
+  });
+
+  ipcMain.handle(IPC.getWatchNewsSettings, async (): Promise<WatchNewsSettings> => {
+    const config = await configStore.get();
+    return { intervalHours: normalizeWatchNewsInterval(config.watchNewsIntervalHours) };
+  });
+
+  ipcMain.handle(IPC.setWatchNewsSettings, async (_event, value) => {
+    const input = requireObject(value);
+    const intervalHours = normalizeWatchNewsInterval(Number(input.intervalHours));
+    const config = await configStore.setWatchNewsIntervalHours(intervalHours);
+    onWatchNewsSettingsChanged?.();
+    return config;
+  });
+}
+
+function normalizeWatchNewsInterval(value: unknown): number {
+  const interval = Number(value);
+  if (!Number.isFinite(interval) || interval <= 0) {
+    return 3;
+  }
+  return Math.min(168, Math.max(0.1, interval));
 }
 
 async function chooseDirectory(

@@ -24,6 +24,14 @@ describe("watch empty-space context menu", () => {
     expect(controller).not.toContain("toggleWatchConfig");
   });
 
+  it("limits stock news actions to holding stock context menus", async () => {
+    const contextMenu = await readFile("src/renderer/features/watch/watch-context-menu.ts", "utf8");
+
+    expect(contextMenu).toContain("node.isHolding");
+    expect(contextMenu).toContain('data-watch-menu-action="refresh-news"');
+    expect(contextMenu).toContain('data-watch-menu-action="show-news"');
+  });
+
   it("keeps the empty state to a single hint without the unconfigured title", async () => {
     const source = await readFile("src/renderer/features/watch/watch-view.ts", "utf8");
 

@@ -32,6 +32,9 @@ import { ResearchSpecStore } from "./research-spec-store";
 import { WatchDataTransferService } from "./watch-data-transfer-service";
 import { WatchMarketCacheStore } from "./watch-market-cache-store";
 import { WatchMarketService } from "./watch-market-service";
+import { CodexWatchNewsAnalysisProvider } from "./watch-news-analysis-provider";
+import { WatchNewsService } from "./watch-news-service";
+import { WatchNewsStore } from "./watch-news-store";
 import { WatchTreeStore } from "./watch-tree-store";
 import { IPC } from "../shared/ipc";
 import type { WatchMarketProviderId } from "../shared/types";
@@ -126,6 +129,42 @@ void app.whenReady().then(async () => {
     watchTreeStore,
     watchMarketCacheStore
   );
+  const watchNewsStore = new WatchNewsStore(join(userData, "watch-news.json"));
+  const watchNewsProvider = new CodexWatchNewsAnalysisProvider({
+    codexLocator,
+    userDataDirectory: userData,
+    createRunner: (options) => new CodexRunner(options)
+  });
+  const watchNewsService = new WatchNewsService(watchNewsStore, watchNewsProvider);
+  let watchNewsTimer: NodeJS.Timeout | undefined;
+  let watchNewsInFlight = false;
+  const notifyWatchNewsUpdated = (): void => {
+    BrowserWindow.getAllWindows().forEach((window) => {
+      window.webContents.send(IPC.watchNewsUpdated);
+    });
+  };
+  const runScheduledWatchNews = async (): Promise<void> => {
+    if (watchNewsInFlight) {
+      return;
+    }
+    watchNewsInFlight = true;
+    try {
+      const result = await watchNewsService.analyzeHoldingStocks(await watchTreeStore.get());
+      if (result.newMessageCount > 0) {
+        notifyWatchNewsUpdated();
+      }
+    } finally {
+      watchNewsInFlight = false;
+    }
+  };
+  const scheduleWatchNews = async (): Promise<void> => {
+    if (watchNewsTimer) {
+      clearInterval(watchNewsTimer);
+    }
+    const config = await configStore.get();
+    const intervalHours = normalizeWatchNewsIntervalHours(config.watchNewsIntervalHours);
+    watchNewsTimer = setInterval(() => void runScheduledWatchNews(), intervalHours * 60 * 60 * 1000);
+  };
   registerIpcHandlers({
     ipcMain,
     dialog,
@@ -138,7 +177,10 @@ void app.whenReady().then(async () => {
     watchTreeStore,
     quoteService,
     watchMarketService,
-    watchDataTransferService
+    watchDataTransferService,
+    watchNewsService,
+    onWatchNewsUpdated: notifyWatchNewsUpdated,
+    onWatchNewsSettingsChanged: () => void scheduleWatchNews()
   });
   const applyApplicationMenu = (selectedWatchMarketProviderId: WatchMarketProviderId): void => {
     Menu.setApplicationMenu(Menu.buildFromTemplate(buildApplicationMenuTemplate({
@@ -146,6 +188,11 @@ void app.whenReady().then(async () => {
       onOpenWatchMarketProviderSettings: () => {
         BrowserWindow.getAllWindows().forEach((window) => {
           window.webContents.send(IPC.openWatchMarketProviderSettings);
+        });
+      },
+      onOpenWatchNewsSettings: () => {
+        BrowserWindow.getAllWindows().forEach((window) => {
+          window.webContents.send(IPC.openWatchNewsSettings);
         });
       }
     })));
@@ -164,6 +211,7 @@ void app.whenReady().then(async () => {
     return await configStore.get();
   });
   applyApplicationMenu(quoteService.id);
+  await scheduleWatchNews();
 
   createMainWindow();
 
@@ -193,4 +241,12 @@ function readWatchMarketProviderId(value: unknown): WatchMarketProviderId {
     return providerId;
   }
   throw new Error("providerId 必须是 east-money 或 mock-cache");
+}
+
+function normalizeWatchNewsIntervalHours(value: unknown): number {
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue) || numberValue <= 0) {
+    return 3;
+  }
+  return Math.min(168, Math.max(0.1, numberValue));
 }
