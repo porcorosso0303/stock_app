@@ -30,6 +30,7 @@ describe("watch empty-space context menu", () => {
     expect(contextMenu).toContain("node.isHolding");
     expect(contextMenu).toContain('data-watch-menu-action="refresh-news"');
     expect(contextMenu).toContain('data-watch-menu-action="show-news"');
+    expect(contextMenu).toContain('data-watch-menu-action="debug-news"');
   });
 
   it("keeps the empty state to a single hint without the unconfigured title", async () => {

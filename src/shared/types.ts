@@ -188,6 +188,25 @@ export interface WatchNewsAnalysisResult {
   }>;
 }
 
+export interface WatchNewsDebugEvent {
+  text: string;
+  level: "info" | "warning" | "error";
+  raw?: string;
+}
+
+export interface WatchNewsDebugRun {
+  runId: string;
+  runDirectory: string;
+  secid: string;
+  stockName?: string;
+  createdAt: string;
+  prompt: string;
+  events: WatchNewsDebugEvent[];
+  stderr: string;
+  reportMarkdown?: string;
+  errorMessage?: string;
+}
+
 export interface StockSearchResult {
   secid: string;
   code: string;

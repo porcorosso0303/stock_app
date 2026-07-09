@@ -634,10 +634,12 @@ src/main/watch-news-analysis-provider.ts
 
 - 从 `WatchTreeConfig` 中收集所有 `isHolding: true` 的唯一股票，作为批量消息捕捉目标。
 - 通过 `WatchNewsAnalysisProvider` 调用默认 GPT/Codex 分析通道，对单只股票执行最近 48 小时消息捕捉与分析。
-- 消息源和筛选规则由 provider prompt 约束：公司官网、上证 e 互动、深交所互动易、官方投资者问答、东方财富、澎湃、界面新闻、科创板日报、雪球当日交易时段帖子及其权威渠道查证。
+- 当前 `CodexWatchNewsAnalysisProvider` 会先通过 `EastMoneyWatchNewsNoticeSource` 确定性拉取东方财富公告聚合中的最近公告候选，再把候选公告注入模型 prompt。该步骤用于覆盖财报预告、业绩预告、异常波动、重大合同等法定信息披露消息，不属于盯盘行情数据 provider。
+- 消息源和筛选规则由 provider prompt 约束：交易所公告/法定信息披露公告、公司官网、上证 e 互动、深交所互动易、官方投资者问答、东方财富、澎湃、界面新闻、科创板日报、雪球当日交易时段帖子及其权威渠道查证。
 - `WatchNewsStore` 维护 `watch-news.json`，按 `secid + 来源/标题/链接/摘要` 生成去重 key，重复消息不再写入。
 - 消息是否未读由 `readAt` 判断。Renderer 鼠标悬停新消息感叹号后调用 `markWatchNewsRead()`，写入 `readAt` 并隐藏感叹号。
 - Main 进程根据 `config.json.watchNewsIntervalHours` 设置后台定时任务，默认 3 小时。手动“持仓股消息”按钮和股票右键“最新消息”不会依赖定时器。
+- 每次 Codex 消息分析都会在 `user_data/watch-news-runs/<run-id>/` 下保留临时 debug 资料：`prompt.txt`、`events.jsonl`、`stderr.log`、`report.md` 和 `meta.json`。Renderer 通过“消息Debug”按钮或持仓股右键“分析Debug”读取最近一次运行，展示模型搜索、stderr、prompt、report 和错误信息。该窗口用于排查模型通道或消息源问题，不参与消息去重和业务状态。
 
 `WatchNewsAnalysisProvider` 是消息面 AI 适配层。当前实现是 `CodexWatchNewsAnalysisProvider`，复用现有 Codex CLI 只读联网能力，要求模型只输出 JSON 数组。未来接入 OpenAI API、Tushare 新闻接口或券商资讯接口时，应新增 provider 实现并保持 `WatchNewsService`、renderer 和 `watch-news.json` 格式不变。
 
@@ -836,6 +838,10 @@ user_data/stock_research_spec.md
 user_data/watch-tree.json
 user_data/watch-quotes-cache.json
 user_data/watch-news.json
+user_data/watch-news-runs/<run-id>/prompt.txt
+user_data/watch-news-runs/<run-id>/meta.json
+user_data/watch-news-runs/<run-id>/events.jsonl
+user_data/watch-news-runs/<run-id>/stderr.log
 user_data/watch-news-runs/<run-id>/report.md
 user_data/runs/<run-id>/report.md
 user_data/runs/<run-id>/events.jsonl
@@ -918,6 +924,24 @@ interface WatchNewsHistory {
 
 消息历史最多保留 500 条。`readAt` 缺失表示未读；未读消息会让持仓股名称上显示感叹号。用户悬停查看新消息摘要后，renderer 调用 IPC 标记已读，感叹号消失。右键“显示消息”只读取历史，不改变已读状态。
 
+### watch-news-runs
+
+由 `CodexWatchNewsAnalysisProvider` 维护。每次持仓股消息分析创建一个目录：
+
+```text
+user_data/watch-news-runs/<ISO时间>-<secid>/
+```
+
+目录内容：
+
+- `prompt.txt`：本次传给模型的完整 prompt，包含东方财富公告候选。
+- `meta.json`：股票 `secid`、名称、创建时间和可选错误信息。
+- `events.jsonl`：Codex CLI 输出的事件流，用于展示搜索 query、错误、模型过程。
+- `stderr.log`：Codex CLI stderr。
+- `report.md`：模型最终输出；如果模型通道失败，可能不存在。
+
+“消息Debug”窗口只读取这些文件并展示，不修改消息历史。
+
 ### 盯盘导出数据包
 
 用户通过“导出数据”选择目录后，应用写入：
@@ -969,9 +993,10 @@ watch-market-history.json
 新增持仓股消息 provider 时：
 
 1. 实现 `WatchNewsAnalysisProvider`。
-2. provider 内部负责消息源抓取、模型 token/base URL、模型选择、请求协议、输出解析和错误归一化。
-3. 输出统一转换为 `WatchNewsDraft[]`，由 `WatchNewsService` 统一去重、落库和返回结果。
-4. 不修改 `watch-view`、`watch-controller` 的消息展示逻辑，除非新增共享类型字段。
+2. provider 内部负责消息源抓取、模型 token/base URL、模型选择、请求协议、输出解析和错误归一化。若 provider 使用外部源预抓取候选消息，应在 provider 内部完成，并把候选转换为统一 prompt 或统一内部结构。
+3. 如需支持 Debug，provider 实现 `getLatestDebugRun()` 并返回 `WatchNewsDebugRun`；renderer 只依赖该共享类型，不直接读取文件。
+4. 输出统一转换为 `WatchNewsDraft[]`，由 `WatchNewsService` 统一去重、落库和返回结果。
+5. 不修改 `watch-view`、`watch-controller` 的消息展示逻辑，除非新增共享类型字段。
 
 ### 新增主功能模块
 

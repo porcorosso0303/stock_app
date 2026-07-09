@@ -119,7 +119,8 @@ function createHarness(options: {
       list: vi.fn().mockResolvedValue([]),
       markRead: vi.fn().mockResolvedValue([]),
       analyzeStock: vi.fn().mockResolvedValue({ stockCount: 1, newMessageCount: 0, messages: [], errors: [] }),
-      analyzeHoldingStocks: vi.fn().mockResolvedValue({ stockCount: 0, newMessageCount: 0, messages: [], errors: [] })
+      analyzeHoldingStocks: vi.fn().mockResolvedValue({ stockCount: 0, newMessageCount: 0, messages: [], errors: [] }),
+      getLatestDebugRun: vi.fn().mockResolvedValue(undefined)
     }
   });
 

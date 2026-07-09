@@ -114,6 +114,7 @@
           <div class="toolbar-actions">
             <button id="refresh-watch-quotes" type="button">刷新行情</button>
             <button id="refresh-watch-news" type="button">持仓股消息</button>
+            <button id="show-watch-news-debug" type="button">消息Debug</button>
             <button id="export-watch-data" type="button">导出数据</button>
             <button id="import-watch-data" type="button">导入数据</button>
           </div>
@@ -130,6 +131,13 @@
             <button id="close-watch-news-history" type="button">×</button>
           </div>
           <div id="watch-news-history-content" class="watch-news-history-content"></div>
+        </div>
+        <div id="watch-news-debug-panel" class="watch-news-debug-panel" hidden>
+          <div class="watch-news-debug-header">
+            <strong id="watch-news-debug-title">消息分析 Debug</strong>
+            <button id="close-watch-news-debug" type="button">×</button>
+          </div>
+          <div id="watch-news-debug-content" class="watch-news-debug-content"></div>
         </div>
       </section>
     </main>

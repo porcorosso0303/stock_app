@@ -5,6 +5,7 @@ import type {
   StockTrend,
   WatchIndustryPosition,
   WatchMarketCache,
+  WatchNewsDebugRun,
   WatchNewsMessage,
   WatchTreeConfig,
   WatchTreeNode
@@ -348,6 +349,17 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     }
   }
 
+  async function showWatchNewsDebug(nodeId?: string): Promise<void> {
+    const node = nodeId ? findWatchTreeNode(activeRoot(), nodeId) : undefined;
+    const secid = node?.type === "stock" ? node.secid : undefined;
+    try {
+      const debugRun = await api.getWatchNewsDebugRun(secid);
+      renderNewsDebugPanel(debugRun);
+    } catch (error) {
+      elements.watchStatus.textContent = getErrorMessage(error);
+    }
+  }
+
   async function markNewsReadFromAlert(alert: HTMLElement): Promise<void> {
     const secid = alert.dataset.watchNewsSecid ?? "";
     const messageId = alert.dataset.watchNewsId ?? "";
@@ -412,6 +424,38 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
         </article>
       `).join("");
     elements.watchNewsHistoryPanel.hidden = false;
+  }
+
+  function renderNewsDebugPanel(debugRun: WatchNewsDebugRun | undefined): void {
+    elements.watchNewsDebugTitle.textContent = debugRun
+      ? `消息分析 Debug：${debugRun.stockName ?? debugRun.secid ?? "最近一次"}`
+      : "消息分析 Debug";
+    elements.watchNewsDebugContent.innerHTML = debugRun
+      ? `
+        <div class="watch-news-debug-meta">
+          <div>运行：${escapeHtml(debugRun.runId)}</div>
+          <div>时间：${escapeHtml(formatDateTime(debugRun.createdAt))}</div>
+          <div>目录：${escapeHtml(debugRun.runDirectory)}</div>
+          ${debugRun.errorMessage ? `<div class="watch-news-debug-error">错误：${escapeHtml(debugRun.errorMessage)}</div>` : ""}
+        </div>
+        ${renderDebugSection("模型过程", debugRun.events.length > 0
+          ? debugRun.events.map((event) => `[${event.level}] ${event.text}`).join("\n")
+          : "暂无事件输出")}
+        ${renderDebugSection("stderr", debugRun.stderr || "无")}
+        ${renderDebugSection("prompt", debugRun.prompt || "无")}
+        ${renderDebugSection("report", debugRun.reportMarkdown || "无")}
+      `
+      : '<p class="watch-news-history-meta">暂无消息分析运行记录。</p>';
+    elements.watchNewsDebugPanel.hidden = false;
+  }
+
+  function renderDebugSection(title: string, content: string): string {
+    return `
+      <details class="watch-news-debug-section" open>
+        <summary>${escapeHtml(title)}</summary>
+        <pre>${escapeHtml(content)}</pre>
+      </details>
+    `;
   }
 
   async function updateMarketData(
@@ -808,6 +852,9 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
         break;
       case "show-news":
         void showStockNewsHistory(id);
+        break;
+      case "debug-news":
+        void showWatchNewsDebug(id);
         break;
       case "rename-workspace":
         beginRenameWorkspace(id);
@@ -1222,6 +1269,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     bindEvents: () => {
       elements.refreshWatchQuotes.addEventListener("click", () => void refreshQuotes(true));
       elements.refreshWatchNews.addEventListener("click", () => void refreshHoldingNews());
+      elements.showWatchNewsDebug.addEventListener("click", () => void showWatchNewsDebug());
       elements.exportWatchData.addEventListener("click", () => void exportData());
       elements.importWatchData.addEventListener("click", () => void importData());
       elements.addWatchWorkspace.addEventListener("click", () => void createWorkspace());
@@ -1242,6 +1290,9 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       elements.watchContextMenu.addEventListener("click", handleContextMenuClick);
       elements.closeWatchNewsHistory.addEventListener("click", () => {
         elements.watchNewsHistoryPanel.hidden = true;
+      });
+      elements.closeWatchNewsDebug.addEventListener("click", () => {
+        elements.watchNewsDebugPanel.hidden = true;
       });
       elements.watchNewsHistoryHeader.addEventListener("pointerdown", beginNewsPanelDrag);
       elements.watchNewsHistoryHeader.addEventListener("pointermove", moveNewsPanelDrag);

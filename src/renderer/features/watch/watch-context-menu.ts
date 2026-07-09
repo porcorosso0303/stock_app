@@ -17,6 +17,7 @@ export function openWatchNodeContextMenu(
       ${node.isHolding ? `
         <button data-watch-menu-action="refresh-news" data-watch-id="${escapeHtml(node.id)}" type="button">最新消息</button>
         <button data-watch-menu-action="show-news" data-watch-id="${escapeHtml(node.id)}" type="button">显示消息</button>
+        <button data-watch-menu-action="debug-news" data-watch-id="${escapeHtml(node.id)}" type="button">分析Debug</button>
       ` : ""}
       <button data-watch-menu-action="edit" data-watch-id="${escapeHtml(node.id)}" type="button">编辑股票</button>
       <button data-watch-menu-action="delete" data-watch-id="${escapeHtml(node.id)}" type="button">删除股票</button>

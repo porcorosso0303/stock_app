@@ -14,8 +14,12 @@ describe("market provider settings dialog", () => {
     expect(dom).toContain('marketProviderSelect: getElement<HTMLSelectElement>("market-provider-select")');
     expect(html).toContain('id="watch-news-settings-dialog"');
     expect(html).toContain('id="watch-news-interval-hours"');
+    expect(html).toContain('id="show-watch-news-debug"');
+    expect(html).toContain('id="watch-news-debug-panel"');
     expect(dom).toContain('watchNewsSettingsDialog: getElement<HTMLDialogElement>("watch-news-settings-dialog")');
     expect(dom).toContain('watchNewsIntervalHours: getElement<HTMLInputElement>("watch-news-interval-hours")');
+    expect(dom).toContain('showWatchNewsDebug: getElement<HTMLButtonElement>("show-watch-news-debug")');
+    expect(dom).toContain('watchNewsDebugPanel: getElement<HTMLElement>("watch-news-debug-panel")');
   });
 
   it("opens the data source dialog from menu events and saves through the provider API", async () => {
@@ -30,7 +34,9 @@ describe("market provider settings dialog", () => {
     expect(main).toContain("bindMarketProviderSettings");
     expect(main).toContain("api.setWatchMarketProvider");
     expect(ipc).toContain('openWatchNewsSettings: "watch-news-settings:open"');
+    expect(ipc).toContain('getWatchNewsDebugRun: "watch-news:debug-run"');
     expect(ipc).toContain("setWatchNewsSettings");
+    expect(preload).toContain("getWatchNewsDebugRun");
     expect(preload).toContain("onOpenWatchNewsSettings");
     expect(preload).toContain("setWatchNewsSettings");
     expect(main).toContain("bindWatchNewsSettings");

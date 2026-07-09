@@ -1,5 +1,6 @@
 import type {
   WatchNewsAnalysisResult,
+  WatchNewsDebugRun,
   WatchNewsMessage,
   WatchTreeConfig
 } from "../shared/types";
@@ -29,6 +30,10 @@ export class WatchNewsService {
 
   async markRead(secid: string, messageIds?: string[]): Promise<WatchNewsMessage[]> {
     return await this.store.markRead(secid, messageIds, this.now().toISOString());
+  }
+
+  async getLatestDebugRun(secid?: string): Promise<WatchNewsDebugRun | undefined> {
+    return await this.provider.getLatestDebugRun?.(secid);
   }
 
   async analyzeStock(stock: { secid: string; stockName: string }): Promise<WatchNewsAnalysisResult> {

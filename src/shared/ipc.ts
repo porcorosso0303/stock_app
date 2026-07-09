@@ -11,6 +11,7 @@ import type {
   WatchMarketRequestOptions,
   WatchMarketProviderId,
   WatchNewsAnalysisResult,
+  WatchNewsDebugRun,
   WatchNewsMessage,
   WatchNewsSettings,
   WatchTreeConfig
@@ -39,6 +40,7 @@ export const IPC = {
   importWatchData: "watch-data:import",
   analyzeWatchStockNews: "watch-news:analyze-stock",
   analyzeHoldingWatchNews: "watch-news:analyze-holdings",
+  getWatchNewsDebugRun: "watch-news:debug-run",
   listWatchNews: "watch-news:list",
   markWatchNewsRead: "watch-news:mark-read",
   getWatchNewsSettings: "watch-news-settings:get",
@@ -78,6 +80,7 @@ export interface StockResearchApi {
   importWatchData(): Promise<WatchDataTransferResult | undefined>;
   analyzeWatchStockNews(stock: { secid: string; stockName: string }): Promise<WatchNewsAnalysisResult>;
   analyzeHoldingWatchNews(): Promise<WatchNewsAnalysisResult>;
+  getWatchNewsDebugRun(secid?: string): Promise<WatchNewsDebugRun | undefined>;
   listWatchNews(secids?: string[]): Promise<WatchNewsMessage[]>;
   markWatchNewsRead(secid: string, messageIds?: string[]): Promise<WatchNewsMessage[]>;
   getWatchNewsSettings(): Promise<WatchNewsSettings>;

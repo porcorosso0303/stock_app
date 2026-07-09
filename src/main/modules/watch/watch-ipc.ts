@@ -6,6 +6,7 @@ import type {
   WatchMarketData,
   WatchMarketRequestOptions,
   WatchNewsAnalysisResult,
+  WatchNewsDebugRun,
   WatchNewsMessage,
   WatchNewsSettings,
   WatchTreeConfig
@@ -37,6 +38,7 @@ export interface WatchNewsServiceLike {
   markRead(secid: string, messageIds?: string[]): Promise<WatchNewsMessage[]>;
   analyzeStock(stock: { secid: string; stockName: string }): Promise<WatchNewsAnalysisResult>;
   analyzeHoldingStocks(config: WatchTreeConfig): Promise<WatchNewsAnalysisResult>;
+  getLatestDebugRun(secid?: string): Promise<WatchNewsDebugRun | undefined>;
 }
 
 export interface ConfigStoreLike {
@@ -151,6 +153,13 @@ export function registerWatchIpc(dependencies: WatchIpcDependencies): void {
     const result = await watchNewsService.analyzeHoldingStocks(await watchTreeStore.get());
     onWatchNewsUpdated?.();
     return result;
+  });
+
+  ipcMain.handle(IPC.getWatchNewsDebugRun, async (_event, value) => {
+    const input = value === undefined ? {} : requireObject(value);
+    return await watchNewsService.getLatestDebugRun(
+      typeof input.secid === "string" && input.secid.trim() ? input.secid.trim() : undefined
+    );
   });
 
   ipcMain.handle(IPC.listWatchNews, async (_event, value) => {

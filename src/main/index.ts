@@ -32,7 +32,10 @@ import { ResearchSpecStore } from "./research-spec-store";
 import { WatchDataTransferService } from "./watch-data-transfer-service";
 import { WatchMarketCacheStore } from "./watch-market-cache-store";
 import { WatchMarketService } from "./watch-market-service";
-import { CodexWatchNewsAnalysisProvider } from "./watch-news-analysis-provider";
+import {
+  CodexWatchNewsAnalysisProvider,
+  EastMoneyWatchNewsNoticeSource
+} from "./watch-news-analysis-provider";
 import { WatchNewsService } from "./watch-news-service";
 import { WatchNewsStore } from "./watch-news-store";
 import { WatchTreeStore } from "./watch-tree-store";
@@ -133,6 +136,7 @@ void app.whenReady().then(async () => {
   const watchNewsProvider = new CodexWatchNewsAnalysisProvider({
     codexLocator,
     userDataDirectory: userData,
+    noticeSource: new EastMoneyWatchNewsNoticeSource(createElectronNetFetch(net)),
     createRunner: (options) => new CodexRunner(options)
   });
   const watchNewsService = new WatchNewsService(watchNewsStore, watchNewsProvider);
