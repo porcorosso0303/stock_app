@@ -30,6 +30,47 @@ describe("WatchNewsStore", () => {
     const read = await store.markRead("1.600001", [inserted[0].id], "2026-07-09T09:05:00.000Z");
     expect(read[0].readAt).toBe("2026-07-09T09:05:00.000Z");
   });
+
+  it("upgrades an AI-pending announcement in place without duplicating it", async () => {
+    const store = await createStore();
+    const fallback = {
+      ...draft("1.603986", "业绩预增公告"),
+      summary: "权威公告已捕获，AI 分析未完成。",
+      analysis: "AI 分析未完成。",
+      confidence: "high" as const
+    };
+    const [inserted] = await store.addMessages([fallback], "2026-07-12T10:00:00.000Z");
+    await store.markRead("1.603986", [inserted.id], "2026-07-12T10:01:00.000Z");
+
+    const newlyInserted = await store.addMessages([{
+      ...fallback,
+      sourceUrl: "https://www.sse.com.cn/disclosure/603986/forecast.pdf",
+      summary: "预计上半年归母净利润同比显著增长。",
+      analysis: "业绩超出市场预期，短期偏利好。"
+    }], "2026-07-12T10:05:00.000Z");
+
+    expect(newlyInserted).toEqual([]);
+    const messages = await store.list(["1.603986"]);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      id: inserted.id,
+      fetchedAt: "2026-07-12T10:00:00.000Z",
+      readAt: "2026-07-12T10:01:00.000Z",
+      summary: "预计上半年归母净利润同比显著增长。",
+      analysis: "业绩超出市场预期，短期偏利好。"
+    });
+  });
+
+  it("serializes concurrent message writes from different stocks", async () => {
+    const store = await createStore();
+
+    await Promise.all([
+      store.addMessages([draft("1.600001", "消息 A")], "2026-07-12T10:00:00.000Z"),
+      store.addMessages([draft("0.000001", "消息 B")], "2026-07-12T10:00:00.000Z")
+    ]);
+
+    await expect(store.list()).resolves.toHaveLength(2);
+  });
 });
 
 describe("WatchNewsService", () => {
@@ -46,6 +87,45 @@ describe("WatchNewsService", () => {
     expect(result.newMessageCount).toBe(2);
     expect(provider.analyze).toHaveBeenCalledTimes(2);
     await expect(service.list()).resolves.toHaveLength(2);
+  });
+
+  it("stores and notifies partial announcements before batch AI analysis finishes", async () => {
+    const store = await createStore();
+    let releaseAnalysis!: () => void;
+    const analysisGate = new Promise<void>((resolve) => {
+      releaseAnalysis = resolve;
+    });
+    const provider = {
+      analyze: vi.fn(async (
+        stock: { secid: string; stockName: string },
+        onPartialDrafts?: (drafts: ReturnType<typeof draft>[]) => Promise<void>
+      ) => {
+        await onPartialDrafts?.([{
+          ...draft(stock.secid, `${stock.stockName} 公告`),
+          analysis: "AI 分析未完成。"
+        }]);
+        await analysisGate;
+        return [];
+      })
+    } as unknown as WatchNewsAnalysisProvider;
+    const onMessagesChanged = vi.fn();
+    const service = new WatchNewsService(
+      store,
+      provider,
+      () => new Date("2026-07-12T10:00:00.000Z"),
+      onMessagesChanged
+    );
+
+    const running = service.analyzeHoldingStocks(configWithHoldings());
+    try {
+      await vi.waitFor(async () => {
+        expect(await service.list()).toHaveLength(2);
+      });
+      expect(onMessagesChanged).toHaveBeenCalledTimes(2);
+    } finally {
+      releaseAnalysis();
+      await running;
+    }
   });
 });
 

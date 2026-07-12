@@ -14,6 +14,7 @@ const MAX_MESSAGES = 500;
 
 export class WatchNewsStore {
   private readonly store: JsonStore<WatchNewsHistory>;
+  private mutationQueue: Promise<void> = Promise.resolve();
 
   constructor(path: string) {
     this.store = new JsonStore(path, () => ({ version: 1, messages: [] }));
@@ -28,25 +29,56 @@ export class WatchNewsStore {
   }
 
   async addMessages(drafts: WatchNewsDraft[], fetchedAt: string): Promise<WatchNewsMessage[]> {
-    const history = await this.getHistory();
-    const knownKeys = new Set(history.messages.map((message) => message.dedupeKey));
-    const inserted: WatchNewsMessage[] = [];
-    for (const draft of drafts) {
-      const message = normalizeDraft(draft, fetchedAt);
-      if (knownKeys.has(message.dedupeKey)) {
-        continue;
-      }
-      knownKeys.add(message.dedupeKey);
-      inserted.push(message);
-    }
-    if (inserted.length === 0) {
-      return [];
-    }
-    await this.writeMessages([...inserted, ...history.messages]);
-    return inserted;
+    return await this.enqueueMutation(async () => await this.addMessagesNow(drafts, fetchedAt));
   }
 
   async markRead(secid: string, messageIds: string[] | undefined, readAt: string): Promise<WatchNewsMessage[]> {
+    return await this.enqueueMutation(async () => await this.markReadNow(secid, messageIds, readAt));
+  }
+
+  private async addMessagesNow(drafts: WatchNewsDraft[], fetchedAt: string): Promise<WatchNewsMessage[]> {
+    const history = await this.getHistory();
+    const messages = [...history.messages];
+    const knownByKey = new Map(messages.map((message) => [message.dedupeKey, message]));
+    const inserted: WatchNewsMessage[] = [];
+    let upgraded = false;
+    for (const draft of drafts) {
+      const message = normalizeDraft(draft, fetchedAt);
+      const existing = knownByKey.get(message.dedupeKey)
+        ?? findPendingAnnouncementByTitle(messages, message);
+      if (existing) {
+        if (shouldUpgradePendingAnalysis(existing, message)) {
+          const replacement: WatchNewsMessage = {
+            ...message,
+            id: existing.id,
+            fetchedAt: existing.fetchedAt,
+            dedupeKey: existing.dedupeKey,
+            ...(existing.readAt ? { readAt: existing.readAt } : {})
+          };
+          const index = messages.findIndex((item) => item.dedupeKey === existing.dedupeKey);
+          messages[index] = replacement;
+          knownByKey.set(replacement.dedupeKey, replacement);
+          knownByKey.set(message.dedupeKey, replacement);
+          upgraded = true;
+        }
+        continue;
+      }
+      knownByKey.set(message.dedupeKey, message);
+      inserted.push(message);
+      messages.unshift(message);
+    }
+    if (inserted.length === 0 && !upgraded) {
+      return [];
+    }
+    await this.writeMessages(messages);
+    return inserted;
+  }
+
+  private async markReadNow(
+    secid: string,
+    messageIds: string[] | undefined,
+    readAt: string
+  ): Promise<WatchNewsMessage[]> {
     const ids = messageIds && messageIds.length > 0 ? new Set(messageIds) : undefined;
     const history = await this.getHistory();
     let changed = false;
@@ -63,6 +95,12 @@ export class WatchNewsStore {
     return messages
       .filter((message) => message.secid === secid)
       .sort((left, right) => right.fetchedAt.localeCompare(left.fetchedAt));
+  }
+
+  private async enqueueMutation<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.mutationQueue.then(operation, operation);
+    this.mutationQueue = result.then(() => undefined, () => undefined);
+    return await result;
   }
 
   private async getHistory(): Promise<WatchNewsHistory> {
@@ -84,6 +122,24 @@ export class WatchNewsStore {
         .slice(0, MAX_MESSAGES)
     });
   }
+}
+
+function shouldUpgradePendingAnalysis(
+  existing: WatchNewsMessage,
+  incoming: WatchNewsMessage
+): boolean {
+  return existing.analysis.includes("AI 分析未完成")
+    && !incoming.analysis.includes("AI 分析未完成");
+}
+
+function findPendingAnnouncementByTitle(
+  messages: WatchNewsMessage[],
+  incoming: WatchNewsMessage
+): WatchNewsMessage | undefined {
+  return messages.find((message) =>
+    message.secid === incoming.secid
+    && normalizeText(message.title) === normalizeText(incoming.title)
+    && shouldUpgradePendingAnalysis(message, incoming));
 }
 
 function normalizeDraft(draft: WatchNewsDraft, fetchedAt: string): WatchNewsMessage {

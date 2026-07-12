@@ -132,6 +132,11 @@ void app.whenReady().then(async () => {
     watchTreeStore,
     watchMarketCacheStore
   );
+  const notifyWatchNewsUpdated = (): void => {
+    BrowserWindow.getAllWindows().forEach((window) => {
+      window.webContents.send(IPC.watchNewsUpdated);
+    });
+  };
   const watchNewsStore = new WatchNewsStore(join(userData, "watch-news.json"));
   const watchNewsProvider = new CodexWatchNewsAnalysisProvider({
     codexLocator,
@@ -139,14 +144,14 @@ void app.whenReady().then(async () => {
     noticeSource: new EastMoneyWatchNewsNoticeSource(createElectronNetFetch(net)),
     createRunner: (options) => new CodexRunner(options)
   });
-  const watchNewsService = new WatchNewsService(watchNewsStore, watchNewsProvider);
+  const watchNewsService = new WatchNewsService(
+    watchNewsStore,
+    watchNewsProvider,
+    undefined,
+    notifyWatchNewsUpdated
+  );
   let watchNewsTimer: NodeJS.Timeout | undefined;
   let watchNewsInFlight = false;
-  const notifyWatchNewsUpdated = (): void => {
-    BrowserWindow.getAllWindows().forEach((window) => {
-      window.webContents.send(IPC.watchNewsUpdated);
-    });
-  };
   const runScheduledWatchNews = async (): Promise<void> => {
     if (watchNewsInFlight) {
       return;

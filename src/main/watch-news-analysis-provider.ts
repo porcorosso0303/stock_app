@@ -22,7 +22,10 @@ export interface WatchNewsStockInput {
 }
 
 export interface WatchNewsAnalysisProvider {
-  analyze(stock: WatchNewsStockInput): Promise<WatchNewsDraft[]>;
+  analyze(
+    stock: WatchNewsStockInput,
+    onPartialDrafts?: (drafts: WatchNewsDraft[]) => Promise<void>
+  ): Promise<WatchNewsDraft[]>;
   getLatestDebugRun?(secid?: string): Promise<WatchNewsDebugRun | undefined>;
 }
 
@@ -75,7 +78,10 @@ export class CodexWatchNewsAnalysisProvider implements WatchNewsAnalysisProvider
     this.now = dependencies.now ?? (() => new Date());
   }
 
-  async analyze(stock: WatchNewsStockInput): Promise<WatchNewsDraft[]> {
+  async analyze(
+    stock: WatchNewsStockInput,
+    onPartialDrafts?: (drafts: WatchNewsDraft[]) => Promise<void>
+  ): Promise<WatchNewsDraft[]> {
     const now = this.now();
     const lookbackHours = stock.existingMessages.length === 0 ? 7 * 24 : 48;
     const { candidates, errorMessage: noticeErrorMessage } = await this.listNoticeCandidates(
@@ -86,6 +92,9 @@ export class CodexWatchNewsAnalysisProvider implements WatchNewsAnalysisProvider
     const fallbackDrafts = candidates.flatMap((candidate) =>
       isMaterialNotice(candidate) ? [buildNoticeFallbackDraft(stock, candidate)] : []
     );
+    if (fallbackDrafts.length > 0) {
+      await onPartialDrafts?.(fallbackDrafts);
+    }
     const runDirectory = join(
       this.dependencies.userDataDirectory,
       "watch-news-runs",

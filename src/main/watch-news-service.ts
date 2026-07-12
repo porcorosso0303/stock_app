@@ -21,7 +21,8 @@ export class WatchNewsService {
   constructor(
     private readonly store: WatchNewsStoreLike,
     private readonly provider: WatchNewsAnalysisProvider,
-    private readonly now: () => Date = () => new Date()
+    private readonly now: () => Date = () => new Date(),
+    private readonly onMessagesChanged: () => void = () => undefined
   ) {}
 
   async list(secids?: string[]): Promise<WatchNewsMessage[]> {
@@ -53,6 +54,7 @@ export class WatchNewsService {
   private async analyzeStocks(stocks: WatchHoldingStock[]): Promise<WatchNewsAnalysisResult> {
     const uniqueStocks = uniqueBySecid(stocks);
     const results = await mapWithConcurrency(uniqueStocks, 3, async (stock) => {
+      const messages: WatchNewsMessage[] = [];
       try {
         const existingMessages = await this.store.list([stock.secid]);
         const drafts = await this.provider.analyze({
@@ -63,20 +65,31 @@ export class WatchNewsService {
             sourceUrl: message.sourceUrl,
             fetchedAt: message.fetchedAt
           }))
+        }, async (partialDrafts) => {
+          const inserted = await this.store.addMessages(
+            partialDrafts,
+            this.now().toISOString()
+          );
+          messages.push(...inserted);
+          if (inserted.length > 0) {
+            this.onMessagesChanged();
+          }
         });
-        return { stock, drafts };
+        const inserted = await this.store.addMessages(drafts, this.now().toISOString());
+        messages.push(...inserted);
+        if (drafts.length > 0) {
+          this.onMessagesChanged();
+        }
+        return { stock, messages };
       } catch (error) {
         return {
           stock,
           errorMessage: error instanceof Error ? error.message : String(error),
-          drafts: []
+          messages
         };
       }
     });
-    const messages = await this.store.addMessages(
-      results.flatMap((result) => result.drafts),
-      this.now().toISOString()
-    );
+    const messages = uniqueMessages(results.flatMap((result) => result.messages));
     const errors = results.flatMap((result) => result.errorMessage
       ? [{
           secid: result.stock.secid,
@@ -91,6 +104,10 @@ export class WatchNewsService {
       errors
     };
   }
+}
+
+function uniqueMessages(messages: WatchNewsMessage[]): WatchNewsMessage[] {
+  return [...new Map(messages.map((message) => [message.id, message])).values()];
 }
 
 function uniqueBySecid(stocks: WatchHoldingStock[]): WatchHoldingStock[] {

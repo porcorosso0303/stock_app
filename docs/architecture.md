@@ -635,11 +635,13 @@ src/main/watch-news-analysis-provider.ts
 - 从 `WatchTreeConfig` 中收集所有 `isHolding: true` 的唯一股票，作为批量消息捕捉目标。
 - 通过 `WatchNewsAnalysisProvider` 调用默认 GPT/Codex 分析通道，对单只股票执行最近 48 小时消息捕捉与分析。
 - 当前 `CodexWatchNewsAnalysisProvider` 会先通过 `EastMoneyWatchNewsNoticeSource` 确定性拉取东方财富公告聚合中的最近公告候选，再把候选公告注入模型 prompt。该步骤用于覆盖财报预告、业绩预告、异常波动、重大合同等法定信息披露消息，不属于盯盘行情数据 provider。
+- 消息处理采用两阶段持久化。provider 筛出重要权威公告后，通过异步部分结果回调立即交给 `WatchNewsService`；service 在启动 Codex 深度分析前就完成落库并触发 `watch-news:updated`。因此用户不必等待模型结束，也不必等待同批其他股票结束，即可看到已捕获公告。
+- AI 完成后，完整摘要和分析再次交给 store。相同去重键，或同一股票下标题相同且仍标记“AI 分析未完成”的消息，会原位升级并保留原消息 id、首次获取时间和已读状态，不产生第二条重复消息。provider 不直接访问存储或 Electron 窗口。
 - 正常扫描的公告窗口是最近 48 小时；当该股票尚无任何消息历史时，首次扫描使用最近 7 天的有限回补窗口，用于恢复此前因软件未运行或模型通道失败而漏存的公告。联网媒体搜索仍严格限制为最近 48 小时。
 - 权威公告抓取和 AI 分析是两个可靠性边界。模型成功时优先保存模型生成的摘要与分析；模型失败、超时、取消或返回格式错误时，财报、业绩、重大合同、监管、异常波动等重要公告仍会转换为 `WatchNewsDraft` 落库，并明确标记“AI 分析未完成”，防止已抓到的法定公告因模型故障丢失。
 - 消息分析使用活动感知的双重超时，每只股票的 `CodexRunner` 独立计时：连续 3 分钟没有可解析的正常模型消息或联网搜索进度时停止；只要持续有有效进度就继续运行，但单只股票最多运行 12 分钟。stderr、连接错误和错误级事件不算进度，因此持续断线不会延长空闲超时。超时后 runner 停止自己持有的子进程、把具体错误写入 Debug 元数据，并按上一条规则保留已经抓到的权威公告。批量持仓股分析中的各股票互不共享超时预算。
 - 消息源和筛选规则由 provider prompt 约束：交易所公告/法定信息披露公告、公司官网、上证 e 互动、深交所互动易、官方投资者问答、东方财富、澎湃、界面新闻、科创板日报、雪球当日交易时段帖子及其权威渠道查证。
-- `WatchNewsStore` 维护 `watch-news.json`，按 `secid + 来源/标题/链接/摘要` 生成去重 key，重复消息不再写入。
+- `WatchNewsStore` 维护 `watch-news.json`，按 `secid + 来源/标题/链接/摘要` 生成去重 key，重复消息不再写入。所有增加、升级和已读写操作通过 store 内部 mutation queue 串行执行，避免多个股票并发回调时发生读改写覆盖。
 - 消息是否未读由 `readAt` 判断。Renderer 鼠标悬停新消息感叹号后调用 `markWatchNewsRead()`，写入 `readAt` 并隐藏感叹号。
 - Main 进程根据 `config.json.watchNewsIntervalHours` 设置后台定时任务，默认 3 小时。手动“持仓股消息”按钮和股票右键“最新消息”不会依赖定时器。
 - 每次 Codex 消息分析都会在 `user_data/watch-news-runs/<run-id>/` 下保留临时 debug 资料：`prompt.txt`、`events.jsonl`、`stderr.log`、`report.md` 和 `meta.json`。Renderer 通过“消息Debug”按钮或持仓股右键“分析Debug”读取最近一次运行，展示模型搜索、stderr、prompt、report 和错误信息。该窗口用于排查模型通道或消息源问题，不参与消息去重和业务状态。

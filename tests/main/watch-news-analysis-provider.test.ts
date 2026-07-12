@@ -7,6 +7,7 @@ import {
   EastMoneyWatchNewsNoticeSource,
   type WatchNewsNoticeSource
 } from "../../src/main/watch-news-analysis-provider";
+import type { WatchNewsDraft } from "../../src/main/watch-news-store";
 import type { CodexLauncher } from "../../src/shared/types";
 
 const directories: string[] = [];
@@ -135,6 +136,55 @@ describe("CodexWatchNewsAnalysisProvider", () => {
       confidence: "high"
     });
     expect(drafts[0].analysis).toContain("AI 分析未完成");
+  });
+
+  it("emits material announcement drafts before waiting for Codex", async () => {
+    const userDataDirectory = await createTempDirectory();
+    let resolveRun!: (result: { status: "success"; reportMarkdown: string }) => void;
+    const runnerResult = new Promise<{ status: "success"; reportMarkdown: string }>((resolve) => {
+      resolveRun = resolve;
+    });
+    let runnerCreated = false;
+    let runnerWasCreatedAtEmission = true;
+    let emittedDrafts: WatchNewsDraft[] = [];
+    let markEmitted!: () => void;
+    const emitted = new Promise<void>((resolve) => {
+      markEmitted = resolve;
+    });
+    const provider = new CodexWatchNewsAnalysisProvider({
+      codexLocator: { detect: async () => ({ available: true, loggedIn: true, launcher }) },
+      userDataDirectory,
+      noticeSource: {
+        listRecent: async () => [{
+          title: "兆易创新:兆易创新2026年半年度业绩预增公告",
+          sourceName: "东方财富公告",
+          sourceUrl: "https://data.eastmoney.com/notices/detail/603986/AN202607091826846840.html",
+          occurredAt: "2026-07-09 17:34:03",
+          summary: "业绩预告"
+        }]
+      },
+      now: () => new Date("2026-07-12T10:25:00.000Z"),
+      createRunner: () => {
+        runnerCreated = true;
+        return { run: async () => await runnerResult, cancel: () => undefined };
+      }
+    });
+
+    const running = provider.analyze(
+      { secid: "1.603986", stockName: "兆易创新", existingMessages: [] },
+      async (drafts) => {
+        runnerWasCreatedAtEmission = runnerCreated;
+        emittedDrafts = drafts;
+        markEmitted();
+      }
+    );
+
+    await emitted;
+    expect(runnerWasCreatedAtEmission).toBe(false);
+    expect(emittedDrafts).toHaveLength(1);
+    expect(emittedDrafts[0].analysis).toContain("AI 分析未完成");
+    resolveRun({ status: "success", reportMarkdown: "[]" });
+    await running;
   });
 
   it("keeps material announcement candidates when Codex is unavailable", async () => {
