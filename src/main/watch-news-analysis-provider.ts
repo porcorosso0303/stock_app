@@ -208,14 +208,21 @@ export class CodexWatchNewsAnalysisProvider implements WatchNewsAnalysisProvider
       const eventsRaw = await readOptionalFile(join(runDirectory, "events.jsonl"));
       const stderr = await readOptionalFile(join(runDirectory, "stderr.log"));
       const reportMarkdown = await readOptionalFile(join(runDirectory, "report.md"));
+      const status = meta?.errorMessage
+        ? "failed"
+        : reportMarkdown.trim()
+          ? "completed"
+          : "running";
       return {
         runId: entry,
         runDirectory,
         secid: meta?.secid ?? secid ?? "",
         stockName: meta?.stockName,
         createdAt: meta?.createdAt ?? parseCreatedAtFromRunId(entry),
+        status,
         prompt,
         events: parseDebugEvents(eventsRaw),
+        rawEvents: eventsRaw,
         stderr,
         reportMarkdown,
         errorMessage: meta?.errorMessage

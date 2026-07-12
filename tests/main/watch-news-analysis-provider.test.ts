@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -98,8 +98,58 @@ describe("CodexWatchNewsAnalysisProvider", () => {
     expect(debugRun?.secid).toBe("1.603986");
     expect(debugRun?.prompt).toContain("兆易创新");
     expect(debugRun?.events.some((event) => event.text.includes("兆易创新 603986 财报预告"))).toBe(true);
+    expect(debugRun).toMatchObject({
+      status: "failed",
+      rawEvents: expect.stringContaining("兆易创新 603986 财报预告")
+    });
     expect(debugRun?.stderr).toContain("failed to connect to websocket");
     expect(debugRun?.errorMessage).toBe("Codex CLI 连接失败");
+  });
+
+  it("returns running status and the complete raw JSONL event stream", async () => {
+    const userDataDirectory = await createTempDirectory();
+    const runDirectory = join(
+      userDataDirectory,
+      "watch-news-runs",
+      "2026-07-12T11-48-21-100Z-1.688777"
+    );
+    const rawEvents = [
+      '{"type":"thread.started","thread_id":"thread-1"}',
+      '{"type":"item.completed","item":{"type":"web_search","query":"中控技术 最新消息"}}'
+    ].join("\n");
+    await mkdir(runDirectory, { recursive: true });
+    await writeFile(join(runDirectory, "meta.json"), JSON.stringify({
+      secid: "1.688777",
+      stockName: "中控技术",
+      createdAt: "2026-07-12T11:48:21.100Z"
+    }), "utf8");
+    await writeFile(join(runDirectory, "events.jsonl"), rawEvents, "utf8");
+    const provider = createAvailableProvider(userDataDirectory);
+
+    const debugRun = await provider.getLatestDebugRun("1.688777");
+
+    expect(debugRun).toMatchObject({ status: "running", rawEvents });
+  });
+
+  it("reports a run with a generated report as completed", async () => {
+    const userDataDirectory = await createTempDirectory();
+    const runDirectory = join(
+      userDataDirectory,
+      "watch-news-runs",
+      "2026-07-12T11-50-38-738Z-1.688777"
+    );
+    await mkdir(runDirectory, { recursive: true });
+    await writeFile(join(runDirectory, "meta.json"), JSON.stringify({
+      secid: "1.688777",
+      stockName: "中控技术",
+      createdAt: "2026-07-12T11:50:38.738Z"
+    }), "utf8");
+    await writeFile(join(runDirectory, "report.md"), "[]", "utf8");
+    const provider = createAvailableProvider(userDataDirectory);
+
+    const debugRun = await provider.getLatestDebugRun("1.688777");
+
+    expect(debugRun).toMatchObject({ status: "completed", reportMarkdown: "[]" });
   });
 
   it("keeps material announcement candidates when Codex analysis fails", async () => {
@@ -288,4 +338,15 @@ async function createTempDirectory(): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "watch-news-provider-"));
   directories.push(directory);
   return directory;
+}
+
+function createAvailableProvider(userDataDirectory: string): CodexWatchNewsAnalysisProvider {
+  return new CodexWatchNewsAnalysisProvider({
+    codexLocator: { detect: async () => ({ available: true, loggedIn: true, launcher }) },
+    userDataDirectory,
+    createRunner: () => ({
+      run: async () => ({ status: "success", reportMarkdown: "[]" }),
+      cancel: () => undefined
+    })
+  });
 }

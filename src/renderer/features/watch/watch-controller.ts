@@ -109,6 +109,9 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   let suppressNodeClick = false;
   let renamingWorkspaceId: string | undefined;
   let newsPanelDrag: WatchNewsPanelDragState | undefined;
+  let newsDebugTimer: number | undefined;
+  let newsDebugSecid: string | undefined;
+  let newsDebugRefreshInFlight = false;
   const newsBySecid = new Map<string, WatchNewsMessage[]>();
   const workspaceDateStates = new Map<string, WorkspaceDateState>();
   const workspaceMarketStates = new Map<string, WorkspaceMarketState>();
@@ -330,6 +333,10 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       mergeNewsState(result.messages);
       elements.watchStatus.textContent = formatNewsAnalysisStatus(result);
       await refreshNewsState();
+      const messages = newsBySecid.get(node.secid) ?? [];
+      if (messages.length > 0) {
+        renderNewsHistoryPanel(node.name, messages);
+      }
     } catch (error) {
       elements.watchStatus.textContent = getErrorMessage(error);
     }
@@ -352,12 +359,34 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   async function showWatchNewsDebug(nodeId?: string): Promise<void> {
     const node = nodeId ? findWatchTreeNode(activeRoot(), nodeId) : undefined;
     const secid = node?.type === "stock" ? node.secid : undefined;
+    stopWatchNewsDebugPolling();
+    newsDebugSecid = secid;
     try {
-      const debugRun = await api.getWatchNewsDebugRun(secid);
-      renderNewsDebugPanel(debugRun);
+      await refreshWatchNewsDebug();
+      newsDebugTimer = window.setInterval(() => void refreshWatchNewsDebug(), 1_000);
     } catch (error) {
       elements.watchStatus.textContent = getErrorMessage(error);
     }
+  }
+
+  async function refreshWatchNewsDebug(): Promise<void> {
+    if (newsDebugRefreshInFlight) {
+      return;
+    }
+    newsDebugRefreshInFlight = true;
+    try {
+      renderNewsDebugPanel(await api.getWatchNewsDebugRun(newsDebugSecid));
+    } finally {
+      newsDebugRefreshInFlight = false;
+    }
+  }
+
+  function stopWatchNewsDebugPolling(): void {
+    if (newsDebugTimer !== undefined) {
+      window.clearInterval(newsDebugTimer);
+      newsDebugTimer = undefined;
+    }
+    newsDebugSecid = undefined;
   }
 
   async function markNewsReadFromAlert(alert: HTMLElement): Promise<void> {
@@ -436,11 +465,13 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
           <div>运行：${escapeHtml(debugRun.runId)}</div>
           <div>时间：${escapeHtml(formatDateTime(debugRun.createdAt))}</div>
           <div>目录：${escapeHtml(debugRun.runDirectory)}</div>
+          <div>状态：${escapeHtml(formatDebugRunStatus(debugRun.status))}</div>
           ${debugRun.errorMessage ? `<div class="watch-news-debug-error">错误：${escapeHtml(debugRun.errorMessage)}</div>` : ""}
         </div>
         ${renderDebugSection("模型过程", debugRun.events.length > 0
           ? debugRun.events.map((event) => `[${event.level}] ${event.text}`).join("\n")
           : "暂无事件输出")}
+        ${renderDebugSection("原始 JSONL", debugRun.rawEvents || "暂无原始事件输出")}
         ${renderDebugSection("stderr", debugRun.stderr || "无")}
         ${renderDebugSection("prompt", debugRun.prompt || "无")}
         ${renderDebugSection("report", debugRun.reportMarkdown || "无")}
@@ -1293,6 +1324,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       });
       elements.closeWatchNewsDebug.addEventListener("click", () => {
         elements.watchNewsDebugPanel.hidden = true;
+        stopWatchNewsDebugPolling();
       });
       elements.watchNewsHistoryHeader.addEventListener("pointerdown", beginNewsPanelDrag);
       elements.watchNewsHistoryHeader.addEventListener("pointermove", moveNewsPanelDrag);
@@ -1334,6 +1366,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     refreshNewsState,
     deactivate: () => {
       stopPolling();
+      stopWatchNewsDebugPolling();
       elements.watchNewsTooltip.hidden = true;
     }
   };
@@ -1349,6 +1382,16 @@ function formatNewsAnalysisStatus(result: Awaited<ReturnType<StockResearchApi["a
     ? `；另有 ${result.errors.length - 1} 只失败`
     : "";
   return `${summary}；${firstError.stockName}：${firstError.errorMessage}${remainingErrorText}`;
+}
+
+function formatDebugRunStatus(status: WatchNewsDebugRun["status"]): string {
+  if (status === "completed") {
+    return "已完成";
+  }
+  if (status === "failed") {
+    return "失败";
+  }
+  return "运行中";
 }
 
 function formatDateTime(value: string): string {

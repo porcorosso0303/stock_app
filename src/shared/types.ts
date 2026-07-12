@@ -200,8 +200,10 @@ export interface WatchNewsDebugRun {
   secid: string;
   stockName?: string;
   createdAt: string;
+  status: "running" | "completed" | "failed";
   prompt: string;
   events: WatchNewsDebugEvent[];
+  rawEvents: string;
   stderr: string;
   reportMarkdown?: string;
   errorMessage?: string;

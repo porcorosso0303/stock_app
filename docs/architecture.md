@@ -645,7 +645,8 @@ src/main/watch-news-analysis-provider.ts
 - `WatchNewsStore` 维护 `watch-news.json`，按 `secid + 来源/标题/链接/摘要` 生成去重 key，重复消息不再写入。所有增加、升级和已读写操作通过 store 内部 mutation queue 串行执行，避免多个股票并发回调时发生读改写覆盖。
 - 消息是否未读由 `readAt` 判断。Renderer 鼠标悬停新消息感叹号后调用 `markWatchNewsRead()`，写入 `readAt` 并隐藏感叹号。
 - Main 进程根据 `config.json.watchNewsIntervalHours` 设置后台定时任务，默认 3 小时。手动“持仓股消息”按钮和股票右键“最新消息”不会依赖定时器。
-- 每次 Codex 消息分析都会在 `user_data/watch-news-runs/<run-id>/` 下保留临时 debug 资料：`prompt.txt`、`events.jsonl`、`stderr.log`、`report.md` 和 `meta.json`。Renderer 通过“消息Debug”按钮或持仓股右键“分析Debug”读取最近一次运行，展示模型搜索、stderr、prompt、report 和错误信息。该窗口用于排查模型通道或消息源问题，不参与消息去重和业务状态。
+- 每次 Codex 消息分析都会在 `user_data/watch-news-runs/<run-id>/` 下保留临时 debug 资料：`prompt.txt`、`events.jsonl`、`stderr.log`、`report.md` 和 `meta.json`。`WatchNewsDebugRun` 同时返回解析事件、完整原始 JSONL 和根据 `meta.errorMessage`/`report.md` 推断的 `running | completed | failed` 状态。Renderer 通过“消息Debug”按钮或持仓股右键“分析Debug”读取最近一次运行；窗口打开期间每秒刷新，展示运行状态、模型搜索、原始 JSONL、stderr、prompt、report 和错误信息，关闭窗口或离开盯盘模块时停止刷新。该窗口用于排查模型通道或消息源问题，不参与消息去重和业务状态。
+- 用户对单只股票执行“最新消息”后，renderer 在分析结束时刷新该股票的消息历史；存在消息时自动打开现有历史消息面板直接展示结果，不存在消息时只显示明确的分析结果状态，不打开空面板。批量持仓股消息分析不自动弹出多个历史窗口。
 
 `WatchNewsAnalysisProvider` 是消息面 AI 适配层。当前实现是 `CodexWatchNewsAnalysisProvider`，复用现有 Codex CLI 只读联网能力，要求模型只输出 JSON 数组。未来接入 OpenAI API、Tushare 新闻接口或券商资讯接口时，应新增 provider 实现并保持 `WatchNewsService`、renderer 和 `watch-news.json` 格式不变。
 
