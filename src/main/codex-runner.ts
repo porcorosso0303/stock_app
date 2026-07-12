@@ -22,7 +22,8 @@ interface CodexRunnerOptions {
   onEvent?: (text: string, event: CodexDisplayEvent) => void;
   platform?: NodeJS.Platform;
   env?: NodeJS.ProcessEnv;
-  timeoutMs?: number;
+  idleTimeoutMs?: number;
+  maxRuntimeMs?: number;
 }
 
 export class CodexRunner {
@@ -30,7 +31,7 @@ export class CodexRunner {
   private readonly env: NodeJS.ProcessEnv;
   private activeProcess?: ChildProcessWithoutNullStreams;
   private cancelRequested = false;
-  private timeoutRequested = false;
+  private timeoutErrorMessage?: string;
 
   constructor(private readonly options: CodexRunnerOptions) {
     this.platform = options.platform ?? process.platform;
@@ -51,13 +52,37 @@ export class CodexRunner {
     const child = this.spawnCodex();
     this.activeProcess = child;
     this.cancelRequested = false;
-    this.timeoutRequested = false;
+    this.timeoutErrorMessage = undefined;
+    let idleTimeout: NodeJS.Timeout | undefined;
+    const stopForTimeout = (errorMessage: string): void => {
+      if (this.timeoutErrorMessage) {
+        return;
+      }
+      this.timeoutErrorMessage = errorMessage;
+      this.stopActiveProcess();
+    };
+    const resetIdleTimeout = (): void => {
+      if (!this.options.idleTimeoutMs || this.options.idleTimeoutMs <= 0) {
+        return;
+      }
+      if (idleTimeout) {
+        clearTimeout(idleTimeout);
+      }
+      idleTimeout = setTimeout(() => {
+        stopForTimeout(
+          `Codex CLI 连续 ${formatTimeoutSeconds(this.options.idleTimeoutMs)} 秒无进度，已自动结束`
+        );
+      }, this.options.idleTimeoutMs);
+    };
 
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => {
       eventsStream.write(chunk);
       for (const event of parser.push(chunk)) {
+        if (event.level !== "error") {
+          resetIdleTimeout();
+        }
         this.options.onEvent?.(event.text, event);
       }
     });
@@ -66,18 +91,23 @@ export class CodexRunner {
     });
     child.stdin.end(prompt);
 
-    const timeout = this.options.timeoutMs && this.options.timeoutMs > 0
+    resetIdleTimeout();
+    const maxRuntimeTimeout = this.options.maxRuntimeMs && this.options.maxRuntimeMs > 0
       ? setTimeout(() => {
-          this.timeoutRequested = true;
-          this.stopActiveProcess();
-        }, this.options.timeoutMs)
+          stopForTimeout(
+            `Codex CLI 达到最长运行时间（${formatTimeoutSeconds(this.options.maxRuntimeMs)} 秒），已自动结束`
+          );
+        }, this.options.maxRuntimeMs)
       : undefined;
     const exitCode = await new Promise<number>((resolve) => {
       child.once("error", () => resolve(1));
       child.once("close", (code) => resolve(code ?? 1));
     });
-    if (timeout) {
-      clearTimeout(timeout);
+    if (idleTimeout) {
+      clearTimeout(idleTimeout);
+    }
+    if (maxRuntimeTimeout) {
+      clearTimeout(maxRuntimeTimeout);
     }
 
     for (const event of parser.flush()) {
@@ -91,11 +121,10 @@ export class CodexRunner {
     if (this.cancelRequested) {
       return { status: "cancelled" };
     }
-    if (this.timeoutRequested) {
-      const seconds = Math.max(1, Math.ceil((this.options.timeoutMs ?? 0) / 1000));
+    if (this.timeoutErrorMessage) {
       return {
         status: "failed",
-        errorMessage: `Codex CLI 运行超时（${seconds} 秒）`
+        errorMessage: this.timeoutErrorMessage
       };
     }
     if (exitCode !== 0) {
@@ -167,4 +196,8 @@ export class CodexRunner {
       windowsHide: true
     } as const;
   }
+}
+
+function formatTimeoutSeconds(timeoutMs: number | undefined): number {
+  return Math.max(1, Math.ceil((timeoutMs ?? 0) / 1000));
 }

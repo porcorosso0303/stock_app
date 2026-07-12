@@ -55,7 +55,8 @@ interface RunnerOptions {
   launcher: CodexLauncher;
   runDirectory: string;
   onEvent: (text: string) => void;
-  timeoutMs?: number;
+  idleTimeoutMs?: number;
+  maxRuntimeMs?: number;
 }
 
 export interface CodexWatchNewsAnalysisProviderDependencies {
@@ -124,7 +125,8 @@ export class CodexWatchNewsAnalysisProvider implements WatchNewsAnalysisProvider
       launcher,
       runDirectory,
       onEvent: () => undefined,
-      timeoutMs: 120_000
+      idleTimeoutMs: 180_000,
+      maxRuntimeMs: 720_000
     });
     this.activeRunners.add(runner);
     try {

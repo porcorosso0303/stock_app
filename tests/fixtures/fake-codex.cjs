@@ -19,6 +19,25 @@ const prompt = readFileSync(0, "utf8");
     return;
   }
 
+  if (mode === "progress-success") {
+    const progress = setInterval(() => {
+      writeFileSync(1, '{"text":"持续分析中"}\n');
+    }, 15);
+    setTimeout(() => {
+      clearInterval(progress);
+      writeFileSync(join(process.cwd(), "report.md"), "# 调研报告\n\n完成", "utf8");
+      process.exitCode = 0;
+    }, 90);
+    return;
+  }
+
+  if (mode === "progress-forever") {
+    setInterval(() => {
+      writeFileSync(1, '{"text":"持续分析中"}\n');
+    }, 15);
+    return;
+  }
+
   if (mode === "invalid-jsonl") {
     writeFileSync(1, "broken\n");
   }

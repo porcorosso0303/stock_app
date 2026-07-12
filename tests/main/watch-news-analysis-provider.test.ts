@@ -32,18 +32,22 @@ describe("CodexWatchNewsAnalysisProvider", () => {
       }]
     };
     let capturedPrompt = "";
+    let capturedRunnerOptions: Record<string, unknown> = {};
     const provider = new CodexWatchNewsAnalysisProvider({
       codexLocator: { detect: async () => ({ available: true, loggedIn: true, launcher }) },
       userDataDirectory,
       noticeSource,
       now: () => new Date("2026-07-09T15:10:00.000Z"),
-      createRunner: () => ({
+      createRunner: (options) => {
+        capturedRunnerOptions = options as unknown as Record<string, unknown>;
+        return {
         run: async (prompt) => {
           capturedPrompt = prompt;
           return { status: "success", reportMarkdown: "[]" };
         },
         cancel: () => undefined
-      })
+        };
+      }
     });
 
     await provider.analyze({ secid: "1.603986", stockName: "兆易创新", existingMessages: [] });
@@ -51,6 +55,11 @@ describe("CodexWatchNewsAnalysisProvider", () => {
     expect(capturedPrompt).toContain("交易所公告/法定信息披露公告");
     expect(capturedPrompt).toContain("兆易创新2026年半年度业绩预增公告");
     expect(capturedPrompt).toContain("AN202607091826846840");
+    expect(capturedRunnerOptions).toMatchObject({
+      idleTimeoutMs: 180_000,
+      maxRuntimeMs: 720_000
+    });
+    expect(capturedRunnerOptions).not.toHaveProperty("timeoutMs");
   });
 
   it("exposes the latest failed Codex run for the debug window", async () => {
