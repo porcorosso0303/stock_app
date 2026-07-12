@@ -944,7 +944,10 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   }
 
   function beginNewsPanelDrag(event: PointerEvent): void {
-    if (event.button !== 0) {
+    if (
+      event.button !== 0
+      || (event.target instanceof Element && event.target.closest("button"))
+    ) {
       return;
     }
     const rect = elements.watchNewsHistoryPanel.getBoundingClientRect();

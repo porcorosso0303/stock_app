@@ -14,6 +14,10 @@ import type {
 interface TestEvent {
   target: TestElement;
   preventDefault(): void;
+  button: number;
+  pointerId: number;
+  clientX: number;
+  clientY: number;
 }
 
 class TestElement {
@@ -22,6 +26,7 @@ class TestElement {
   innerHTML = "";
   textContent = "";
   disabled = false;
+  isButton = false;
   scrollLeft = 0;
   scrollTop = 0;
   dataset: Record<string, string | undefined> = {};
@@ -39,12 +44,27 @@ class TestElement {
     this.listeners.set(type, listeners);
   }
 
-  emit(type: string, target: TestElement = this): void {
-    const event: TestEvent = { target, preventDefault: vi.fn() };
+  emit(
+    type: string,
+    target: TestElement = this,
+    overrides: Partial<Omit<TestEvent, "target" | "preventDefault">> = {}
+  ): void {
+    const event: TestEvent = {
+      target,
+      preventDefault: vi.fn(),
+      button: 0,
+      pointerId: 1,
+      clientX: 0,
+      clientY: 0,
+      ...overrides
+    };
     this.listeners.get(type)?.forEach((listener) => listener(event));
   }
 
   closest<T>(selector: string): T | null {
+    if (selector === "button" && this.isButton) {
+      return this as unknown as T;
+    }
     return selector === "button[data-watch-menu-action]" && this.dataset.watchMenuAction
       ? this as unknown as T
       : null;
@@ -62,9 +82,13 @@ class TestElement {
     return false;
   }
 
-  setPointerCapture(): void {}
+  setPointerCapture = vi.fn();
 
   releasePointerCapture(): void {}
+
+  getBoundingClientRect(): DOMRect {
+    return { left: 0, top: 0 } as DOMRect;
+  }
 }
 
 const emptyMarketData: WatchMarketData = {
@@ -224,6 +248,33 @@ describe("watch holding editor behavior", () => {
     await vi.waitFor(() => expect(elements.watchStatus.textContent).toContain("新增 0 条消息"));
     expect(elements.watchNewsHistoryPanel.hidden).toBe(true);
   });
+
+  it("does not start title-bar dragging when pressing the news close button", () => {
+    const { elements } = createFixture(categoryConfig());
+    elements.watchNewsHistoryPanel.hidden = false;
+
+    elements.watchNewsHistoryHeader.emit(
+      "pointerdown",
+      elements.closeWatchNewsHistory,
+      { pointerId: 7, clientX: 20, clientY: 20 }
+    );
+
+    expect(elements.watchNewsHistoryHeader.setPointerCapture).not.toHaveBeenCalled();
+    elements.closeWatchNewsHistory.emit("click");
+    expect(elements.watchNewsHistoryPanel.hidden).toBe(true);
+  });
+
+  it("still starts dragging from an empty part of the news title bar", () => {
+    const { elements } = createFixture(categoryConfig());
+
+    elements.watchNewsHistoryHeader.emit(
+      "pointerdown",
+      elements.watchNewsHistoryHeader,
+      { pointerId: 8, clientX: 30, clientY: 20 }
+    );
+
+    expect(elements.watchNewsHistoryHeader.setPointerCapture).toHaveBeenCalledWith(8);
+  });
 });
 
 interface FixtureApiOverrides {
@@ -296,6 +347,8 @@ function createElements(): Record<string, TestElement> {
   ].map((key) => [key, new TestElement()]));
   elements.watchNewsHistoryPanel.hidden = true;
   elements.watchNewsDebugPanel.hidden = true;
+  elements.closeWatchNewsHistory.isButton = true;
+  elements.closeWatchNewsDebug.isButton = true;
   return elements;
 }
 
