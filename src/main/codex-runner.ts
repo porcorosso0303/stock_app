@@ -53,6 +53,7 @@ export class CodexRunner {
     this.activeProcess = child;
     this.cancelRequested = false;
     this.timeoutErrorMessage = undefined;
+    let lastErrorEventText: string | undefined;
     let idleTimeout: NodeJS.Timeout | undefined;
     const stopForTimeout = (errorMessage: string): void => {
       if (this.timeoutErrorMessage) {
@@ -74,16 +75,21 @@ export class CodexRunner {
         );
       }, this.options.idleTimeoutMs);
     };
+    const handleEvent = (event: CodexDisplayEvent): void => {
+      if (event.level === "error") {
+        lastErrorEventText = event.text;
+      } else {
+        resetIdleTimeout();
+      }
+      this.options.onEvent?.(event.text, event);
+    };
 
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => {
       eventsStream.write(chunk);
       for (const event of parser.push(chunk)) {
-        if (event.level !== "error") {
-          resetIdleTimeout();
-        }
-        this.options.onEvent?.(event.text, event);
+        handleEvent(event);
       }
     });
     child.stderr.on("data", (chunk: string) => {
@@ -111,7 +117,7 @@ export class CodexRunner {
     }
 
     for (const event of parser.flush()) {
-      this.options.onEvent?.(event.text, event);
+      handleEvent(event);
     }
     eventsStream.end();
     stderrStream.end();
@@ -131,7 +137,9 @@ export class CodexRunner {
       const stderr = (await readFile(stderrPath, "utf8")).trim();
       return {
         status: "failed",
-        errorMessage: stderr || `Codex CLI 退出码：${exitCode}`
+        errorMessage: stderr
+          || normalizeCodexError(lastErrorEventText)
+          || `Codex CLI 退出码：${exitCode}`
       };
     }
 
@@ -200,4 +208,17 @@ export class CodexRunner {
 
 function formatTimeoutSeconds(timeoutMs: number | undefined): number {
   return Math.max(1, Math.ceil((timeoutMs ?? 0) / 1000));
+}
+
+function normalizeCodexError(eventText: string | undefined): string | undefined {
+  if (!eventText) {
+    return undefined;
+  }
+  const detail = eventText.replace(/^调研过程中出现错误[：:]\s*/, "").trim();
+  if (/usage limit/i.test(detail)) {
+    const retryTime = detail.match(/try again at\s+([^.,\r\n]+(?:\s+[AP]M)?)/i)?.[1]?.trim();
+    const retryText = retryTime ? `请在 ${retryTime} 后重试，` : "请稍后重试，";
+    return `GPT/Codex 使用额度已耗尽，${retryText}或前往 Codex 设置补充额度。`;
+  }
+  return detail || eventText;
 }

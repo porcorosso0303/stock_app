@@ -3,6 +3,7 @@ import type { RendererElements } from "../../src/renderer/app/dom";
 import { createWatchController } from "../../src/renderer/features/watch/watch-controller";
 import type { StockResearchApi } from "../../src/shared/ipc";
 import type {
+  WatchNewsAnalysisResult,
   WatchMarketData,
   WatchTreeConfig,
   WatchTreeNode
@@ -127,15 +128,39 @@ describe("watch holding editor behavior", () => {
     await vi.waitFor(() => expect(saveWatchTree).toHaveBeenCalledOnce());
     expect(savedStock(saveWatchTree)).not.toHaveProperty("isHolding");
   });
+
+  it("shows the concrete model failure after refreshing one stock's news", async () => {
+    const errorMessage = "GPT/Codex 使用额度已耗尽，请在 10:54 PM 后重试";
+    const analyzeWatchStockNews = vi.fn(async (): Promise<WatchNewsAnalysisResult> => ({
+      stockCount: 1,
+      newMessageCount: 0,
+      messages: [],
+      errors: [{ secid: "1.688777", stockName: "中控技术", errorMessage }]
+    }));
+    const { elements } = createFixture(
+      categoryConfig([stockNode({ name: "中控技术", secid: "1.688777" })]),
+      analyzeWatchStockNews
+    );
+
+    const button = new TestElement();
+    button.dataset.watchMenuAction = "refresh-news";
+    button.dataset.watchId = "stock";
+    elements.watchContextMenu.emit("click", button);
+
+    await vi.waitFor(() => expect(elements.watchStatus.textContent).toContain(errorMessage));
+  });
 });
 
-function createFixture(config: WatchTreeConfig): {
+function createFixture(
+  config: WatchTreeConfig,
+  analyzeWatchStockNews?: StockResearchApi["analyzeWatchStockNews"]
+): {
   elements: Record<string, TestElement>;
   saveWatchTree: ReturnType<typeof vi.fn<(config: WatchTreeConfig) => Promise<WatchTreeConfig>>>;
 } {
   const elements = createElements();
   const saveWatchTree = vi.fn(async (nextConfig: WatchTreeConfig) => nextConfig);
-  const api = createApi(saveWatchTree);
+  const api = createApi(saveWatchTree, analyzeWatchStockNews);
   const controller = createWatchController({
     api,
     elements: elements as unknown as RendererElements,
@@ -190,7 +215,13 @@ function createElements(): Record<string, TestElement> {
 }
 
 function createApi(
-  saveWatchTree: (config: WatchTreeConfig) => Promise<WatchTreeConfig>
+  saveWatchTree: (config: WatchTreeConfig) => Promise<WatchTreeConfig>,
+  analyzeWatchStockNews: StockResearchApi["analyzeWatchStockNews"] = async () => ({
+    stockCount: 1,
+    newMessageCount: 0,
+    messages: [],
+    errors: []
+  })
 ): StockResearchApi {
   return {
     getBootstrap: async () => ({
@@ -236,7 +267,7 @@ function createApi(
     searchStocks: async () => [],
     exportWatchData: async () => undefined,
     importWatchData: async () => undefined,
-    analyzeWatchStockNews: async () => ({ stockCount: 1, newMessageCount: 0, messages: [], errors: [] }),
+    analyzeWatchStockNews,
     analyzeHoldingWatchNews: async () => ({ stockCount: 0, newMessageCount: 0, messages: [], errors: [] }),
     getWatchNewsDebugRun: async () => undefined,
     listWatchNews: async () => [],

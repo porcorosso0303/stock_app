@@ -70,6 +70,15 @@ describe("CodexRunner", () => {
     });
   });
 
+  it("returns a readable usage-limit error from JSONL when stderr is empty", async () => {
+    const { runner } = await createRunner(undefined, { mode: "usage-limit" });
+
+    await expect(runner.run("研究中控技术")).resolves.toEqual({
+      status: "failed",
+      errorMessage: "GPT/Codex 使用额度已耗尽，请在 10:54 PM 后重试，或前往 Codex 设置补充额度。"
+    });
+  });
+
   it("hides an invalid JSONL line and keeps running", async () => {
     const events: string[] = [];
     const { runner } = await createRunner((text) => events.push(text), { mode: "invalid-jsonl" });

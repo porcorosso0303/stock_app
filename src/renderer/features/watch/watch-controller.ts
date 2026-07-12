@@ -1340,8 +1340,15 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
 }
 
 function formatNewsAnalysisStatus(result: Awaited<ReturnType<StockResearchApi["analyzeHoldingWatchNews"]>>): string {
-  const errorText = result.errors.length > 0 ? `，${result.errors.length} 只失败` : "";
-  return `已分析 ${result.stockCount} 只股票，新增 ${result.newMessageCount} 条消息${errorText}`;
+  const summary = `已分析 ${result.stockCount} 只股票，新增 ${result.newMessageCount} 条消息`;
+  const firstError = result.errors[0];
+  if (!firstError) {
+    return summary;
+  }
+  const remainingErrorText = result.errors.length > 1
+    ? `；另有 ${result.errors.length - 1} 只失败`
+    : "";
+  return `${summary}；${firstError.stockName}：${firstError.errorMessage}${remainingErrorText}`;
 }
 
 function formatDateTime(value: string): string {

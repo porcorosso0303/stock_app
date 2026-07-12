@@ -13,6 +13,14 @@ const prompt = readFileSync(0, "utf8");
     return;
   }
 
+  if (mode === "usage-limit") {
+    const message = "You've hit your usage limit. Upgrade to Pro or try again at 10:54 PM.";
+    writeFileSync(1, `${JSON.stringify({ type: "error", message })}\n`);
+    writeFileSync(1, `${JSON.stringify({ type: "turn.failed", error: { message } })}\n`);
+    process.exitCode = 1;
+    return;
+  }
+
   if (mode === "slow") {
     writeFileSync(1, '{"text":"等待取消"}\n');
     setInterval(() => {}, 1000);
