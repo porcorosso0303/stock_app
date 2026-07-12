@@ -35,7 +35,11 @@ export interface WatchNewsNoticeCandidate {
 }
 
 export interface WatchNewsNoticeSource {
-  listRecent(stock: WatchNewsStockInput, now: Date): Promise<WatchNewsNoticeCandidate[]>;
+  listRecent(
+    stock: WatchNewsStockInput,
+    now: Date,
+    lookbackHours: number
+  ): Promise<WatchNewsNoticeCandidate[]>;
 }
 
 interface CodexLocatorLike {
@@ -51,6 +55,7 @@ interface RunnerOptions {
   launcher: CodexLauncher;
   runDirectory: string;
   onEvent: (text: string) => void;
+  timeoutMs?: number;
 }
 
 export interface CodexWatchNewsAnalysisProviderDependencies {
@@ -70,27 +75,56 @@ export class CodexWatchNewsAnalysisProvider implements WatchNewsAnalysisProvider
   }
 
   async analyze(stock: WatchNewsStockInput): Promise<WatchNewsDraft[]> {
-    const codex = await this.dependencies.codexLocator.detect();
-    const launcher = requireCodexLauncher(codex);
     const now = this.now();
-    const { candidates, errorMessage: noticeErrorMessage } = await this.listNoticeCandidates(stock, now);
+    const lookbackHours = stock.existingMessages.length === 0 ? 7 * 24 : 48;
+    const { candidates, errorMessage: noticeErrorMessage } = await this.listNoticeCandidates(
+      stock,
+      now,
+      lookbackHours
+    );
+    const fallbackDrafts = candidates.flatMap((candidate) =>
+      isMaterialNotice(candidate) ? [buildNoticeFallbackDraft(stock, candidate)] : []
+    );
     const runDirectory = join(
       this.dependencies.userDataDirectory,
       "watch-news-runs",
       `${formatRunTimestamp(now)}-${sanitizeFilePart(stock.secid)}`
     );
     await mkdir(runDirectory, { recursive: true });
-    const prompt = buildWatchNewsPrompt(stock, now, candidates, noticeErrorMessage);
+    const prompt = buildWatchNewsPrompt(
+      stock,
+      now,
+      candidates,
+      noticeErrorMessage,
+      lookbackHours
+    );
     await writeFile(join(runDirectory, "prompt.txt"), prompt, "utf8");
     await this.writeRunMeta(runDirectory, {
       secid: stock.secid,
       stockName: stock.stockName,
       createdAt: now.toISOString()
     });
+    let launcher: CodexLauncher;
+    try {
+      launcher = requireCodexLauncher(await this.dependencies.codexLocator.detect());
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      await this.writeRunMeta(runDirectory, {
+        secid: stock.secid,
+        stockName: stock.stockName,
+        createdAt: now.toISOString(),
+        errorMessage
+      });
+      if (fallbackDrafts.length > 0) {
+        return fallbackDrafts;
+      }
+      throw error;
+    }
     const runner = this.dependencies.createRunner({
       launcher,
       runDirectory,
-      onEvent: () => undefined
+      onEvent: () => undefined,
+      timeoutMs: 120_000
     });
     this.activeRunners.add(runner);
     try {
@@ -102,7 +136,7 @@ export class CodexWatchNewsAnalysisProvider implements WatchNewsAnalysisProvider
           createdAt: now.toISOString(),
           errorMessage: "用户取消"
         });
-        return [];
+        return fallbackDrafts;
       }
       if (result.status === "failed") {
         await this.writeRunMeta(runDirectory, {
@@ -111,14 +145,32 @@ export class CodexWatchNewsAnalysisProvider implements WatchNewsAnalysisProvider
           createdAt: now.toISOString(),
           errorMessage: result.errorMessage
         });
+        if (fallbackDrafts.length > 0) {
+          return fallbackDrafts;
+        }
         throw new Error(result.errorMessage);
       }
-      await this.writeRunMeta(runDirectory, {
-        secid: stock.secid,
-        stockName: stock.stockName,
-        createdAt: now.toISOString()
-      });
-      return parseWatchNewsDrafts(result.reportMarkdown, stock);
+      try {
+        const modelDrafts = parseWatchNewsDrafts(result.reportMarkdown, stock);
+        await this.writeRunMeta(runDirectory, {
+          secid: stock.secid,
+          stockName: stock.stockName,
+          createdAt: now.toISOString()
+        });
+        return mergeWatchNewsDrafts(modelDrafts, fallbackDrafts);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        await this.writeRunMeta(runDirectory, {
+          secid: stock.secid,
+          stockName: stock.stockName,
+          createdAt: now.toISOString(),
+          errorMessage
+        });
+        if (fallbackDrafts.length > 0) {
+          return fallbackDrafts;
+        }
+        throw error;
+      }
     } finally {
       this.activeRunners.delete(runner);
     }
@@ -169,14 +221,15 @@ export class CodexWatchNewsAnalysisProvider implements WatchNewsAnalysisProvider
 
   private async listNoticeCandidates(
     stock: WatchNewsStockInput,
-    now: Date
+    now: Date,
+    lookbackHours: number
   ): Promise<{ candidates: WatchNewsNoticeCandidate[]; errorMessage?: string }> {
     if (!this.dependencies.noticeSource) {
       return { candidates: [] };
     }
     try {
       return {
-        candidates: await this.dependencies.noticeSource.listRecent(stock, now)
+        candidates: await this.dependencies.noticeSource.listRecent(stock, now, lookbackHours)
       };
     } catch (error) {
       return {
@@ -202,7 +255,11 @@ export class CodexWatchNewsAnalysisProvider implements WatchNewsAnalysisProvider
 export class EastMoneyWatchNewsNoticeSource implements WatchNewsNoticeSource {
   constructor(private readonly fetchImpl: FetchLike = fetch) {}
 
-  async listRecent(stock: WatchNewsStockInput, now: Date): Promise<WatchNewsNoticeCandidate[]> {
+  async listRecent(
+    stock: WatchNewsStockInput,
+    now: Date,
+    lookbackHours = 48
+  ): Promise<WatchNewsNoticeCandidate[]> {
     const code = stock.secid.split(".")[1] ?? stock.secid;
     const url = new URL("https://np-anotice-stock.eastmoney.com/api/security/ann");
     url.searchParams.set("sr", "-1");
@@ -215,7 +272,7 @@ export class EastMoneyWatchNewsNoticeSource implements WatchNewsNoticeSource {
     if (!response.ok) {
       throw new Error("东方财富公告请求失败");
     }
-    return readEastMoneyNoticeCandidates(await response.json(), stock, now);
+    return readEastMoneyNoticeCandidates(await response.json(), stock, now, lookbackHours);
   }
 }
 
@@ -223,7 +280,8 @@ function buildWatchNewsPrompt(
   stock: WatchNewsStockInput,
   now: Date,
   noticeCandidates: WatchNewsNoticeCandidate[],
-  noticeErrorMessage?: string
+  noticeErrorMessage: string | undefined,
+  lookbackHours: number
 ): string {
   const code = stock.secid.split(".")[1] ?? stock.secid;
   const exchange = stock.secid.startsWith("1.") ? "沪市" : "深市";
@@ -240,6 +298,7 @@ function buildWatchNewsPrompt(
     `secid：${stock.secid}`,
     `代码：${code}`,
     `交易所：${exchange}`,
+    `本次公告候选回看窗口：${lookbackHours} 小时。联网搜索仍只检查最近 48 小时；首次无历史记录时，公告候选允许回补最近 7 天，避免恢复此前失败任务时永久漏报。`,
     "",
     "必须检查的来源范围：",
     "1. 交易所公告/法定信息披露公告：优先检查上交所或深交所公告、巨潮资讯、东方财富公告聚合。财报预告、业绩预告、业绩预增/预减、定期报告、重大合同、监管处罚、异常波动公告都属于重点消息。",
@@ -267,7 +326,8 @@ function buildWatchNewsPrompt(
     '  "analysis": "对业绩或股价可能影响的分析意见，说明偏利好/偏利空/中性和原因",',
     '  "confidence": "high|medium|low"',
     "}",
-    "如果没有新的有效消息，输出 []。"
+    "如果没有新的有效消息，输出 []。",
+    "执行约束：只使用内置联网搜索/网页访问能力，不要执行 PowerShell、cmd、shell 或其他本地命令；最多进行 12 次联网检索，并尽快输出最终 JSON。"
   ].join("\n");
 }
 
@@ -363,7 +423,8 @@ function sanitizeFilePart(value: string): string {
 function readEastMoneyNoticeCandidates(
   value: unknown,
   stock: WatchNewsStockInput,
-  now: Date
+  now: Date,
+  lookbackHours: number
 ): WatchNewsNoticeCandidate[] {
   const list = readEastMoneyNoticeList(value);
   return list.flatMap((item) => {
@@ -372,7 +433,7 @@ function readEastMoneyNoticeCandidates(
     const displayTime = normalizeEastMoneyDisplayTime(
       readString(item.display_time) ?? readString(item.eiTime) ?? readString(item.notice_date)
     );
-    if (!title || !artCode || !isWithinRecentHours(displayTime, now, 48)) {
+    if (!title || !artCode || !isWithinRecentHours(displayTime, now, lookbackHours)) {
       return [];
     }
     const columns = Array.isArray(item.columns)
@@ -391,6 +452,66 @@ function readEastMoneyNoticeCandidates(
       occurredAt: displayTime
     }];
   });
+}
+
+function isMaterialNotice(candidate: WatchNewsNoticeCandidate): boolean {
+  return /(业绩|财报|年报|季报|定期报告|重大|合同|中标|回购|增持|减持|处罚|立案|诉讼|仲裁|异常波动|风险提示|停牌|复牌|重组|收购|发行|分红|权益变动)/.test(
+    `${candidate.title} ${candidate.summary}`
+  );
+}
+
+function buildNoticeFallbackDraft(
+  stock: WatchNewsStockInput,
+  candidate: WatchNewsNoticeCandidate
+): WatchNewsDraft {
+  const direction = inferNoticeDirection(candidate.title);
+  return {
+    secid: stock.secid,
+    stockName: stock.stockName,
+    title: candidate.title,
+    summary: `公司发布${candidate.summary || "重要公告"}，权威公告已捕获；AI 分析未完成，具体内容请查看公告原文。`,
+    sourceName: candidate.sourceName,
+    sourceUrl: candidate.sourceUrl,
+    occurredAt: candidate.occurredAt,
+    analysis: `AI 分析未完成。根据公告标题初步判断为${direction}信息，实际影响需结合公告原文和后续市场反应复核。`,
+    confidence: "high"
+  };
+}
+
+function inferNoticeDirection(title: string): string {
+  if (/(预增|增长|扭亏|中标|增持|回购)/.test(title)) {
+    return "偏利好";
+  }
+  if (/(预减|下降|亏损|减持|处罚|立案|诉讼|风险提示)/.test(title)) {
+    return "偏利空";
+  }
+  return "中性或方向待确认";
+}
+
+function mergeWatchNewsDrafts(
+  preferred: WatchNewsDraft[],
+  fallback: WatchNewsDraft[]
+): WatchNewsDraft[] {
+  const result = [...preferred];
+  const known = new Set(preferred.flatMap((draft) => [
+    normalizeNewsIdentity(draft.sourceUrl),
+    normalizeNewsIdentity(draft.title)
+  ].filter(Boolean)));
+  for (const draft of fallback) {
+    const identities = [draft.sourceUrl, draft.title]
+      .map(normalizeNewsIdentity)
+      .filter(Boolean);
+    if (identities.some((identity) => known.has(identity))) {
+      continue;
+    }
+    result.push(draft);
+    identities.forEach((identity) => known.add(identity));
+  }
+  return result;
+}
+
+function normalizeNewsIdentity(value: string | undefined): string {
+  return value?.trim().toLowerCase().replace(/\s+/g, " ") ?? "";
 }
 
 function readEastMoneyNoticeList(value: unknown): Array<Record<string, unknown>> {

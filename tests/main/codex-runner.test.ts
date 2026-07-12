@@ -12,14 +12,17 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
-  delete process.env.FAKE_CODEX_MODE;
   await Promise.all(directories.splice(0).map((directory) => rm(directory, {
     recursive: true,
     force: true
   })));
 });
 
-async function createRunner(onEvent = (_text: string) => {}): Promise<{
+async function createRunner(
+  onEvent = (_text: string) => {},
+  timeoutMs?: number,
+  mode = "success"
+): Promise<{
   directory: string;
   runner: CodexRunner;
 }> {
@@ -30,7 +33,9 @@ async function createRunner(onEvent = (_text: string) => {}): Promise<{
     runner: new CodexRunner({
       launcher: { kind: "native", executablePath: fixture },
       runDirectory: directory,
-      onEvent
+      onEvent,
+      timeoutMs,
+      env: { ...process.env, FAKE_CODEX_MODE: mode }
     })
   };
 }
@@ -53,8 +58,7 @@ describe("CodexRunner", () => {
   });
 
   it("returns stderr when Codex fails", async () => {
-    process.env.FAKE_CODEX_MODE = "failure";
-    const { runner } = await createRunner();
+    const { runner } = await createRunner(undefined, undefined, "failure");
 
     await expect(runner.run("研究失败")).resolves.toEqual({
       status: "failed",
@@ -63,22 +67,29 @@ describe("CodexRunner", () => {
   });
 
   it("hides an invalid JSONL line and keeps running", async () => {
-    process.env.FAKE_CODEX_MODE = "invalid-jsonl";
     const events: string[] = [];
-    const { runner } = await createRunner((text) => events.push(text));
+    const { runner } = await createRunner((text) => events.push(text), undefined, "invalid-jsonl");
 
     await expect(runner.run("研究坏行")).resolves.toMatchObject({ status: "success" });
     expect(events).toEqual(["开始调研", "完成调研"]);
   });
 
   it("cancels an active run", async () => {
-    process.env.FAKE_CODEX_MODE = "slow";
-    const { runner } = await createRunner();
+    const { runner } = await createRunner(undefined, undefined, "slow");
 
     const running = runner.run("等待停止");
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 30));
     runner.cancel();
 
     await expect(running).resolves.toEqual({ status: "cancelled" });
+  });
+
+  it("fails a run that exceeds its configured timeout", async () => {
+    const { runner } = await createRunner(undefined, 30, "slow");
+
+    await expect(runner.run("等待超时")).resolves.toEqual({
+      status: "failed",
+      errorMessage: "Codex CLI 运行超时（1 秒）"
+    });
   });
 });

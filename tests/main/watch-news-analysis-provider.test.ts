@@ -91,6 +91,105 @@ describe("CodexWatchNewsAnalysisProvider", () => {
     expect(debugRun?.stderr).toContain("failed to connect to websocket");
     expect(debugRun?.errorMessage).toBe("Codex CLI 连接失败");
   });
+
+  it("keeps material announcement candidates when Codex analysis fails", async () => {
+    const userDataDirectory = await createTempDirectory();
+    const noticeSource: WatchNewsNoticeSource = {
+      listRecent: async () => [{
+        title: "兆易创新:兆易创新2026年半年度业绩预增公告",
+        sourceName: "东方财富公告",
+        sourceUrl: "https://data.eastmoney.com/notices/detail/603986/AN202607091826846840.html",
+        occurredAt: "2026-07-09 17:34:03",
+        summary: "业绩预告"
+      }]
+    };
+    const provider = new CodexWatchNewsAnalysisProvider({
+      codexLocator: { detect: async () => ({ available: true, loggedIn: true, launcher }) },
+      userDataDirectory,
+      noticeSource,
+      now: () => new Date("2026-07-12T09:54:00.000Z"),
+      createRunner: () => ({
+        run: async () => ({ status: "failed", errorMessage: "Codex CLI 运行超时" }),
+        cancel: () => undefined
+      })
+    });
+
+    const drafts = await provider.analyze({
+      secid: "1.603986",
+      stockName: "兆易创新",
+      existingMessages: []
+    });
+
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0]).toMatchObject({
+      title: "兆易创新:兆易创新2026年半年度业绩预增公告",
+      confidence: "high"
+    });
+    expect(drafts[0].analysis).toContain("AI 分析未完成");
+  });
+
+  it("keeps material announcement candidates when Codex is unavailable", async () => {
+    const userDataDirectory = await createTempDirectory();
+    const provider = new CodexWatchNewsAnalysisProvider({
+      codexLocator: {
+        detect: async () => ({ available: false, message: "Codex 未安装" })
+      },
+      userDataDirectory,
+      noticeSource: {
+        listRecent: async () => [{
+          title: "兆易创新:兆易创新2026年半年度业绩预增公告",
+          sourceName: "东方财富公告",
+          sourceUrl: "https://data.eastmoney.com/notices/detail/603986/AN202607091826846840.html",
+          occurredAt: "2026-07-09 17:34:03",
+          summary: "业绩预告"
+        }]
+      },
+      now: () => new Date("2026-07-12T09:54:00.000Z"),
+      createRunner: () => {
+        throw new Error("不应创建 runner");
+      }
+    });
+
+    const drafts = await provider.analyze({
+      secid: "1.603986",
+      stockName: "兆易创新",
+      existingMessages: []
+    });
+
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0].analysis).toContain("AI 分析未完成");
+    expect((await provider.getLatestDebugRun("1.603986"))?.errorMessage).toBe("Codex 未安装");
+  });
+
+  it("requests a seven-day catch-up only when the stock has no message history", async () => {
+    const userDataDirectory = await createTempDirectory();
+    const lookbackHours: number[] = [];
+    const noticeSource: WatchNewsNoticeSource = {
+      listRecent: async (_stock, _now, hours) => {
+        lookbackHours.push(hours);
+        return [];
+      }
+    };
+    const provider = new CodexWatchNewsAnalysisProvider({
+      codexLocator: { detect: async () => ({ available: true, loggedIn: true, launcher }) },
+      userDataDirectory,
+      noticeSource,
+      now: () => new Date("2026-07-12T09:54:00.000Z"),
+      createRunner: () => ({
+        run: async () => ({ status: "success", reportMarkdown: "[]" }),
+        cancel: () => undefined
+      })
+    });
+
+    await provider.analyze({ secid: "1.603986", stockName: "兆易创新", existingMessages: [] });
+    await provider.analyze({
+      secid: "1.603986",
+      stockName: "兆易创新",
+      existingMessages: [{ title: "旧消息", fetchedAt: "2026-07-11T00:00:00.000Z" }]
+    });
+
+    expect(lookbackHours).toEqual([168, 48]);
+  });
 });
 
 describe("EastMoneyWatchNewsNoticeSource", () => {

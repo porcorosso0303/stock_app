@@ -635,6 +635,9 @@ src/main/watch-news-analysis-provider.ts
 - 从 `WatchTreeConfig` 中收集所有 `isHolding: true` 的唯一股票，作为批量消息捕捉目标。
 - 通过 `WatchNewsAnalysisProvider` 调用默认 GPT/Codex 分析通道，对单只股票执行最近 48 小时消息捕捉与分析。
 - 当前 `CodexWatchNewsAnalysisProvider` 会先通过 `EastMoneyWatchNewsNoticeSource` 确定性拉取东方财富公告聚合中的最近公告候选，再把候选公告注入模型 prompt。该步骤用于覆盖财报预告、业绩预告、异常波动、重大合同等法定信息披露消息，不属于盯盘行情数据 provider。
+- 正常扫描的公告窗口是最近 48 小时；当该股票尚无任何消息历史时，首次扫描使用最近 7 天的有限回补窗口，用于恢复此前因软件未运行或模型通道失败而漏存的公告。联网媒体搜索仍严格限制为最近 48 小时。
+- 权威公告抓取和 AI 分析是两个可靠性边界。模型成功时优先保存模型生成的摘要与分析；模型失败、超时、取消或返回格式错误时，财报、业绩、重大合同、监管、异常波动等重要公告仍会转换为 `WatchNewsDraft` 落库，并明确标记“AI 分析未完成”，防止已抓到的法定公告因模型故障丢失。
+- 消息分析使用的 Codex 子进程设置 120 秒硬超时。超时后 runner 停止子进程、把错误写入 Debug 元数据，并按上一条规则保留已经抓到的权威公告。prompt 同时禁止执行本地 shell，并限制联网检索次数，避免模型在来源不可访问时无限扩散搜索。
 - 消息源和筛选规则由 provider prompt 约束：交易所公告/法定信息披露公告、公司官网、上证 e 互动、深交所互动易、官方投资者问答、东方财富、澎湃、界面新闻、科创板日报、雪球当日交易时段帖子及其权威渠道查证。
 - `WatchNewsStore` 维护 `watch-news.json`，按 `secid + 来源/标题/链接/摘要` 生成去重 key，重复消息不再写入。
 - 消息是否未读由 `readAt` 判断。Renderer 鼠标悬停新消息感叹号后调用 `markWatchNewsRead()`，写入 `readAt` 并隐藏感叹号。
@@ -935,7 +938,7 @@ user_data/watch-news-runs/<ISO时间>-<secid>/
 目录内容：
 
 - `prompt.txt`：本次传给模型的完整 prompt，包含东方财富公告候选。
-- `meta.json`：股票 `secid`、名称、创建时间和可选错误信息。
+- `meta.json`：股票 `secid`、名称、创建时间和可选错误信息。模型失败但权威公告已通过降级路径保存时，错误仍保留在该文件中，便于区分“完整 AI 分析”和“公告保底消息”。
 - `events.jsonl`：Codex CLI 输出的事件流，用于展示搜索 query、错误、模型过程。
 - `stderr.log`：Codex CLI stderr。
 - `report.md`：模型最终输出；如果模型通道失败，可能不存在。
@@ -993,7 +996,7 @@ watch-market-history.json
 新增持仓股消息 provider 时：
 
 1. 实现 `WatchNewsAnalysisProvider`。
-2. provider 内部负责消息源抓取、模型 token/base URL、模型选择、请求协议、输出解析和错误归一化。若 provider 使用外部源预抓取候选消息，应在 provider 内部完成，并把候选转换为统一 prompt 或统一内部结构。
+2. provider 内部负责消息源抓取、模型 token/base URL、模型选择、请求协议、输出解析和错误归一化。若 provider 使用外部源预抓取候选消息，应在 provider 内部完成，并把候选转换为统一 prompt 或统一内部结构。对交易所公告等确定性权威来源，必须保证模型故障不会导致已抓取候选被静默丢弃。
 3. 如需支持 Debug，provider 实现 `getLatestDebugRun()` 并返回 `WatchNewsDebugRun`；renderer 只依赖该共享类型，不直接读取文件。
 4. 输出统一转换为 `WatchNewsDraft[]`，由 `WatchNewsService` 统一去重、落库和返回结果。
 5. 不修改 `watch-view`、`watch-controller` 的消息展示逻辑，除非新增共享类型字段。

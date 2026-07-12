@@ -22,6 +22,7 @@ interface CodexRunnerOptions {
   onEvent?: (text: string, event: CodexDisplayEvent) => void;
   platform?: NodeJS.Platform;
   env?: NodeJS.ProcessEnv;
+  timeoutMs?: number;
 }
 
 export class CodexRunner {
@@ -29,6 +30,7 @@ export class CodexRunner {
   private readonly env: NodeJS.ProcessEnv;
   private activeProcess?: ChildProcessWithoutNullStreams;
   private cancelRequested = false;
+  private timeoutRequested = false;
 
   constructor(private readonly options: CodexRunnerOptions) {
     this.platform = options.platform ?? process.platform;
@@ -49,6 +51,7 @@ export class CodexRunner {
     const child = this.spawnCodex();
     this.activeProcess = child;
     this.cancelRequested = false;
+    this.timeoutRequested = false;
 
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
@@ -63,10 +66,19 @@ export class CodexRunner {
     });
     child.stdin.end(prompt);
 
+    const timeout = this.options.timeoutMs && this.options.timeoutMs > 0
+      ? setTimeout(() => {
+          this.timeoutRequested = true;
+          this.stopActiveProcess();
+        }, this.options.timeoutMs)
+      : undefined;
     const exitCode = await new Promise<number>((resolve) => {
       child.once("error", () => resolve(1));
       child.once("close", (code) => resolve(code ?? 1));
     });
+    if (timeout) {
+      clearTimeout(timeout);
+    }
 
     for (const event of parser.flush()) {
       this.options.onEvent?.(event.text, event);
@@ -78,6 +90,13 @@ export class CodexRunner {
 
     if (this.cancelRequested) {
       return { status: "cancelled" };
+    }
+    if (this.timeoutRequested) {
+      const seconds = Math.max(1, Math.ceil((this.options.timeoutMs ?? 0) / 1000));
+      return {
+        status: "failed",
+        errorMessage: `Codex CLI 运行超时（${seconds} 秒）`
+      };
     }
     if (exitCode !== 0) {
       const stderr = (await readFile(stderrPath, "utf8")).trim();
@@ -103,6 +122,13 @@ export class CodexRunner {
       return;
     }
     this.cancelRequested = true;
+    this.stopActiveProcess();
+  }
+
+  private stopActiveProcess(): void {
+    if (!this.activeProcess) {
+      return;
+    }
     const child = this.activeProcess;
     if (this.platform === "win32" && child.pid) {
       const command = buildWindowsTaskkillCommand(child.pid);
