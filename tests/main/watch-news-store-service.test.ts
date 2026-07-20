@@ -79,7 +79,7 @@ describe("WatchNewsService", () => {
     const provider: WatchNewsAnalysisProvider = {
       analyze: vi.fn(async (stock) => [draft(stock.secid, `${stock.stockName} 消息`)])
     };
-    const service = new WatchNewsService(store, provider, () => new Date("2026-07-09T10:00:00.000Z"));
+    const service = new WatchNewsService(store, async () => provider, () => new Date("2026-07-09T10:00:00.000Z"));
 
     const result = await service.analyzeHoldingStocks(configWithHoldings());
 
@@ -111,7 +111,7 @@ describe("WatchNewsService", () => {
     const onMessagesChanged = vi.fn();
     const service = new WatchNewsService(
       store,
-      provider,
+      async () => provider,
       () => new Date("2026-07-12T10:00:00.000Z"),
       onMessagesChanged
     );
@@ -126,6 +126,43 @@ describe("WatchNewsService", () => {
       releaseAnalysis();
       await running;
     }
+  });
+
+  it("uses one provider snapshot for every stock in a batch and resolves again next time", async () => {
+    const store = await createStore();
+    const firstProvider: WatchNewsAnalysisProvider = {
+      analyze: vi.fn(async (stock) => [draft(stock.secid, `first-${stock.stockName}`)])
+    };
+    const secondProvider: WatchNewsAnalysisProvider = {
+      analyze: vi.fn(async (stock) => [draft(stock.secid, `second-${stock.stockName}`)])
+    };
+    let selected = firstProvider;
+    const resolver = vi.fn(async () => selected);
+    const service = new WatchNewsService(store, resolver);
+
+    await service.analyzeHoldingStocks(configWithHoldings());
+    selected = secondProvider;
+    await service.analyzeStock({ secid: "1.600003", stockName: "持仓D" });
+
+    expect(resolver).toHaveBeenCalledTimes(2);
+    expect(firstProvider.analyze).toHaveBeenCalledTimes(2);
+    expect(secondProvider.analyze).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads debug output from the last provider used by an analysis", async () => {
+    const store = await createStore();
+    const provider: WatchNewsAnalysisProvider = {
+      analyze: vi.fn().mockResolvedValue([]),
+      getLatestDebugRun: vi.fn().mockResolvedValue({ runId: "last" })
+    };
+    const resolver = vi.fn(async () => provider);
+    const service = new WatchNewsService(store, resolver);
+
+    await service.analyzeStock({ secid: "1.600003", stockName: "持仓D" });
+    await service.getLatestDebugRun("1.600003");
+
+    expect(resolver).toHaveBeenCalledOnce();
+    expect(provider.getLatestDebugRun).toHaveBeenCalledWith("1.600003");
   });
 });
 

@@ -27,7 +27,7 @@ export interface ResearchServiceDependencies {
   userDataDirectory: string;
   configStore: ConfigStoreLike;
   historyStore: HistoryStoreLike;
-  researchProvider: ResearchProvider;
+  resolveResearchProvider: () => Promise<ResearchProvider>;
   pdfExporter: PdfExporterLike;
   createId?: () => string;
   now?: () => Date;
@@ -55,14 +55,15 @@ export class ResearchService {
       throw new Error("请先选择调研报告目录");
     }
 
-    const providerStatus = await this.dependencies.researchProvider.detect();
+    const provider = await this.dependencies.resolveResearchProvider();
+    const providerStatus = await provider.detect();
     if (!providerStatus.available) {
-      throw new Error(providerStatus.message ?? `${this.dependencies.researchProvider.label} 不可用`);
+      throw new Error(providerStatus.message ?? `${provider.label} 不可用`);
     }
     if (providerStatus.loggedIn === false) {
       throw new Error(
         providerStatus.message
-          ?? `${this.dependencies.researchProvider.label} 尚未登录，请先完成登录配置。`
+          ?? `${provider.label} 尚未登录，请先完成登录配置。`
       );
     }
 
@@ -82,7 +83,6 @@ export class ResearchService {
     };
     await this.dependencies.historyStore.create(record);
 
-    const provider = this.dependencies.researchProvider;
     this.active = { record, provider };
     this.emit({ type: "status", recordId: id, status: "running" });
 

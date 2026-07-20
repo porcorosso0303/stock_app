@@ -18,9 +18,11 @@ interface WatchNewsStoreLike {
 }
 
 export class WatchNewsService {
+  private latestProvider?: WatchNewsAnalysisProvider;
+
   constructor(
     private readonly store: WatchNewsStoreLike,
-    private readonly provider: WatchNewsAnalysisProvider,
+    private readonly resolveProvider: () => Promise<WatchNewsAnalysisProvider>,
     private readonly now: () => Date = () => new Date(),
     private readonly onMessagesChanged: () => void = () => undefined
   ) {}
@@ -34,7 +36,9 @@ export class WatchNewsService {
   }
 
   async getLatestDebugRun(secid?: string): Promise<WatchNewsDebugRun | undefined> {
-    return await this.provider.getLatestDebugRun?.(secid);
+    const provider = this.latestProvider ?? await this.resolveProvider();
+    this.latestProvider = provider;
+    return await provider.getLatestDebugRun?.(secid);
   }
 
   async analyzeStock(stock: { secid: string; stockName: string }): Promise<WatchNewsAnalysisResult> {
@@ -53,11 +57,13 @@ export class WatchNewsService {
 
   private async analyzeStocks(stocks: WatchHoldingStock[]): Promise<WatchNewsAnalysisResult> {
     const uniqueStocks = uniqueBySecid(stocks);
+    const provider = await this.resolveProvider();
+    this.latestProvider = provider;
     const results = await mapWithConcurrency(uniqueStocks, 3, async (stock) => {
       const messages: WatchNewsMessage[] = [];
       try {
         const existingMessages = await this.store.list([stock.secid]);
-        const drafts = await this.provider.analyze({
+        const drafts = await provider.analyze({
           secid: stock.secid,
           stockName: stock.stockName,
           existingMessages: existingMessages.map((message) => ({

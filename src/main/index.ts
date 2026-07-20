@@ -119,7 +119,7 @@ void app.whenReady().then(async () => {
     userDataDirectory: userData,
     configStore,
     historyStore,
-    researchProvider,
+    resolveResearchProvider: async () => researchProvider,
     pdfExporter,
     onProgress: (event) => {
       mainWindow?.webContents.send(IPC.researchEvent, event);
@@ -152,7 +152,7 @@ void app.whenReady().then(async () => {
   });
   const watchNewsService = new WatchNewsService(
     watchNewsStore,
-    watchNewsProvider,
+    async () => watchNewsProvider,
     undefined,
     notifyWatchNewsUpdated
   );

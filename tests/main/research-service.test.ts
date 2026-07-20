@@ -16,6 +16,8 @@ async function createHarness(options: {
   result?: CodexRunResult;
   exportError?: Error;
   researchProvider?: ResearchProvider;
+  resolveResearchProvider?: () => Promise<ResearchProvider>;
+  createId?: () => string;
 } = {}) {
   const userData = await mkdtemp(join(tmpdir(), "stock-tool-service-"));
   directories.push(userData);
@@ -50,9 +52,9 @@ async function createHarness(options: {
       get: async () => ({ reportDirectory: options.reportDirectory })
     },
     historyStore: history,
-    researchProvider,
+    resolveResearchProvider: options.resolveResearchProvider ?? (async () => researchProvider),
     pdfExporter: { export: exportPdf },
-    createId: () => "run-id",
+    createId: options.createId ?? (() => "run-id"),
     now: () => new Date(2026, 4, 31, 14, 30, 25)
   });
   return { service, history, run, cancel, exportPdf, createRunner, prepareSkill, userData };
@@ -194,6 +196,49 @@ describe("ResearchService", () => {
 
     expect(cancel).toHaveBeenCalledOnce();
     await expect(running).resolves.toMatchObject({ status: "cancelled" });
+  });
+
+  it("snapshots one provider for an active task and resolves the next task again", async () => {
+    let releaseFirst!: (result: CodexRunResult) => void;
+    const firstProvider: ResearchProvider = {
+      id: "first",
+      label: "First",
+      detect: vi.fn().mockResolvedValue({ available: true, loggedIn: true }),
+      run: vi.fn().mockReturnValue(new Promise<CodexRunResult>((resolve) => {
+        releaseFirst = resolve;
+      })),
+      cancel: vi.fn()
+    };
+    const secondProvider: ResearchProvider = {
+      id: "second",
+      label: "Second",
+      detect: vi.fn().mockResolvedValue({ available: true, loggedIn: true }),
+      run: vi.fn().mockResolvedValue({ status: "cancelled" }),
+      cancel: vi.fn()
+    };
+    let selectedProvider = firstProvider;
+    const resolveResearchProvider = vi.fn(async () => selectedProvider);
+    let id = 0;
+    const { service } = await createHarness({
+      reportDirectory: "C:\\reports",
+      resolveResearchProvider,
+      createId: () => `run-${++id}`
+    });
+
+    const firstRun = service.start("贵州茅台");
+    await vi.waitFor(() => expect(firstProvider.run).toHaveBeenCalledOnce());
+    selectedProvider = secondProvider;
+    service.cancel();
+
+    expect(firstProvider.cancel).toHaveBeenCalledOnce();
+    expect(secondProvider.cancel).not.toHaveBeenCalled();
+    expect(resolveResearchProvider).toHaveBeenCalledOnce();
+    releaseFirst({ status: "cancelled" });
+    await firstRun;
+
+    await service.start("五粮液");
+    expect(resolveResearchProvider).toHaveBeenCalledTimes(2);
+    expect(secondProvider.run).toHaveBeenCalledOnce();
   });
 
   it("keeps Markdown when PDF export fails and can retry later", async () => {

@@ -61,7 +61,7 @@ describe("fake Codex integration", () => {
       userDataDirectory: userData,
       configStore: config,
       historyStore: history,
-      researchProvider,
+      resolveResearchProvider: async () => researchProvider,
       pdfExporter: {
         export: async (_markdown, targetPath) => {
           await writeFile(targetPath, "%PDF-FAKE", "utf8");
