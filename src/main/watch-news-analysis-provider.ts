@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
   CodexEnvironmentStatus,
@@ -10,6 +10,10 @@ import type { CodexRunResult } from "./codex-runner";
 import { CodexJsonlParser } from "./codex-events";
 import type { WatchNewsDraft } from "./watch-news-store";
 import type { FetchLike } from "./east-money-quote-service";
+import type {
+  DeepSeekAgentProgress,
+  DeepSeekAgentRequest
+} from "./deepseek-agent-runner";
 
 export interface WatchNewsStockInput {
   secid: string;
@@ -82,153 +86,47 @@ export class CodexWatchNewsAnalysisProvider implements WatchNewsAnalysisProvider
     stock: WatchNewsStockInput,
     onPartialDrafts?: (drafts: WatchNewsDraft[]) => Promise<void>
   ): Promise<WatchNewsDraft[]> {
-    const now = this.now();
-    const lookbackHours = stock.existingMessages.length === 0 ? 7 * 24 : 48;
-    const { candidates, errorMessage: noticeErrorMessage } = await this.listNoticeCandidates(
-      stock,
-      now,
-      lookbackHours
-    );
-    const fallbackDrafts = candidates.flatMap((candidate) =>
-      isMaterialNotice(candidate) ? [buildNoticeFallbackDraft(stock, candidate)] : []
-    );
-    if (fallbackDrafts.length > 0) {
-      await onPartialDrafts?.(fallbackDrafts);
-    }
-    const runDirectory = join(
-      this.dependencies.userDataDirectory,
-      "watch-news-runs",
-      `${formatRunTimestamp(now)}-${sanitizeFilePart(stock.secid)}`
-    );
-    await mkdir(runDirectory, { recursive: true });
-    const prompt = buildWatchNewsPrompt(
-      stock,
-      now,
-      candidates,
-      noticeErrorMessage,
-      lookbackHours
-    );
-    await writeFile(join(runDirectory, "prompt.txt"), prompt, "utf8");
-    await this.writeRunMeta(runDirectory, {
-      secid: stock.secid,
-      stockName: stock.stockName,
-      createdAt: now.toISOString()
-    });
+    const prepared = await prepareWatchNewsRun({
+      userDataDirectory: this.dependencies.userDataDirectory,
+      noticeSource: this.dependencies.noticeSource,
+      now: this.now
+    }, stock, onPartialDrafts);
     let launcher: CodexLauncher;
     try {
       launcher = requireCodexLauncher(await this.dependencies.codexLocator.detect());
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      await this.writeRunMeta(runDirectory, {
-        secid: stock.secid,
-        stockName: stock.stockName,
-        createdAt: now.toISOString(),
-        errorMessage
-      });
-      if (fallbackDrafts.length > 0) {
-        return fallbackDrafts;
-      }
-      throw error;
+      return await failPreparedWatchNewsRun(prepared, error);
     }
     const runner = this.dependencies.createRunner({
       launcher,
-      runDirectory,
+      runDirectory: prepared.runDirectory,
       onEvent: () => undefined,
       idleTimeoutMs: 180_000,
       maxRuntimeMs: 720_000
     });
     this.activeRunners.add(runner);
     try {
-      const result = await runner.run(prompt);
+      const result = await runner.run(prepared.prompt);
       if (result.status === "cancelled") {
-        await this.writeRunMeta(runDirectory, {
-          secid: stock.secid,
-          stockName: stock.stockName,
-          createdAt: now.toISOString(),
+        await writeRunMeta(prepared.runDirectory, {
+          secid: prepared.stock.secid,
+          stockName: prepared.stock.stockName,
+          createdAt: prepared.now.toISOString(),
           errorMessage: "用户取消"
         });
-        return fallbackDrafts;
+        return prepared.fallbackDrafts;
       }
       if (result.status === "failed") {
-        await this.writeRunMeta(runDirectory, {
-          secid: stock.secid,
-          stockName: stock.stockName,
-          createdAt: now.toISOString(),
-          errorMessage: result.errorMessage
-        });
-        if (fallbackDrafts.length > 0) {
-          return fallbackDrafts;
-        }
-        throw new Error(result.errorMessage);
+        return await failPreparedWatchNewsRun(prepared, new Error(result.errorMessage));
       }
-      try {
-        const modelDrafts = parseWatchNewsDrafts(result.reportMarkdown, stock);
-        await this.writeRunMeta(runDirectory, {
-          secid: stock.secid,
-          stockName: stock.stockName,
-          createdAt: now.toISOString()
-        });
-        return mergeWatchNewsDrafts(modelDrafts, fallbackDrafts);
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        await this.writeRunMeta(runDirectory, {
-          secid: stock.secid,
-          stockName: stock.stockName,
-          createdAt: now.toISOString(),
-          errorMessage
-        });
-        if (fallbackDrafts.length > 0) {
-          return fallbackDrafts;
-        }
-        throw error;
-      }
+      return await completePreparedWatchNewsRun(prepared, result.reportMarkdown);
     } finally {
       this.activeRunners.delete(runner);
     }
   }
 
   async getLatestDebugRun(secid?: string): Promise<WatchNewsDebugRun | undefined> {
-    const runsDirectory = join(this.dependencies.userDataDirectory, "watch-news-runs");
-    let entries: string[];
-    try {
-      entries = await readdir(runsDirectory);
-    } catch {
-      return undefined;
-    }
-    const matching = entries
-      .filter((entry) => !secid || entry.endsWith(`-${sanitizeFilePart(secid)}`))
-      .sort((left, right) => right.localeCompare(left));
-    for (const entry of matching) {
-      const runDirectory = join(runsDirectory, entry);
-      const meta = await readRunMeta(runDirectory);
-      if (secid && meta?.secid !== secid && !entry.endsWith(`-${sanitizeFilePart(secid)}`)) {
-        continue;
-      }
-      const prompt = await readOptionalFile(join(runDirectory, "prompt.txt"));
-      const eventsRaw = await readOptionalFile(join(runDirectory, "events.jsonl"));
-      const stderr = await readOptionalFile(join(runDirectory, "stderr.log"));
-      const reportMarkdown = await readOptionalFile(join(runDirectory, "report.md"));
-      const status = meta?.errorMessage
-        ? "failed"
-        : reportMarkdown.trim()
-          ? "completed"
-          : "running";
-      return {
-        runId: entry,
-        runDirectory,
-        secid: meta?.secid ?? secid ?? "",
-        stockName: meta?.stockName,
-        createdAt: meta?.createdAt ?? parseCreatedAtFromRunId(entry),
-        status,
-        prompt,
-        events: parseDebugEvents(eventsRaw),
-        rawEvents: eventsRaw,
-        stderr,
-        reportMarkdown,
-        errorMessage: meta?.errorMessage
-      };
-    }
-    return undefined;
+    return await readLatestWatchNewsDebugRun(this.dependencies.userDataDirectory, secid);
   }
 
   cancelAll(): void {
@@ -237,37 +135,227 @@ export class CodexWatchNewsAnalysisProvider implements WatchNewsAnalysisProvider
     }
   }
 
-  private async listNoticeCandidates(
+}
+
+interface DeepSeekWatchNewsAgentLike {
+  run(request: DeepSeekAgentRequest): Promise<string>;
+  cancel(): void;
+}
+
+export interface DeepSeekWatchNewsAnalysisProviderDependencies {
+  model: string;
+  userDataDirectory: string;
+  createAgent(onProgress: (event: DeepSeekAgentProgress) => void): DeepSeekWatchNewsAgentLike;
+  noticeSource?: WatchNewsNoticeSource;
+  now?: () => Date;
+}
+
+export class DeepSeekWatchNewsAnalysisProvider implements WatchNewsAnalysisProvider {
+  private readonly now: () => Date;
+  private readonly activeAgents = new Set<DeepSeekWatchNewsAgentLike>();
+
+  constructor(private readonly dependencies: DeepSeekWatchNewsAnalysisProviderDependencies) {
+    this.now = dependencies.now ?? (() => new Date());
+  }
+
+  async analyze(
     stock: WatchNewsStockInput,
-    now: Date,
-    lookbackHours: number
-  ): Promise<{ candidates: WatchNewsNoticeCandidate[]; errorMessage?: string }> {
-    if (!this.dependencies.noticeSource) {
-      return { candidates: [] };
-    }
+    onPartialDrafts?: (drafts: WatchNewsDraft[]) => Promise<void>
+  ): Promise<WatchNewsDraft[]> {
+    const prepared = await prepareWatchNewsRun({
+      userDataDirectory: this.dependencies.userDataDirectory,
+      noticeSource: this.dependencies.noticeSource,
+      now: this.now
+    }, stock, onPartialDrafts);
+    const prompts = buildDeepSeekWatchNewsPrompts(
+      stock,
+      prepared.now,
+      prepared.noticeCandidates,
+      prepared.noticeErrorMessage,
+      prepared.lookbackHours
+    );
+    let eventWrites = Promise.resolve();
+    let idleTimer: NodeJS.Timeout | undefined;
+    let timeoutReason: string | undefined;
+    let agent: DeepSeekWatchNewsAgentLike;
+    const resetIdleTimeout = (): void => {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        timeoutReason = "DeepSeek 消息分析连续 3 分钟没有进度";
+        agent.cancel();
+      }, 180_000);
+    };
+    agent = this.dependencies.createAgent((event) => {
+      resetIdleTimeout();
+      eventWrites = eventWrites.then(async () => {
+        await appendFile(
+          join(prepared.runDirectory, "events.jsonl"),
+          `${JSON.stringify(toDebugEvent(event))}\n`,
+          "utf8"
+        );
+      });
+    });
+    this.activeAgents.add(agent);
+    resetIdleTimeout();
+    const maxTimer = setTimeout(() => {
+      timeoutReason = "DeepSeek 消息分析超过 12 分钟";
+      agent.cancel();
+    }, 720_000);
     try {
-      return {
-        candidates: await this.dependencies.noticeSource.listRecent(stock, now, lookbackHours)
-      };
+      const report = await agent.run(prompts);
+      await eventWrites;
+      return await completePreparedWatchNewsRun(prepared, report);
     } catch (error) {
-      return {
-        candidates: [],
-        errorMessage: error instanceof Error ? error.message : String(error)
-      };
+      await eventWrites;
+      return await failPreparedWatchNewsRun(prepared, new Error(
+        timeoutReason ?? (error instanceof Error ? error.message : String(error))
+      ));
+    } finally {
+      if (idleTimer) clearTimeout(idleTimer);
+      clearTimeout(maxTimer);
+      this.activeAgents.delete(agent);
     }
   }
 
-  private async writeRunMeta(
-    runDirectory: string,
-    meta: {
-      secid: string;
-      stockName: string;
-      createdAt: string;
-      errorMessage?: string;
-    }
-  ): Promise<void> {
-    await writeFile(join(runDirectory, "meta.json"), `${JSON.stringify(meta, null, 2)}\n`, "utf8");
+  async getLatestDebugRun(secid?: string): Promise<WatchNewsDebugRun | undefined> {
+    return await readLatestWatchNewsDebugRun(this.dependencies.userDataDirectory, secid);
   }
+
+  cancelAll(): void {
+    for (const agent of this.activeAgents) agent.cancel();
+  }
+}
+
+interface CommonWatchNewsDependencies {
+  userDataDirectory: string;
+  noticeSource?: WatchNewsNoticeSource;
+  now: () => Date;
+}
+
+interface PreparedWatchNewsRun {
+  stock: WatchNewsStockInput;
+  now: Date;
+  lookbackHours: number;
+  noticeCandidates: WatchNewsNoticeCandidate[];
+  noticeErrorMessage?: string;
+  fallbackDrafts: WatchNewsDraft[];
+  runDirectory: string;
+  prompt: string;
+}
+
+async function prepareWatchNewsRun(
+  dependencies: CommonWatchNewsDependencies,
+  stock: WatchNewsStockInput,
+  onPartialDrafts?: (drafts: WatchNewsDraft[]) => Promise<void>
+): Promise<PreparedWatchNewsRun> {
+  const now = dependencies.now();
+  const lookbackHours = stock.existingMessages.length === 0 ? 7 * 24 : 48;
+  const { candidates, errorMessage } = await listNoticeCandidates(
+    dependencies.noticeSource,
+    stock,
+    now,
+    lookbackHours
+  );
+  const fallbackDrafts = candidates.flatMap((candidate) =>
+    isMaterialNotice(candidate) ? [buildNoticeFallbackDraft(stock, candidate)] : []
+  );
+  if (fallbackDrafts.length > 0) await onPartialDrafts?.(fallbackDrafts);
+  const runDirectory = join(
+    dependencies.userDataDirectory,
+    "watch-news-runs",
+    `${formatRunTimestamp(now)}-${sanitizeFilePart(stock.secid)}`
+  );
+  await mkdir(runDirectory, { recursive: true });
+  const prompt = buildWatchNewsPrompt(stock, now, candidates, errorMessage, lookbackHours);
+  await writeFile(join(runDirectory, "prompt.txt"), prompt, "utf8");
+  await writeRunMeta(runDirectory, {
+    secid: stock.secid,
+    stockName: stock.stockName,
+    createdAt: now.toISOString()
+  });
+  return {
+    stock,
+    now,
+    lookbackHours,
+    noticeCandidates: candidates,
+    noticeErrorMessage: errorMessage,
+    fallbackDrafts,
+    runDirectory,
+    prompt
+  };
+}
+
+async function listNoticeCandidates(
+  noticeSource: WatchNewsNoticeSource | undefined,
+  stock: WatchNewsStockInput,
+  now: Date,
+  lookbackHours: number
+): Promise<{ candidates: WatchNewsNoticeCandidate[]; errorMessage?: string }> {
+  if (!noticeSource) return { candidates: [] };
+  try {
+    return { candidates: await noticeSource.listRecent(stock, now, lookbackHours) };
+  } catch (error) {
+    return { candidates: [], errorMessage: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+async function completePreparedWatchNewsRun(
+  prepared: PreparedWatchNewsRun,
+  report: string
+): Promise<WatchNewsDraft[]> {
+  try {
+    const modelDrafts = parseWatchNewsDrafts(report, prepared.stock);
+    await writeFile(join(prepared.runDirectory, "report.md"), report, "utf8");
+    await writeRunMeta(prepared.runDirectory, {
+      secid: prepared.stock.secid,
+      stockName: prepared.stock.stockName,
+      createdAt: prepared.now.toISOString()
+    });
+    return mergeWatchNewsDrafts(modelDrafts, prepared.fallbackDrafts);
+  } catch (error) {
+    return await failPreparedWatchNewsRun(prepared, error);
+  }
+}
+
+async function failPreparedWatchNewsRun(
+  prepared: PreparedWatchNewsRun,
+  error: unknown
+): Promise<WatchNewsDraft[]> {
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  await writeRunMeta(prepared.runDirectory, {
+    secid: prepared.stock.secid,
+    stockName: prepared.stock.stockName,
+    createdAt: prepared.now.toISOString(),
+    errorMessage
+  });
+  if (prepared.fallbackDrafts.length > 0) return prepared.fallbackDrafts;
+  throw error instanceof Error ? error : new Error(errorMessage);
+}
+
+export function buildDeepSeekWatchNewsPrompts(
+  stock: WatchNewsStockInput,
+  now: Date,
+  noticeCandidates: WatchNewsNoticeCandidate[],
+  noticeErrorMessage: string | undefined,
+  lookbackHours: number
+): DeepSeekAgentRequest {
+  return {
+    systemPrompt: [
+      "你是 A 股持仓股消息面监控代理。使用 web_search 和 web_extract 获取当前公开证据。",
+      "优先采用交易所、巨潮资讯、公司官网、官方投资者交流和法定公告；论坛只能作为线索，必须用权威来源交叉验证。",
+      "只保留可能影响业绩、基本面、监管风险、订单、财报、股价或市场预期的新消息。",
+      "严格去重，不得编造来源、日期或事实。每条消息给出影响分析和可信度。",
+      "只输出 JSON 数组，不要输出 Markdown 或额外解释。"
+    ].join("\n"),
+    userPrompt: buildWatchNewsPrompt(stock, now, noticeCandidates, noticeErrorMessage, lookbackHours)
+  };
+}
+
+function toDebugEvent(event: DeepSeekAgentProgress): WatchNewsDebugEvent {
+  return {
+    text: event.text,
+    level: event.kind === "warning" ? "warning" : "info"
+  };
 }
 
 export class EastMoneyWatchNewsNoticeSource implements WatchNewsNoticeSource {
@@ -579,6 +667,65 @@ function parseChinaDateTime(value: string | undefined): Date | undefined {
   return new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}+08:00`);
 }
 
+async function writeRunMeta(
+  runDirectory: string,
+  meta: {
+    secid: string;
+    stockName: string;
+    createdAt: string;
+    errorMessage?: string;
+  }
+): Promise<void> {
+  await writeFile(join(runDirectory, "meta.json"), `${JSON.stringify(meta, null, 2)}\n`, "utf8");
+}
+
+async function readLatestWatchNewsDebugRun(
+  userDataDirectory: string,
+  secid?: string
+): Promise<WatchNewsDebugRun | undefined> {
+  const runsDirectory = join(userDataDirectory, "watch-news-runs");
+  let entries: string[];
+  try {
+    entries = await readdir(runsDirectory);
+  } catch {
+    return undefined;
+  }
+  const matching = entries
+    .filter((entry) => !secid || entry.endsWith(`-${sanitizeFilePart(secid)}`))
+    .sort((left, right) => right.localeCompare(left));
+  for (const entry of matching) {
+    const runDirectory = join(runsDirectory, entry);
+    const meta = await readRunMeta(runDirectory);
+    if (secid && meta?.secid !== secid && !entry.endsWith(`-${sanitizeFilePart(secid)}`)) {
+      continue;
+    }
+    const prompt = await readOptionalFile(join(runDirectory, "prompt.txt"));
+    const eventsRaw = await readOptionalFile(join(runDirectory, "events.jsonl"));
+    const stderr = await readOptionalFile(join(runDirectory, "stderr.log"));
+    const reportMarkdown = await readOptionalFile(join(runDirectory, "report.md"));
+    const status = meta?.errorMessage
+      ? "failed"
+      : reportMarkdown.trim()
+        ? "completed"
+        : "running";
+    return {
+      runId: entry,
+      runDirectory,
+      secid: meta?.secid ?? secid ?? "",
+      stockName: meta?.stockName,
+      createdAt: meta?.createdAt ?? parseCreatedAtFromRunId(entry),
+      status,
+      prompt,
+      events: parseDebugEvents(eventsRaw),
+      rawEvents: eventsRaw,
+      stderr,
+      reportMarkdown,
+      errorMessage: meta?.errorMessage
+    };
+  }
+  return undefined;
+}
+
 async function readRunMeta(runDirectory: string): Promise<{
   secid?: string;
   stockName?: string;
@@ -604,6 +751,23 @@ async function readOptionalFile(path: string): Promise<string> {
 }
 
 function parseDebugEvents(raw: string): WatchNewsDebugEvent[] {
+  const directEvents = raw.split(/\r?\n/).flatMap((line): WatchNewsDebugEvent[] => {
+    if (!line.trim()) return [];
+    try {
+      const value = JSON.parse(line) as unknown;
+      if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+      const event = value as Record<string, unknown>;
+      if (typeof event.text !== "string") return [];
+      return [{
+        text: event.text,
+        level: event.level === "warning" || event.level === "error" ? event.level : "info",
+        raw: typeof event.raw === "string" ? event.raw : line
+      }];
+    } catch {
+      return [];
+    }
+  });
+  if (directEvents.length > 0) return directEvents;
   const parser = new CodexJsonlParser();
   const parsed = parser.push(raw).concat(parser.flush());
   if (parsed.length > 0) {
