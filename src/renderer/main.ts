@@ -12,7 +12,12 @@ import type {
   ModelProviderSettingsView,
   WatchMarketProviderId
 } from "../shared/types";
-import { initializationErrorMessage } from "./view-model";
+import {
+  DEEPSEEK_CUSTOM_MODEL_OPTION,
+  initializationErrorMessage,
+  resolveDeepSeekModelForm,
+  resolveDeepSeekModelValue
+} from "./view-model";
 
 const api = window.stockResearch;
 let activeFeature: FeatureName = "research";
@@ -78,6 +83,7 @@ function bindModelProviderSettings(initialCodexStatus: CodexEnvironmentStatus): 
     void loadSettings();
   });
   elements.modelProviderSelect.addEventListener("change", renderProviderSection);
+  elements.deepSeekModel.addEventListener("change", renderDeepSeekCustomModel);
   elements.cancelModelProvider.addEventListener("click", () => elements.modelProviderDialog.close());
   elements.clearDeepSeekApiKey.addEventListener("click", () => {
     clearDeepSeekApiKey = true;
@@ -110,7 +116,9 @@ function bindModelProviderSettings(initialCodexStatus: CodexEnvironmentStatus): 
       clearTavilyApiKey = false;
       elements.modelProviderSelect.value = current.providerId;
       elements.deepSeekBaseUrl.value = current.deepSeekBaseUrl;
-      elements.deepSeekModel.value = current.deepSeekModel;
+      const modelForm = resolveDeepSeekModelForm(current.deepSeekModel);
+      elements.deepSeekModel.value = modelForm.preset;
+      elements.deepSeekCustomModel.value = modelForm.custom;
       elements.deepSeekReasoningEffort.value = current.deepSeekReasoningEffort;
       elements.deepSeekApiKey.value = "";
       elements.tavilyApiKey.value = "";
@@ -138,7 +146,11 @@ function bindModelProviderSettings(initialCodexStatus: CodexEnvironmentStatus): 
       current = await api.setModelProviderSettings({
         providerId,
         deepSeekBaseUrl: elements.deepSeekBaseUrl.value,
-        deepSeekModel: elements.deepSeekModel.value,
+        deepSeekModel: resolveDeepSeekModelValue(
+          elements.deepSeekModel.value,
+          elements.deepSeekCustomModel.value,
+          providerId === "deepseek" ? "" : current.deepSeekModel
+        ),
         deepSeekReasoningEffort: elements.deepSeekReasoningEffort.value as ModelProviderSettingsView["deepSeekReasoningEffort"],
         deepSeekApiKey: elements.deepSeekApiKey.value.trim() || undefined,
         tavilyApiKey: elements.tavilyApiKey.value.trim() || undefined,
@@ -155,6 +167,14 @@ function bindModelProviderSettings(initialCodexStatus: CodexEnvironmentStatus): 
     const isDeepSeek = elements.modelProviderSelect.value === "deepseek";
     elements.codexModelSettings.hidden = isDeepSeek;
     elements.deepSeekModelSettings.hidden = !isDeepSeek;
+    renderDeepSeekCustomModel();
+  }
+
+  function renderDeepSeekCustomModel(): void {
+    const isDeepSeek = elements.modelProviderSelect.value === "deepseek";
+    const isCustom = elements.deepSeekModel.value === DEEPSEEK_CUSTOM_MODEL_OPTION;
+    elements.deepSeekCustomModelSettings.hidden = !isCustom;
+    elements.deepSeekCustomModel.required = isDeepSeek && isCustom;
   }
 
   function renderSecretStatus(): void {

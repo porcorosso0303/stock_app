@@ -221,7 +221,7 @@ interface AppConfig {
 
 `watchMarketProviderId` 是盯盘行情 provider 选择配置。顶部 Electron 菜单 `Setting -> 数据源` 不直接承载所有选项，而是通知 renderer 打开独立的数据源设置弹窗。用户在弹窗中选择“东方财富”或“模拟数据”并保存后，renderer 调用 `watch-market-provider:set`；主进程写入 `user_data/config.json`，切换当前 provider，并通过 `watch-market-provider:changed` 通知 renderer 重新加载盯盘行情。
 
-`Setting -> 模型服务` 使用相同的独立弹窗结构。`modelProviderId` 是股票调研和持仓股消息共同使用的模型服务；`deepSeekBaseUrl`、`deepSeekModel` 和 `deepSeekReasoningEffort` 是非敏感 DeepSeek 配置。旧 `researchProviderId` 只用于兼容读取，缺少新字段时默认选择 `codex-cli`。DeepSeek 默认 Base URL 是 `https://api.deepseek.com`，默认模型是 `deepseek-v4-pro`，默认思考强度是 `high`；设置界面只提供 `high` 和 `max`。旧配置缺少思考强度或磁盘值无法识别时读取为 `high`，保存接口仍严格拒绝未知值。本机 `localhost`/`127.0.0.1` 兼容端点可以使用 HTTP，其他地址必须使用 HTTPS。
+`Setting -> 模型服务` 使用相同的独立弹窗结构。`modelProviderId` 是股票调研和持仓股消息共同使用的模型服务；`deepSeekBaseUrl`、`deepSeekModel` 和 `deepSeekReasoningEffort` 是非敏感 DeepSeek 配置。旧 `researchProviderId` 只用于兼容读取，缺少新字段时默认选择 `codex-cli`。DeepSeek 默认 Base URL 是 `https://api.deepseek.com`，默认模型是 `deepseek-v4-pro`，默认思考强度是 `high`；设置界面的模型下拉框固定展示 `deepseek-v4-pro`、`deepseek-v4-flash` 和“自定义模型”，选择自定义项后显示模型名称输入框。Renderer 使用 `view-model.ts` 中的纯函数在已保存模型名称与表单状态之间转换，未知模型名称会原样进入自定义输入框，因此兼容自定义 Base URL 和已有自定义配置。DeepSeek 模式下自定义名称动态设为必填；切换到 Codex 后取消必填，空的隐藏字段使用当前已保存模型，不能阻止 Codex 设置保存。思考强度只提供 `high` 和 `max`。旧配置缺少思考强度或磁盘值无法识别时读取为 `high`，保存接口仍严格拒绝未知值。本机 `localhost`/`127.0.0.1` 兼容端点可以使用 HTTP，其他地址必须使用 HTTPS。
 
 ### 盯盘纯函数
 

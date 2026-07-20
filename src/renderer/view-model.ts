@@ -4,6 +4,27 @@ import type {
   ResearchStatus
 } from "../shared/types";
 
+const DEEPSEEK_OFFICIAL_MODELS = new Set([
+  "deepseek-v4-pro",
+  "deepseek-v4-flash"
+]);
+export const DEEPSEEK_CUSTOM_MODEL_OPTION = "__custom__";
+
+export function resolveDeepSeekModelForm(model: string): { preset: string; custom: string } {
+  return DEEPSEEK_OFFICIAL_MODELS.has(model)
+    ? { preset: model, custom: "" }
+    : { preset: DEEPSEEK_CUSTOM_MODEL_OPTION, custom: model };
+}
+
+export function resolveDeepSeekModelValue(
+  preset: string,
+  custom: string,
+  emptyCustomFallback = ""
+): string {
+  if (preset !== DEEPSEEK_CUSTOM_MODEL_OPTION) return preset;
+  return custom.trim() || emptyCustomFallback;
+}
+
 export function primaryActionLabel(running: boolean): string {
   return running ? "停止调研" : "调研";
 }

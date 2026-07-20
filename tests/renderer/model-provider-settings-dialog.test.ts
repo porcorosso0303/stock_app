@@ -11,9 +11,16 @@ describe("model provider settings dialog", () => {
     expect(html).toContain("OpenAI Codex");
     expect(html).toContain("DeepSeek");
     expect(html).toContain('id="deepseek-base-url"');
-    expect(html).toContain('id="deepseek-model"');
-    expect(html).toContain("deepseek-v4-pro");
-    expect(html).toContain("deepseek-v4-flash");
+    expect(html).toContain('<select id="deepseek-model">');
+    expect(html).toContain('<option value="deepseek-v4-pro">deepseek-v4-pro</option>');
+    expect(html).toContain('<option value="deepseek-v4-flash">deepseek-v4-flash</option>');
+    expect(html).toContain('<option value="__custom__">自定义模型...</option>');
+    expect(html).toContain('id="deepseek-custom-model-settings"');
+    expect(html).toContain('id="deepseek-custom-model"');
+    expect(html).toContain('aria-describedby="model-provider-status"');
+    expect(html).toContain('id="model-provider-status" class="dialog-error" role="alert" aria-live="polite"');
+    expect(html).not.toContain('list="deepseek-model-options"');
+    expect(html).not.toContain('id="deepseek-model-options"');
     expect(html).toContain('id="deepseek-reasoning-effort"');
     expect(html).toContain('<option value="high">high</option>');
     expect(html).toContain('<option value="max">max</option>');
@@ -21,6 +28,9 @@ describe("model provider settings dialog", () => {
     expect(html).toContain('id="tavily-api-key" type="password"');
     expect(html).not.toMatch(/value="[^\"]*(?:sk-|tvly-)/);
     expect(dom).toContain('modelProviderDialog: getElement<HTMLDialogElement>("model-provider-dialog")');
+    expect(dom).toContain('deepSeekModel: getElement<HTMLSelectElement>("deepseek-model")');
+    expect(dom).toContain('deepSeekCustomModelSettings: getElement<HTMLElement>("deepseek-custom-model-settings")');
+    expect(dom).toContain('deepSeekCustomModel: getElement<HTMLInputElement>("deepseek-custom-model")');
     expect(dom).toContain('deepSeekReasoningEffort: getElement<HTMLSelectElement>("deepseek-reasoning-effort")');
   });
 
@@ -40,6 +50,13 @@ describe("model provider settings dialog", () => {
     expect(main).toContain("api.setModelProviderSettings");
     expect(main).toContain("hasDeepSeekApiKey");
     expect(main).toContain("hasTavilyApiKey");
+    expect(main).toContain("resolveDeepSeekModelForm");
+    expect(main).toContain("resolveDeepSeekModelValue");
+    expect(main).toContain('elements.deepSeekModel.addEventListener("change", renderDeepSeekCustomModel)');
+    expect(main).toContain("elements.deepSeekCustomModel.value = modelForm.custom");
+    expect(main).toContain("elements.deepSeekCustomModelSettings.hidden");
+    expect(main).toContain("elements.deepSeekCustomModel.required = isDeepSeek && isCustom");
+    expect(main).toContain('providerId === "deepseek" ? "" : current.deepSeekModel');
     expect(main).toContain("elements.deepSeekReasoningEffort.value = current.deepSeekReasoningEffort");
     expect(main).toContain("deepSeekReasoningEffort: elements.deepSeekReasoningEffort.value");
   });

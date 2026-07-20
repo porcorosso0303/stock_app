@@ -210,11 +210,15 @@
           <label for="deepseek-base-url">DeepSeek Base URL</label>
           <input id="deepseek-base-url" type="url" autocomplete="off" />
           <label for="deepseek-model">模型</label>
-          <input id="deepseek-model" list="deepseek-model-options" autocomplete="off" />
-          <datalist id="deepseek-model-options">
-            <option value="deepseek-v4-pro"></option>
-            <option value="deepseek-v4-flash"></option>
-          </datalist>
+          <select id="deepseek-model">
+            <option value="deepseek-v4-pro">deepseek-v4-pro</option>
+            <option value="deepseek-v4-flash">deepseek-v4-flash</option>
+            <option value="__custom__">自定义模型...</option>
+          </select>
+          <div id="deepseek-custom-model-settings" class="model-custom-settings" hidden>
+            <label for="deepseek-custom-model">自定义模型名称</label>
+            <input id="deepseek-custom-model" autocomplete="off" aria-describedby="model-provider-status" />
+          </div>
           <label for="deepseek-reasoning-effort">思考强度</label>
           <select id="deepseek-reasoning-effort">
             <option value="high">high</option>
@@ -233,7 +237,7 @@
             <button id="clear-tavily-api-key" type="button">清除</button>
           </div>
         </section>
-        <p id="model-provider-status" class="dialog-error"></p>
+        <p id="model-provider-status" class="dialog-error" role="alert" aria-live="polite"></p>
         <div class="dialog-actions">
           <button id="cancel-model-provider" type="button">取消</button>
           <button class="primary" type="submit">保存</button>

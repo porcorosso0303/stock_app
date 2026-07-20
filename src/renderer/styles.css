@@ -208,6 +208,8 @@ h2 { margin: 0; font-size: 15px; }
 .model-provider-dialog { width: min(520px, calc(100vw - 40px)); }
 .model-settings-section { display: grid; gap: 9px; padding: 12px; border: 1px solid #d6e0dc; border-radius: 8px; background: #f8faf9; }
 .model-settings-section[hidden] { display: none; }
+.model-custom-settings { display: grid; gap: 9px; }
+.model-custom-settings[hidden] { display: none; }
 .settings-inline-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .settings-state { color: #60777d; font-size: 12px; }
 .settings-hint { margin: 0; color: #789095; font-size: 12px; line-height: 1.6; }
