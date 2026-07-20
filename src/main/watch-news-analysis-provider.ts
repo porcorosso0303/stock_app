@@ -142,10 +142,19 @@ interface DeepSeekWatchNewsAgentLike {
   cancel(): void;
 }
 
+interface DeepSeekWatchNewsAgentOptions {
+  requestTimeoutMs: number;
+}
+
+const DEEPSEEK_WATCH_NEWS_MAX_RUNTIME_MS = 720_000;
+
 export interface DeepSeekWatchNewsAnalysisProviderDependencies {
   model: string;
   userDataDirectory: string;
-  createAgent(onProgress: (event: DeepSeekAgentProgress) => void): DeepSeekWatchNewsAgentLike;
+  createAgent(
+    onProgress: (event: DeepSeekAgentProgress) => void,
+    options: DeepSeekWatchNewsAgentOptions
+  ): DeepSeekWatchNewsAgentLike;
   noticeSource?: WatchNewsNoticeSource;
   now?: () => Date;
 }
@@ -185,22 +194,25 @@ export class DeepSeekWatchNewsAnalysisProvider implements WatchNewsAnalysisProvi
         agent.cancel();
       }, 180_000);
     };
-    agent = this.dependencies.createAgent((event) => {
-      resetIdleTimeout();
-      eventWrites = eventWrites.then(async () => {
-        await appendFile(
-          join(prepared.runDirectory, "events.jsonl"),
-          `${JSON.stringify(toDebugEvent(event))}\n`,
-          "utf8"
-        );
-      });
-    });
+    agent = this.dependencies.createAgent(
+      (event) => {
+        resetIdleTimeout();
+        eventWrites = eventWrites.then(async () => {
+          await appendFile(
+            join(prepared.runDirectory, "events.jsonl"),
+            `${JSON.stringify(toDebugEvent(event))}\n`,
+            "utf8"
+          );
+        });
+      },
+      { requestTimeoutMs: DEEPSEEK_WATCH_NEWS_MAX_RUNTIME_MS }
+    );
     this.activeAgents.add(agent);
     resetIdleTimeout();
     const maxTimer = setTimeout(() => {
       timeoutReason = "DeepSeek 消息分析超过 12 分钟";
       agent.cancel();
-    }, 720_000);
+    }, DEEPSEEK_WATCH_NEWS_MAX_RUNTIME_MS);
     try {
       const report = await agent.run(prompts);
       await eventWrites;

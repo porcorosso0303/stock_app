@@ -197,6 +197,45 @@ describe("DeepSeekAgentRunner", () => {
     await expect(pending).rejects.toThrow("已取消");
   });
 
+  it("keeps cancellation connected while reading the streaming response body", async () => {
+    let streamStarted = false;
+    const request = vi.fn(async (input: HttpRequest): Promise<HttpResponse> => ({
+      status: 200,
+      body: {
+        async *[Symbol.asyncIterator]() {
+          streamStarted = true;
+          await new Promise<void>((_resolve, reject) => {
+            if (input.signal.aborted) {
+              reject(new Error("aborted"));
+              return;
+            }
+            input.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+          });
+        }
+      }
+    }));
+    const runner = new DeepSeekAgentRunner({
+      apiKey: "key",
+      baseUrl: "https://api.deepseek.com",
+      model: "deepseek-v4-pro",
+      transport: { request },
+      webTools: { search: vi.fn(), extract: vi.fn() }
+    });
+
+    const pending = runner.run({ systemPrompt: "s", userPrompt: "u" });
+    const outcome = pending.then(
+      () => "resolved",
+      (error: Error) => error.message
+    );
+    await vi.waitFor(() => expect(streamStarted).toBe(true));
+    runner.cancel();
+
+    await expect(Promise.race([
+      outcome,
+      new Promise<string>((resolve) => setTimeout(() => resolve("still pending"), 100))
+    ])).resolves.toContain("已取消");
+  });
+
   it("stops an unbounded sequence of tool calls", async () => {
     const toolTurn = sse([{ choices: [{ delta: { tool_calls: [{
       index: 0,

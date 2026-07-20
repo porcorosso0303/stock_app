@@ -154,65 +154,70 @@ export class DeepSeekAgentRunner {
   }
 
   private async complete(messages: DeepSeekMessage[], signal: AbortSignal): Promise<AssistantTurn> {
-    const response = await this.request({
+    return this.request({
       model: this.options.model,
       messages: cloneMessages(messages),
       stream: true,
       tools: DEEPSEEK_TOOLS,
       tool_choice: "auto"
-    }, signal);
-    if (response.status < 200 || response.status >= 300) {
-      const body = await readAll(response.body);
-      throw new Error(mapDeepSeekHttpError(response.status, body));
-    }
+    }, signal, async (response) => {
+      if (response.status < 200 || response.status >= 300) {
+        const body = await readAll(response.body);
+        throw new Error(mapDeepSeekHttpError(response.status, body));
+      }
 
-    const state = {
-      content: "",
-      reasoningContent: "",
-      toolCalls: new Map<number, ToolCallAccumulator>()
-    };
-    let reasoningProgressThreshold = 0;
-    await readSse(response.body, (payload) => {
-      const delta = readDelta(payload);
-      if (!delta) return;
-      if (typeof delta.content === "string") {
-        state.content += delta.content;
-        this.emit("output", delta.content);
-      }
-      if (typeof delta.reasoning_content === "string") {
-        state.reasoningContent += delta.reasoning_content;
-        if (state.reasoningContent.length >= reasoningProgressThreshold) {
-          reasoningProgressThreshold = state.reasoningContent.length + 80;
-          this.emit("status", `DeepSeek 思考中（${state.reasoningContent.length} 字）`);
+      const state = {
+        content: "",
+        reasoningContent: "",
+        toolCalls: new Map<number, ToolCallAccumulator>()
+      };
+      let reasoningProgressThreshold = 0;
+      await readSse(response.body, (payload) => {
+        const delta = readDelta(payload);
+        if (!delta) return;
+        if (typeof delta.content === "string") {
+          state.content += delta.content;
+          this.emit("output", delta.content);
         }
-      }
-      if (Array.isArray(delta.tool_calls)) {
-        for (const rawCall of delta.tool_calls) {
-          appendToolCall(state.toolCalls, rawCall);
+        if (typeof delta.reasoning_content === "string") {
+          state.reasoningContent += delta.reasoning_content;
+          if (state.reasoningContent.length >= reasoningProgressThreshold) {
+            reasoningProgressThreshold = state.reasoningContent.length + 80;
+            this.emit("status", `DeepSeek 思考中（${state.reasoningContent.length} 字）`);
+          }
         }
-      }
+        if (Array.isArray(delta.tool_calls)) {
+          for (const rawCall of delta.tool_calls) {
+            appendToolCall(state.toolCalls, rawCall);
+          }
+        }
+      });
+      return {
+        content: state.content,
+        reasoningContent: state.reasoningContent,
+        toolCalls: [...state.toolCalls.entries()]
+          .sort(([left], [right]) => left - right)
+          .map(([, call], index) => ({
+            id: call.id || `tool-call-${index + 1}`,
+            type: "function",
+            function: { name: call.name, arguments: call.arguments }
+          }))
+      };
     });
-    return {
-      content: state.content,
-      reasoningContent: state.reasoningContent,
-      toolCalls: [...state.toolCalls.entries()]
-        .sort(([left], [right]) => left - right)
-        .map(([, call], index) => ({
-          id: call.id || `tool-call-${index + 1}`,
-          type: "function",
-          function: { name: call.name, arguments: call.arguments }
-        }))
-    };
   }
 
-  private async request(body: unknown, signal: AbortSignal): Promise<HttpResponse> {
+  private async request<T>(
+    body: unknown,
+    signal: AbortSignal,
+    consume: (response: HttpResponse) => Promise<T>
+  ): Promise<T> {
     const controller = new AbortController();
     const handleAbort = (): void => controller.abort();
     signal.addEventListener("abort", handleAbort, { once: true });
     if (signal.aborted) controller.abort();
     const timeout = setTimeout(() => controller.abort(), this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS);
     try {
-      return await this.options.transport.request({
+      const response = await this.options.transport.request({
         url: `${this.options.baseUrl.replace(/\/+$/, "")}/chat/completions`,
         method: "POST",
         headers: {
@@ -222,6 +227,7 @@ export class DeepSeekAgentRunner {
         body,
         signal: controller.signal
       });
+      return await consume(response);
     } catch (error) {
       if (signal.aborted) throw new Error("DeepSeek 任务已取消");
       if (controller.signal.aborted) throw new Error("DeepSeek 请求超时");

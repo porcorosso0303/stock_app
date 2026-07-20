@@ -134,6 +134,25 @@ describe("DeepSeekWatchNewsAnalysisProvider", () => {
     expect(listRecent).toHaveBeenCalledWith(expect.anything(), expect.any(Date), 48);
   });
 
+  it("allows a progressing DeepSeek stream to run for the full 12-minute stock limit", async () => {
+    const userDataDirectory = await createDirectory();
+    const createAgent = vi.fn((..._args: unknown[]) => ({
+      run: async () => "[]",
+      cancel: vi.fn()
+    }));
+    const provider = new DeepSeekWatchNewsAnalysisProvider({
+      model: "deepseek-v4-pro",
+      userDataDirectory,
+      createAgent
+    });
+
+    await provider.analyze(stock([]));
+
+    expect(createAgent).toHaveBeenCalledWith(expect.any(Function), {
+      requestTimeoutMs: 720_000
+    });
+  });
+
   it("builds a strict provider-neutral source and output prompt", () => {
     const prompts = buildDeepSeekWatchNewsPrompts(
       stock([]),

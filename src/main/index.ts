@@ -119,7 +119,8 @@ void app.whenReady().then(async () => {
   const watchNewsNoticeSource = new EastMoneyWatchNewsNoticeSource(createElectronNetFetch(net));
   const createDeepSeekAgent = (
     context: ModelProviderContext,
-    onProgress: ConstructorParameters<typeof DeepSeekAgentRunner>[0]["onProgress"]
+    onProgress: ConstructorParameters<typeof DeepSeekAgentRunner>[0]["onProgress"],
+    runnerOptions: Pick<ConstructorParameters<typeof DeepSeekAgentRunner>[0], "requestTimeoutMs"> = {}
   ): DeepSeekAgentRunner => {
     const webTools = new TavilyWebTools({
       apiKey: requireModelSecret(context.secrets.tavilyApiKey, "Tavily API Key"),
@@ -132,7 +133,8 @@ void app.whenReady().then(async () => {
       transport: modelHttpTransport,
       webTools,
       onProgress,
-      requireSuccessfulWebTool: true
+      requireSuccessfulWebTool: true,
+      ...runnerOptions
     });
   };
   const modelProviderManager = new ModelProviderManager({
@@ -162,7 +164,7 @@ void app.whenReady().then(async () => {
         model: context.settings.deepSeekModel,
         userDataDirectory: userData,
         noticeSource: watchNewsNoticeSource,
-        createAgent: (onProgress) => createDeepSeekAgent(context, onProgress)
+        createAgent: (onProgress, options) => createDeepSeekAgent(context, onProgress, options)
       })
     }]
   });
