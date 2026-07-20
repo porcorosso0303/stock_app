@@ -21,7 +21,10 @@ function contentResponse(content: string): HttpResponse {
   return sse([{ choices: [{ delta: { content } }] }]);
 }
 
-function createHarness(responses: HttpResponse[], options: { maxToolRounds?: number } = {}) {
+function createHarness(responses: HttpResponse[], options: {
+  maxToolRounds?: number;
+  requireSuccessfulWebTool?: boolean;
+} = {}) {
   const requests: HttpRequest[] = [];
   const request = vi.fn(async (input: HttpRequest) => {
     requests.push(input);
@@ -225,6 +228,15 @@ describe("DeepSeekAgentRunner", () => {
     expect(progress.some((event) => event.text.includes("思考中"))).toBe(true);
     expect(progress.filter((event) => event.kind === "output").map((event) => event.text).join(""))
       .toBe("公开结论");
+  });
+
+  it("rejects an evidence task when no web tool succeeds", async () => {
+    const { runner } = createHarness([contentResponse("没有检索依据的结论")], {
+      requireSuccessfulWebTool: true
+    });
+
+    await expect(runner.run({ systemPrompt: "s", userPrompt: "u" }))
+      .rejects.toThrow("网页检索");
   });
 });
 

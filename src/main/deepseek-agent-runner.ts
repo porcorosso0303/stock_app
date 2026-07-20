@@ -26,6 +26,7 @@ export interface DeepSeekAgentRunnerOptions {
   onProgress?: (event: DeepSeekAgentProgress) => void;
   maxToolRounds?: number;
   requestTimeoutMs?: number;
+  requireSuccessfulWebTool?: boolean;
 }
 
 export interface DeepSeekAgentRequest {
@@ -95,6 +96,7 @@ export class DeepSeekAgentRunner {
     ];
     const maxToolRounds = this.options.maxToolRounds ?? DEFAULT_MAX_TOOL_ROUNDS;
     let toolRounds = 0;
+    let successfulWebToolCalls = 0;
 
     try {
       while (true) {
@@ -113,6 +115,9 @@ export class DeepSeekAgentRunner {
 
         if (turn.toolCalls.length === 0) {
           if (!turn.content.trim()) throw new Error("DeepSeek 未返回有效内容");
+          if (this.options.requireSuccessfulWebTool && successfulWebToolCalls === 0) {
+            throw new Error("DeepSeek 未完成任何成功的网页检索，不能生成缺少当前证据的结论");
+          }
           this.emit("status", "DeepSeek 任务完成");
           return turn.content;
         }
@@ -122,10 +127,12 @@ export class DeepSeekAgentRunner {
         toolRounds += 1;
         for (const toolCall of turn.toolCalls) {
           this.emit("status", `执行工具 ${toolCall.function.name}`);
+          const result = await this.executeTool(toolCall, controller.signal);
+          if (result.succeeded) successfulWebToolCalls += 1;
           messages.push({
             role: "tool",
             tool_call_id: toolCall.id,
-            content: await this.executeTool(toolCall, controller.signal)
+            content: result.content
           });
         }
       }
@@ -225,32 +232,41 @@ export class DeepSeekAgentRunner {
     }
   }
 
-  private async executeTool(toolCall: ToolCall, signal: AbortSignal): Promise<string> {
+  private async executeTool(
+    toolCall: ToolCall,
+    signal: AbortSignal
+  ): Promise<{ content: string; succeeded: boolean }> {
     let args: Record<string, unknown>;
     try {
       const parsed = JSON.parse(toolCall.function.arguments) as unknown;
       if (!isRecord(parsed)) throw new Error("参数必须是 JSON 对象");
       args = parsed;
     } catch (error) {
-      return toolError("invalid_tool_arguments", error instanceof Error ? error.message : String(error));
+      return {
+        content: toolError("invalid_tool_arguments", error instanceof Error ? error.message : String(error)),
+        succeeded: false
+      };
     }
 
     try {
       if (toolCall.function.name === "web_search") {
         const results = await this.options.webTools.search(readSearchInput(args, signal));
         this.emit("status", `web_search 返回 ${results.length} 条结果`);
-        return truncateToolResult(JSON.stringify({ ok: true, results }));
+        return { content: truncateToolResult(JSON.stringify({ ok: true, results })), succeeded: true };
       }
       if (toolCall.function.name === "web_extract") {
         const results = await this.options.webTools.extract(readExtractInput(args, signal));
         this.emit("status", `web_extract 返回 ${results.length} 条结果`);
-        return truncateToolResult(JSON.stringify({ ok: true, results }));
+        return { content: truncateToolResult(JSON.stringify({ ok: true, results })), succeeded: true };
       }
-      return toolError("unknown_tool", `不支持的工具：${toolCall.function.name}`);
+      return {
+        content: toolError("unknown_tool", `不支持的工具：${toolCall.function.name}`),
+        succeeded: false
+      };
     } catch (error) {
       const message = this.redact(error instanceof Error ? error.message : String(error));
       this.emit("warning", `${toolCall.function.name} 失败：${message}`);
-      return toolError("tool_execution_failed", message);
+      return { content: toolError("tool_execution_failed", message), succeeded: false };
     }
   }
 

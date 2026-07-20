@@ -131,7 +131,8 @@ void app.whenReady().then(async () => {
       model: context.settings.deepSeekModel,
       transport: modelHttpTransport,
       webTools,
-      onProgress
+      onProgress,
+      requireSuccessfulWebTool: true
     });
   };
   const modelProviderManager = new ModelProviderManager({
