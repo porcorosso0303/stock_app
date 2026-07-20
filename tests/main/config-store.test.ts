@@ -87,4 +87,71 @@ describe("ConfigStore", () => {
 
     await expect(new ConfigStore(path).get()).rejects.toThrow(path);
   });
+
+  it("normalizes missing model provider settings to Codex defaults", async () => {
+    const directory = await createTempDirectory();
+    const store = new ConfigStore(join(directory, "config.json"));
+
+    await expect(store.getModelProviderSettings()).resolves.toEqual({
+      providerId: "codex-cli",
+      deepSeekBaseUrl: "https://api.deepseek.com",
+      deepSeekModel: "deepseek-v4-pro"
+    });
+  });
+
+  it("maps the legacy research provider setting", async () => {
+    const directory = await createTempDirectory();
+    const path = join(directory, "config.json");
+    await writeFile(path, JSON.stringify({ researchProviderId: "deepseek" }), "utf8");
+
+    await expect(new ConfigStore(path).getModelProviderSettings()).resolves.toMatchObject({
+      providerId: "deepseek"
+    });
+  });
+
+  it("persists non-secret DeepSeek settings", async () => {
+    const directory = await createTempDirectory();
+    const path = join(directory, "config.json");
+    const store = new ConfigStore(path);
+
+    await store.setModelProviderSettings({
+      providerId: "deepseek",
+      deepSeekBaseUrl: "https://gateway.example.com/v1",
+      deepSeekModel: "custom-model"
+    });
+
+    await expect(new ConfigStore(path).getModelProviderSettings()).resolves.toEqual({
+      providerId: "deepseek",
+      deepSeekBaseUrl: "https://gateway.example.com/v1",
+      deepSeekModel: "custom-model"
+    });
+    expect(await new ConfigStore(path).get()).not.toHaveProperty("deepSeekApiKey");
+    expect(await new ConfigStore(path).get()).not.toHaveProperty("tavilyApiKey");
+  });
+
+  it.each([
+    [{ providerId: "unknown", deepSeekBaseUrl: "https://api.deepseek.com", deepSeekModel: "deepseek-v4-pro" }, "模型服务"],
+    [{ providerId: "deepseek", deepSeekBaseUrl: "http://api.deepseek.com", deepSeekModel: "deepseek-v4-pro" }, "HTTPS"],
+    [{ providerId: "deepseek", deepSeekBaseUrl: "not a url", deepSeekModel: "deepseek-v4-pro" }, "URL"],
+    [{ providerId: "deepseek", deepSeekBaseUrl: "https://api.deepseek.com", deepSeekModel: "  " }, "模型名称"]
+  ])("rejects invalid model settings %#", async (settings, message) => {
+    const directory = await createTempDirectory();
+    const store = new ConfigStore(join(directory, "config.json"));
+
+    await expect(store.setModelProviderSettings(settings as never)).rejects.toThrow(message);
+  });
+
+  it.each([
+    "http://localhost:8000/v1",
+    "http://127.0.0.1:8000"
+  ])("allows a local HTTP DeepSeek-compatible endpoint: %s", async (deepSeekBaseUrl) => {
+    const directory = await createTempDirectory();
+    const store = new ConfigStore(join(directory, "config.json"));
+
+    await expect(store.setModelProviderSettings({
+      providerId: "deepseek",
+      deepSeekBaseUrl,
+      deepSeekModel: "local-model"
+    })).resolves.toMatchObject({ deepSeekBaseUrl });
+  });
 });

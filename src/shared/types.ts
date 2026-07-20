@@ -10,6 +10,29 @@ export interface AppConfig {
   watchMarketProviderId?: WatchMarketProviderId;
   researchProviderId?: string;
   watchNewsIntervalHours?: number;
+  modelProviderId?: ModelProviderId;
+  deepSeekBaseUrl?: string;
+  deepSeekModel?: string;
+}
+
+export type ModelProviderId = "codex-cli" | "deepseek";
+
+export interface ModelProviderSettings {
+  providerId: ModelProviderId;
+  deepSeekBaseUrl: string;
+  deepSeekModel: string;
+}
+
+export interface ModelProviderSettingsView extends ModelProviderSettings {
+  hasDeepSeekApiKey: boolean;
+  hasTavilyApiKey: boolean;
+}
+
+export interface SaveModelProviderSettingsRequest extends ModelProviderSettings {
+  deepSeekApiKey?: string;
+  tavilyApiKey?: string;
+  clearDeepSeekApiKey?: boolean;
+  clearTavilyApiKey?: boolean;
 }
 
 export type WatchMarketProviderId = "east-money" | "mock-cache";
