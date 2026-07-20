@@ -70,7 +70,7 @@ describe("fake Codex integration", () => {
       createId: () => "integration-run",
       now: () => new Date(2026, 4, 31, 14, 30, 25),
       onProgress: (event) => {
-        if (event.text) {
+        if (event.type === "output") {
           events.push(event.text);
         }
       }

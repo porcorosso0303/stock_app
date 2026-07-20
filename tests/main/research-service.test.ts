@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -7,6 +7,7 @@ import { HistoryStore } from "../../src/main/history-store";
 import type { CodexRunResult } from "../../src/main/codex-runner";
 import { CodexCliResearchProvider } from "../../src/main/modules/research/providers/codex-cli-provider";
 import type { ResearchProvider } from "../../src/main/modules/research/providers/research-provider";
+import type { ResearchProgressEvent } from "../../src/shared/types";
 
 const directories: string[] = [];
 
@@ -18,6 +19,8 @@ async function createHarness(options: {
   researchProvider?: ResearchProvider;
   resolveResearchProvider?: () => Promise<ResearchProvider>;
   createId?: () => string;
+  now?: () => Date;
+  onProgress?: (event: ResearchProgressEvent) => void;
 } = {}) {
   const userData = await mkdtemp(join(tmpdir(), "stock-tool-service-"));
   directories.push(userData);
@@ -55,7 +58,8 @@ async function createHarness(options: {
     resolveResearchProvider: options.resolveResearchProvider ?? (async () => researchProvider),
     pdfExporter: { export: exportPdf },
     createId: options.createId ?? (() => "run-id"),
-    now: () => new Date(2026, 4, 31, 14, 30, 25)
+    now: options.now ?? (() => new Date(2026, 4, 31, 14, 30, 25)),
+    onProgress: options.onProgress
   });
   return { service, history, run, cancel, exportPdf, createRunner, prepareSkill, userData };
 }
@@ -257,5 +261,50 @@ describe("ResearchService", () => {
     await expect(service.retryPdfExport("run-id")).resolves.toMatchObject({
       status: "completed"
     });
+  });
+
+  it("timestamps structured output and normalizes the report date to the task date", async () => {
+    const onProgress = vi.fn();
+    const provider: ResearchProvider = {
+      id: "fake",
+      label: "Fake",
+      detect: async () => ({ available: true, loggedIn: true }),
+      run: vi.fn(async (request) => {
+        request.onOutput({
+          kind: "reasoning",
+          mode: "stream",
+          text: "核对公告日期"
+        });
+        return {
+          status: "success",
+          reportMarkdown: "# 中控技术调研报告\n\n**报告日期：** 2026年7月13日\n"
+        } as const;
+      }),
+      cancel: vi.fn()
+    };
+    const { service, exportPdf, userData } = await createHarness({
+      reportDirectory: "C:\\reports",
+      researchProvider: provider,
+      onProgress,
+      now: () => new Date("2026-07-20T12:34:56.000+08:00")
+    });
+
+    await service.start("中控技术");
+
+    expect(provider.run).toHaveBeenCalledWith(expect.objectContaining({
+      researchDate: "2026年7月20日"
+    }));
+    expect(onProgress).toHaveBeenCalledWith({
+      type: "output",
+      recordId: "run-id",
+      outputKind: "reasoning",
+      mode: "stream",
+      text: "核对公告日期",
+      occurredAt: "2026-07-20T04:34:56.000Z"
+    });
+    const expectedReport = "# 中控技术调研报告\n\n**报告日期：** 2026年7月20日\n";
+    await expect(readFile(join(userData, "runs", "run-id", "report.md"), "utf8"))
+      .resolves.toBe(expectedReport);
+    expect(exportPdf).toHaveBeenCalledWith(expectedReport, expect.any(String));
   });
 });

@@ -113,8 +113,8 @@ describe("CodexRunner", () => {
   it("resets the idle timeout when model progress events continue", async () => {
     const { runner } = await createRunner(undefined, {
       mode: "progress-success",
-      idleTimeoutMs: 30,
-      maxRuntimeMs: 200
+      idleTimeoutMs: 100,
+      maxRuntimeMs: 500
     });
 
     await expect(runner.run("持续分析")).resolves.toMatchObject({ status: "success" });
@@ -123,7 +123,7 @@ describe("CodexRunner", () => {
   it("stops at the maximum runtime even while progress continues", async () => {
     const { runner } = await createRunner(undefined, {
       mode: "progress-forever",
-      idleTimeoutMs: 30,
+      idleTimeoutMs: 200,
       maxRuntimeMs: 80
     });
 

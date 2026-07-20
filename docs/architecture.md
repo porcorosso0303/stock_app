@@ -326,10 +326,10 @@ src/renderer/features/research/research-controller.ts
 - 管理当前选中的历史记录。
 - 渲染历史列表。
 - 渲染报告 Markdown。
-- 处理实时输出和状态事件。
+- 处理实时输出和状态事件。`ResearchLiveOutputWriter` 按状态、推理、回答分段；状态事件独占一行，连续 SSE token 原样拼接，只有新段开始时增加北京时间时间戳和类型标签。
 - 管理 working indicator 和耗时显示。
 
-该控制器不直接访问文件系统、不直接运行 Codex、不直接导出 PDF。
+实时输出使用增量 DOM 文本插入，不在每个 token 到达时重建已有全文。输出 panel、滚动容器和 `pre` 都允许 grid item 收缩到工作区宽度，并通过 `pre-wrap`/`overflow-wrap` 在整个可用宽度内换行。该控制器不直接访问文件系统、不直接运行 Codex、不直接导出 PDF。
 
 ### 调研 IPC
 
@@ -359,7 +359,7 @@ src/main/research-service.ts
 - 检查当前是否已有调研任务。
 - 创建 run 目录和 `ResearchRecord`。
 - 在任务开始时通过 resolver 获取并固定一个 `ResearchProvider`，再执行调研。
-- 写入最终 Markdown。
+- 把任务创建日期格式化为北京时间 `YYYY年M月D日` 并传给 provider；provider 返回后，在写入 Markdown 和导出 PDF 前校正第一处“报告日期”字段，避免模型自行推断当前日期。
 - 调用 PDF exporter。
 - 更新历史状态。
 - 处理取消、失败、PDF 导出失败、PDF 重试导出和报告读取。
@@ -385,7 +385,15 @@ interface ResearchProvider {
   run(request: ResearchProviderRequest): Promise<ResearchProviderResult>;
   cancel(): void;
 }
+
+interface ResearchProviderOutputEvent {
+  kind: "status" | "reasoning" | "answer";
+  mode: "line" | "stream";
+  text: string;
+}
 ```
+
+`ResearchProviderRequest` 同时包含 `researchDate` 和 `onOutput(event)`。Provider 只声明事件语义，不拼接 UI 标签或本地时间。`ResearchService` 把事件转换为跨 IPC 的 `ResearchProgressEvent`，附加任务 id 和 `occurredAt` ISO 时间戳。
 
 当前实现：
 
@@ -401,14 +409,14 @@ src/main/modules/research/providers/deepseek-provider.ts
 - 调用 `ResearchSkillPreparer` 准备当前 run 目录下的 skill 副本。
 - 调用 `buildResearchPrompt()` 生成 prompt。
 - 创建并运行 `CodexRunner`。
-- 转发 Codex 输出文本。
+- 把 Codex 可读 JSONL 事件转换为 `status + line` 结构化输出。
 - 取消当前 runner。
 
 `DeepSeekResearchProvider` 的职责：
 
 - 读取当前 `ResearchSpecStore` 中的用户调研规范。
 - 构造不依赖 Codex skill 的 A 股调研提示词，要求区分事实与推断、保留矛盾证据、标注日期和来源链接。
-- 创建任务独占的 `DeepSeekAgentRunner`，转发模型输出、搜索动作和状态。
+- 创建任务独占的 `DeepSeekAgentRunner`，把完整 `reasoning_content` 映射为 `reasoning + stream`，把最终 `content` 映射为 `answer + stream`，并转发请求、搜索、工具和警告状态。
 - 把最终 Markdown 转换成相同的 `ResearchProviderResult`。
 - 取消当前 DeepSeek Agent。
 
@@ -444,7 +452,7 @@ src/main/tavily-web-tools.ts
 `DeepSeekAgentRunner` 直接调用 DeepSeek OpenAI-compatible `POST <baseUrl>/chat/completions`，启用 SSE 流式响应和 `tool_choice: auto`。它负责：
 
 - 解析跨任意字节边界的 SSE 事件。
-- 分别累计可见 `content` 和 `reasoning_content`。
+- 分别累计可见 `content` 和 `reasoning_content`，并把每个非空原始增量实时交给上层；不再用“思考中（N 字）”替代或打断完整推理。
 - 拼接分段的工具名称和 JSON 参数。
 - 在工具回合之后完整回放 assistant 的 `reasoning_content`、`content`、`tool_calls`，再追加对应 tool 消息。
 - 运行时校验工具参数，限制工具轮数、URL 数量、结果数量、正文长度和总输出长度。
@@ -504,11 +512,12 @@ Renderer research-controller
 ```text
 Provider output
   -> CodexJsonlParser or DeepSeekAgentProgress
-  -> ResearchProvider request.onOutput()
-  -> ResearchService onProgress
+  -> ResearchProviderOutputEvent(status/reasoning/answer, line/stream)
+  -> ResearchService adds recordId + occurredAt
   -> BrowserWindow.webContents.send(IPC.researchEvent)
   -> preload onResearchEvent()
   -> research-controller.handleProgress()
+  -> ResearchLiveOutputWriter prefixes a segment and appends raw stream chunks
 ```
 
 ## 盯盘脑图模块

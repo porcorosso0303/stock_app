@@ -23,6 +23,20 @@ interface PdfExporterLike {
   export(markdown: string, targetPath: string): Promise<void>;
 }
 
+type ResearchProgressEventInput =
+  | {
+      type: "output";
+      recordId: string;
+      text: string;
+      outputKind: "status" | "reasoning" | "answer";
+      mode: "line" | "stream";
+    }
+  | {
+      type: "status";
+      recordId: string;
+      status: ResearchRecord["status"];
+    };
+
 export interface ResearchServiceDependencies {
   userDataDirectory: string;
   configStore: ConfigStoreLike;
@@ -69,6 +83,7 @@ export class ResearchService {
 
     const id = this.createId();
     const createdAt = this.now();
+    const researchDate = formatResearchDate(createdAt);
     const runDirectory = join(this.dependencies.userDataDirectory, "runs", id);
     await mkdir(runDirectory, { recursive: true });
     const record: ResearchRecord = {
@@ -90,8 +105,15 @@ export class ResearchService {
       const result = await provider.run({
         stockName,
         runDirectory,
-        onOutput: (text) => {
-          this.emit({ type: "output", recordId: id, text });
+        researchDate,
+        onOutput: (event) => {
+          this.emit({
+            type: "output",
+            recordId: id,
+            text: event.text,
+            outputKind: event.kind,
+            mode: event.mode
+          });
         }
       });
       if (result.status === "cancelled") {
@@ -104,13 +126,14 @@ export class ResearchService {
         });
       }
 
-      await writeFile(record.reportMarkdownPath, result.reportMarkdown, "utf8");
+      const reportMarkdown = normalizeResearchReportDate(result.reportMarkdown, researchDate);
+      await writeFile(record.reportMarkdownPath, reportMarkdown, "utf8");
       const pdfPath = join(
         config.reportDirectory,
         buildPdfFileName(stockName, createdAt)
       );
       try {
-        await this.dependencies.pdfExporter.export(result.reportMarkdown, pdfPath);
+        await this.dependencies.pdfExporter.export(reportMarkdown, pdfPath);
         return await this.updateStatus(id, { status: "completed", pdfPath });
       } catch (error) {
         return await this.updateStatus(id, {
@@ -178,9 +201,37 @@ export class ResearchService {
     return record;
   }
 
-  private emit(event: ResearchProgressEvent): void {
-    this.dependencies.onProgress?.(event);
+  private emit(event: ResearchProgressEventInput): void {
+    const occurredAt = this.now().toISOString();
+    if (event.type === "output") {
+      this.dependencies.onProgress?.({ ...event, occurredAt });
+      return;
+    }
+    this.dependencies.onProgress?.({ ...event, occurredAt });
   }
+}
+
+function formatResearchDate(value: Date): string {
+  const parts = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric"
+  }).formatToParts(value);
+  const read = (type: Intl.DateTimeFormatPartTypes): string =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  return `${read("year")}年${read("month")}月${read("day")}日`;
+}
+
+function normalizeResearchReportDate(markdown: string, researchDate: string): string {
+  const datePattern = /(?:\d{4}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*[日号]?|\d{4}[-/.]\d{1,2}[-/.]\d{1,2})/;
+  const lines = markdown.split(/(\r?\n)/);
+  for (let index = 0; index < lines.length; index += 2) {
+    if (!lines[index].includes("报告日期") || !datePattern.test(lines[index])) continue;
+    lines[index] = lines[index].replace(datePattern, researchDate);
+    break;
+  }
+  return lines.join("");
 }
 
 function getErrorMessage(error: unknown): string {

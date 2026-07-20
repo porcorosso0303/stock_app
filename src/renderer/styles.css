@@ -78,10 +78,10 @@ h2 { margin: 0; font-size: 15px; }
 .report-panel a { color: #286e8d; overflow-wrap: anywhere; }
 .report-panel table { width: 100%; border-collapse: collapse; }
 .report-panel th, .report-panel td { border: 1px solid #d6dfda; padding: 6px 8px; text-align: left; }
-.output-panel { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 14px; overflow: hidden; background: #12282f; color: #d7e4dc; }
+.output-panel { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; gap: 14px; overflow: hidden; background: #12282f; color: #d7e4dc; }
 .output-panel[hidden] { display: none; }
-.live-output-scroll { min-height: 0; overflow-y: auto; }
-.live-output-scroll pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
+.live-output-scroll { min-width: 0; width: 100%; min-height: 0; overflow-y: auto; }
+.live-output-scroll pre { width: 100%; min-width: 0; max-width: 100%; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; word-break: normal; }
 .working-indicator { display: flex; align-items: center; gap: 8px; width: fit-content; padding: 6px 10px; border: 1px solid #ffffff1f; border-radius: 16px; background: #17343d; color: #b9d49a; font-size: 12px; font-weight: 700; letter-spacing: .5px; }
 .working-indicator[hidden] { display: none; }
 .working-elapsed { color: #d7e4dc; font-variant-numeric: tabular-nums; }

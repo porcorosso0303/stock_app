@@ -42,6 +42,7 @@ describe("DeepSeekResearchProvider", () => {
     await expect(provider.run({
       stockName: "兆易创新",
       runDirectory: "/tmp/run",
+      researchDate: "2026年7月20日",
       onOutput: vi.fn()
     })).resolves.toEqual({ status: "success", reportMarkdown: "# DeepSeek 调研报告" });
 
@@ -56,39 +57,70 @@ describe("DeepSeekResearchProvider", () => {
     expect(request.systemPrompt).toContain("Markdown");
   });
 
-  it("forwards visible output and labeled status progress", async () => {
+  it("forwards structured status, reasoning, and answer progress", async () => {
     const { provider, emit } = createHarness();
     const onOutput = vi.fn();
-    const running = provider.run({ stockName: "兆易创新", runDirectory: "/tmp/run", onOutput });
+    const running = provider.run({
+      stockName: "兆易创新",
+      runDirectory: "/tmp/run",
+      researchDate: "2026年7月20日",
+      onOutput
+    });
 
     emit({ kind: "status", text: "执行工具 web_search" });
+    emit({ kind: "reasoning", text: "先核对公告" });
     emit({ kind: "output", text: "报告正文" });
     await running;
 
-    expect(onOutput).toHaveBeenCalledWith(expect.stringContaining("执行工具 web_search"));
-    expect(onOutput).toHaveBeenCalledWith("报告正文");
+    expect(onOutput).toHaveBeenNthCalledWith(1, {
+      kind: "status",
+      mode: "line",
+      text: "执行工具 web_search"
+    });
+    expect(onOutput).toHaveBeenNthCalledWith(2, {
+      kind: "reasoning",
+      mode: "stream",
+      text: "先核对公告"
+    });
+    expect(onOutput).toHaveBeenNthCalledWith(3, {
+      kind: "answer",
+      mode: "stream",
+      text: "报告正文"
+    });
   });
 
   it("maps cancellation and failures to the common provider result", async () => {
     const cancelled = createHarness({ error: new Error("DeepSeek 任务已取消") });
     const failed = createHarness({ error: new Error("DeepSeek 请求失败") });
 
-    const cancelledRun = cancelled.provider.run({ stockName: "A", runDirectory: "/tmp/a", onOutput: vi.fn() });
+    const cancelledRun = cancelled.provider.run({
+      stockName: "A",
+      runDirectory: "/tmp/a",
+      researchDate: "2026年7月20日",
+      onOutput: vi.fn()
+    });
     cancelled.provider.cancel();
 
     await expect(cancelledRun).resolves.toEqual({ status: "cancelled" });
     expect(cancelled.cancel).toHaveBeenCalledOnce();
-    await expect(failed.provider.run({ stockName: "B", runDirectory: "/tmp/b", onOutput: vi.fn() }))
+    await expect(failed.provider.run({
+      stockName: "B",
+      runDirectory: "/tmp/b",
+      researchDate: "2026年7月20日",
+      onOutput: vi.fn()
+    }))
       .resolves.toEqual({ status: "failed", errorMessage: "DeepSeek 请求失败" });
   });
 
   it("builds a provider-neutral research workflow prompt", () => {
-    const prompts = buildDeepSeekResearchPrompts("中控技术", "自定义规范");
+    const prompts = buildDeepSeekResearchPrompts("中控技术", "自定义规范", "2026年7月20日");
 
     expect(prompts.systemPrompt).not.toContain("Codex");
     expect(prompts.systemPrompt).not.toContain("skill");
     expect(prompts.userPrompt).toContain("中控技术");
     expect(prompts.userPrompt).toContain("自定义规范");
+    expect(prompts.userPrompt).toContain("2026年7月20日");
+    expect(prompts.userPrompt).toContain("报告日期");
     expect(prompts.systemPrompt).toContain("矛盾证据");
   });
 });

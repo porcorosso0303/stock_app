@@ -64,12 +64,21 @@ export interface CodexEnvironmentStatus {
   message?: string;
 }
 
-export interface ResearchProgressEvent {
-  type: "output" | "status";
-  recordId: string;
-  text?: string;
-  status?: ResearchStatus;
-}
+export type ResearchProgressEvent =
+  | {
+      type: "output";
+      recordId: string;
+      text: string;
+      outputKind: "status" | "reasoning" | "answer";
+      mode: "line" | "stream";
+      occurredAt: string;
+    }
+  | {
+      type: "status";
+      recordId: string;
+      status: ResearchStatus;
+      occurredAt: string;
+    };
 
 export interface AppBootstrap {
   config: AppConfig;

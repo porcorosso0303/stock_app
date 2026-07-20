@@ -29,6 +29,38 @@ interface ResearchControllerOptions {
   selectTab: (name: TabName) => void;
 }
 
+export class ResearchLiveOutputWriter {
+  private activeStreamKind?: "reasoning" | "answer";
+  private endsWithNewline = true;
+
+  reset(): void {
+    this.activeStreamKind = undefined;
+    this.endsWithNewline = true;
+  }
+
+  append(event: Extract<ResearchProgressEvent, { type: "output" }>): string {
+    const timestamp = formatOutputTimestamp(event.occurredAt);
+    if (event.mode === "line") {
+      const separator = this.endsWithNewline ? "" : "\n";
+      const text = event.text.replace(/[\r\n]+$/, "");
+      this.activeStreamKind = undefined;
+      this.endsWithNewline = true;
+      return `${separator}[${timestamp}] [状态] ${text}\n`;
+    }
+
+    const streamKind = event.outputKind === "reasoning" ? "reasoning" : "answer";
+    let prefix = "";
+    if (this.activeStreamKind !== streamKind) {
+      prefix = `${this.endsWithNewline ? "" : "\n"}[${timestamp}] [${streamKind === "reasoning" ? "推理" : "回答"}] `;
+      this.activeStreamKind = streamKind;
+    }
+    if (event.text) {
+      this.endsWithNewline = /(?:\r?\n)$/.test(event.text);
+    }
+    return prefix + event.text;
+  }
+}
+
 export function createResearchController(options: ResearchControllerOptions): ResearchController {
   const { api, elements, selectTab } = options;
   let state: AppBootstrap | undefined;
@@ -36,6 +68,7 @@ export function createResearchController(options: ResearchControllerOptions): Re
   let selectedRecord: ResearchRecord | undefined;
   let workingStartedAt: number | undefined;
   let workingTimer: number | undefined;
+  const liveOutputWriter = new ResearchLiveOutputWriter();
 
   function requireState(): AppBootstrap {
     if (!state) {
@@ -73,6 +106,7 @@ export function createResearchController(options: ResearchControllerOptions): Re
 
     running = true;
     selectedRecord = undefined;
+    liveOutputWriter.reset();
     elements.liveOutput.textContent = "";
     elements.reportPanel.innerHTML = '<div class="empty-state"><h2>正在调研</h2><p>筛选后的中文进展可在“实时输出”标签页查看。</p></div>';
     selectTab("output");
@@ -194,7 +228,7 @@ export function createResearchController(options: ResearchControllerOptions): Re
 
   function handleProgress(event: ResearchProgressEvent): void {
     if (event.type === "output" && event.text) {
-      elements.liveOutput.textContent += `${event.text}\n`;
+      elements.liveOutput.insertAdjacentText("beforeend", liveOutputWriter.append(event));
       scrollLiveOutputToBottom();
     }
     if (event.type === "status" && event.status) {
@@ -253,6 +287,21 @@ export function createResearchController(options: ResearchControllerOptions): Re
     },
     handleProgress
   };
+}
+
+function formatOutputTimestamp(value: string): string {
+  const date = new Date(value);
+  const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
+  const parts = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(safeDate);
+  const read = (type: Intl.DateTimeFormatPartTypes): string =>
+    parts.find((part) => part.type === type)?.value ?? "00";
+  return `${read("hour")}:${read("minute")}:${read("second")}`;
 }
 
 function escapeHtml(value: string): string {

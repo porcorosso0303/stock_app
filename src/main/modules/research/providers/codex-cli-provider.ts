@@ -3,6 +3,7 @@ import type {
   CodexLauncher
 } from "../../../../shared/types";
 import type { CodexRunResult } from "../../../codex-runner";
+import type { CodexDisplayEvent } from "../../../codex-events";
 import { buildResearchPrompt } from "../../../codex-prompt";
 import type {
   ResearchProvider,
@@ -22,7 +23,7 @@ interface CodexRunnerLike {
 interface RunnerOptions {
   launcher: CodexLauncher;
   runDirectory: string;
-  onEvent: (text: string) => void;
+  onEvent: (text: string, event: CodexDisplayEvent) => void;
 }
 
 interface ResearchSkillPreparerLike {
@@ -54,11 +55,11 @@ export class CodexCliResearchProvider implements ResearchProvider {
     const runner = this.dependencies.createRunner({
       launcher,
       runDirectory: request.runDirectory,
-      onEvent: request.onOutput
+      onEvent: (text) => request.onOutput({ kind: "status", mode: "line", text })
     });
     this.activeRunner = runner;
     try {
-      return await runner.run(buildResearchPrompt(request.stockName));
+      return await runner.run(buildResearchPrompt(request.stockName, request.researchDate));
     } finally {
       this.activeRunner = undefined;
     }

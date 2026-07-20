@@ -249,8 +249,10 @@ describe("DeepSeekAgentRunner", () => {
   });
 
   it("emits model and tool progress without exposing reasoning as final output", async () => {
-    const toolTurn = sse([{ choices: [{ delta: {
-      reasoning_content: "内部思考",
+    const toolTurn = sse([
+      { choices: [{ delta: { reasoning_content: "内部" } }] },
+      { choices: [{ delta: {
+      reasoning_content: "思考",
       tool_calls: [{
         index: 0,
         id: "call",
@@ -264,7 +266,9 @@ describe("DeepSeekAgentRunner", () => {
 
     expect(progress.some((event) => event.text.includes("deepseek-v4-pro"))).toBe(true);
     expect(progress.some((event) => event.text.includes("web_search"))).toBe(true);
-    expect(progress.some((event) => event.text.includes("思考中"))).toBe(true);
+    expect(progress.some((event) => event.text.includes("思考中"))).toBe(false);
+    expect(progress.filter((event) => event.kind === "reasoning").map((event) => event.text).join(""))
+      .toBe("内部思考");
     expect(progress.filter((event) => event.kind === "output").map((event) => event.text).join(""))
       .toBe("公开结论");
   });

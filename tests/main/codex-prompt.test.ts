@@ -6,12 +6,14 @@ import {
 
 describe("buildResearchPrompt", () => {
   it("requires the single-stock research skill and a full Markdown report", () => {
-    const prompt = buildResearchPrompt("贵州茅台");
+    const prompt = buildResearchPrompt("贵州茅台", "2026年7月20日");
 
     expect(prompt).toContain("$research-a-share-stock");
     expect(prompt).toContain(".agents/skills/research-a-share-stock");
     expect(prompt).toContain("references/stock_research_spec.md");
     expect(prompt).toContain("贵州茅台");
+    expect(prompt).toContain("2026年7月20日");
+    expect(prompt).toContain("报告日期");
     expect(prompt).toContain("完整 Markdown");
     expect(prompt).toContain("不要修改");
   });

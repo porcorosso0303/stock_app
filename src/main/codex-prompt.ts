@@ -12,10 +12,12 @@ export const CODEX_EXEC_ARGS = [
   "-"
 ] as const;
 
-export function buildResearchPrompt(stockName: string): string {
+export function buildResearchPrompt(stockName: string, researchDate: string): string {
   return [
     "使用当前任务目录 .agents/skills/research-a-share-stock 中的 $research-a-share-stock skill 对下面指定的单只 A 股标的执行深度调研。",
     `标的名称：${stockName}`,
+    `任务日期（北京时间）：${researchDate}`,
+    `报告中的“报告日期”必须写为：${researchDate}`,
     "",
     "先读取该任务目录 skill 中的 references/stock_research_spec.md，并严格遵循其中的调研规范。优先引用官方和当前公开来源，并标注来源链接与日期。",
     "将最终回复写成一份完整 Markdown 调研报告。",

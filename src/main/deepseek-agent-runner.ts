@@ -8,7 +8,7 @@ import type {
 } from "./tavily-web-tools";
 
 export interface DeepSeekAgentProgress {
-  kind: "status" | "output" | "warning";
+  kind: "status" | "reasoning" | "output" | "warning";
   text: string;
 }
 
@@ -171,20 +171,16 @@ export class DeepSeekAgentRunner {
         reasoningContent: "",
         toolCalls: new Map<number, ToolCallAccumulator>()
       };
-      let reasoningProgressThreshold = 0;
       await readSse(response.body, (payload) => {
         const delta = readDelta(payload);
         if (!delta) return;
-        if (typeof delta.content === "string") {
+        if (typeof delta.content === "string" && delta.content) {
           state.content += delta.content;
           this.emit("output", delta.content);
         }
-        if (typeof delta.reasoning_content === "string") {
+        if (typeof delta.reasoning_content === "string" && delta.reasoning_content) {
           state.reasoningContent += delta.reasoning_content;
-          if (state.reasoningContent.length >= reasoningProgressThreshold) {
-            reasoningProgressThreshold = state.reasoningContent.length + 80;
-            this.emit("status", `DeepSeek 思考中（${state.reasoningContent.length} 字）`);
-          }
+          this.emit("reasoning", delta.reasoning_content);
         }
         if (Array.isArray(delta.tool_calls)) {
           for (const rawCall of delta.tool_calls) {

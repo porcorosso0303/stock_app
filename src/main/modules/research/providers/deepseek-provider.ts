@@ -5,6 +5,7 @@ import type {
 } from "../../../deepseek-agent-runner";
 import type {
   ResearchProvider,
+  ResearchProviderOutputEvent,
   ResearchProviderRequest,
   ResearchProviderResult
 } from "./research-provider";
@@ -44,13 +45,17 @@ export class DeepSeekResearchProvider implements ResearchProvider {
   async run(request: ResearchProviderRequest): Promise<ResearchProviderResult> {
     this.cancelRequested = false;
     const agent = this.dependencies.createAgent((event) => {
-      request.onOutput(formatProgress(event));
+      request.onOutput(mapProgress(event));
     });
     this.activeAgent = agent;
     try {
       const researchSpec = await this.dependencies.researchSpecStore.get();
       if (this.cancelRequested) return { status: "cancelled" };
-      const prompts = buildDeepSeekResearchPrompts(request.stockName, researchSpec);
+      const prompts = buildDeepSeekResearchPrompts(
+        request.stockName,
+        researchSpec,
+        request.researchDate
+      );
       const reportMarkdown = await agent.run(prompts);
       if (!reportMarkdown.trim()) {
         return { status: "failed", errorMessage: "DeepSeek 未生成调研报告" };
@@ -75,7 +80,8 @@ export class DeepSeekResearchProvider implements ResearchProvider {
 
 export function buildDeepSeekResearchPrompts(
   stockName: string,
-  researchSpec: string
+  researchSpec: string,
+  researchDate: string
 ): DeepSeekAgentRequest {
   return {
     systemPrompt: [
@@ -90,6 +96,8 @@ export function buildDeepSeekResearchPrompts(
     ].join("\n"),
     userPrompt: [
       `调研标的：${stockName}`,
+      `任务日期（北京时间）：${researchDate}`,
+      `报告中的“报告日期”必须写为：${researchDate}`,
       "",
       "下面是用户维护的调研规范。请完整执行其中仍然适用于该标的的要求：",
       "--- 用户调研规范开始 ---",
@@ -101,8 +109,16 @@ export function buildDeepSeekResearchPrompts(
   };
 }
 
-function formatProgress(event: DeepSeekAgentProgress): string {
-  if (event.kind === "output") return event.text;
-  const label = event.kind === "warning" ? "DeepSeek 警告" : "DeepSeek";
-  return `\n[${label}] ${event.text}\n`;
+function mapProgress(event: DeepSeekAgentProgress): ResearchProviderOutputEvent {
+  if (event.kind === "reasoning") {
+    return { kind: "reasoning", mode: "stream", text: event.text };
+  }
+  if (event.kind === "output") {
+    return { kind: "answer", mode: "stream", text: event.text };
+  }
+  return {
+    kind: "status",
+    mode: "line",
+    text: event.kind === "warning" ? `DeepSeek 警告：${event.text}` : event.text
+  };
 }

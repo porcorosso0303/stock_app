@@ -5,10 +5,17 @@ export type ResearchProviderResult =
   | { status: "failed"; errorMessage: string }
   | { status: "cancelled" };
 
+export interface ResearchProviderOutputEvent {
+  kind: "status" | "reasoning" | "answer";
+  mode: "line" | "stream";
+  text: string;
+}
+
 export interface ResearchProviderRequest {
   stockName: string;
   runDirectory: string;
-  onOutput: (text: string) => void;
+  researchDate: string;
+  onOutput: (event: ResearchProviderOutputEvent) => void;
 }
 
 export interface ResearchProvider {
