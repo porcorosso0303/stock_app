@@ -50,7 +50,8 @@ describe("model provider selection integration", () => {
     await configStore.setModelProviderSettings({
       providerId: "deepseek",
       deepSeekBaseUrl: "https://api.deepseek.com",
-      deepSeekModel: "deepseek-v4-pro"
+      deepSeekModel: "deepseek-v4-pro",
+      deepSeekReasoningEffort: "high"
     });
     await service.start("中控技术");
 

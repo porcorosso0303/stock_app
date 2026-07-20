@@ -32,7 +32,8 @@ function createHarness(options: {
   const setModelProviderSettings = vi.fn().mockResolvedValue({
     modelProviderId: "deepseek",
     deepSeekBaseUrl: "https://api.deepseek.com",
-    deepSeekModel: "deepseek-v4-pro"
+    deepSeekModel: "deepseek-v4-pro",
+    deepSeekReasoningEffort: "high"
   });
   const modelSecretStatus = {
     hasDeepSeekApiKey: true,
@@ -93,7 +94,8 @@ function createHarness(options: {
       getModelProviderSettings: async () => ({
         providerId: "codex-cli" as const,
         deepSeekBaseUrl: "https://api.deepseek.com",
-        deepSeekModel: "deepseek-v4-pro"
+        deepSeekModel: "deepseek-v4-pro",
+        deepSeekReasoningEffort: "high" as const
       }),
       setModelProviderSettings
     },
@@ -263,6 +265,7 @@ describe("registerIpcHandlers", () => {
       providerId: "codex-cli",
       deepSeekBaseUrl: "https://api.deepseek.com",
       deepSeekModel: "deepseek-v4-pro",
+      deepSeekReasoningEffort: "high",
       hasDeepSeekApiKey: true,
       hasTavilyApiKey: false
     });
@@ -276,6 +279,7 @@ describe("registerIpcHandlers", () => {
       providerId: "deepseek",
       deepSeekBaseUrl: "https://api.deepseek.com",
       deepSeekModel: "deepseek-v4-pro",
+      deepSeekReasoningEffort: "max",
       deepSeekApiKey: "new-model-key",
       tavilyApiKey: "new-search-key"
     });
@@ -289,7 +293,8 @@ describe("registerIpcHandlers", () => {
     expect(setModelProviderSettings).toHaveBeenCalledWith({
       providerId: "deepseek",
       deepSeekBaseUrl: "https://api.deepseek.com",
-      deepSeekModel: "deepseek-v4-pro"
+      deepSeekModel: "deepseek-v4-pro",
+      deepSeekReasoningEffort: "max"
     });
     expect(result).toMatchObject({
       providerId: "deepseek",
@@ -305,6 +310,7 @@ describe("registerIpcHandlers", () => {
       providerId: "deepseek",
       deepSeekBaseUrl: "https://api.deepseek.com",
       deepSeekModel: "deepseek-v4-pro",
+      deepSeekReasoningEffort: "high",
       clearDeepSeekApiKey: true
     })).rejects.toThrow("DeepSeek API Key");
 

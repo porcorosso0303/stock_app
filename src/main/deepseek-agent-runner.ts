@@ -6,6 +6,7 @@ import type {
   WebSearchInput,
   WebSearchResult
 } from "./tavily-web-tools";
+import type { DeepSeekReasoningEffort } from "../shared/types";
 
 export interface DeepSeekAgentProgress {
   kind: "status" | "reasoning" | "output" | "warning";
@@ -21,6 +22,7 @@ export interface DeepSeekAgentRunnerOptions {
   apiKey: string;
   baseUrl: string;
   model: string;
+  reasoningEffort: DeepSeekReasoningEffort;
   transport: HttpTransport;
   webTools: DeepSeekWebTools;
   onProgress?: (event: DeepSeekAgentProgress) => void;
@@ -156,6 +158,8 @@ export class DeepSeekAgentRunner {
   private async complete(messages: DeepSeekMessage[], signal: AbortSignal): Promise<AssistantTurn> {
     return this.request({
       model: this.options.model,
+      thinking: { type: "enabled" },
+      reasoning_effort: this.options.reasoningEffort,
       messages: cloneMessages(messages),
       stream: true,
       tools: DEEPSEEK_TOOLS,

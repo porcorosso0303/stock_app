@@ -14,10 +14,14 @@ describe("model provider settings dialog", () => {
     expect(html).toContain('id="deepseek-model"');
     expect(html).toContain("deepseek-v4-pro");
     expect(html).toContain("deepseek-v4-flash");
+    expect(html).toContain('id="deepseek-reasoning-effort"');
+    expect(html).toContain('<option value="high">high</option>');
+    expect(html).toContain('<option value="max">max</option>');
     expect(html).toContain('id="deepseek-api-key" type="password"');
     expect(html).toContain('id="tavily-api-key" type="password"');
     expect(html).not.toMatch(/value="[^\"]*(?:sk-|tvly-)/);
     expect(dom).toContain('modelProviderDialog: getElement<HTMLDialogElement>("model-provider-dialog")');
+    expect(dom).toContain('deepSeekReasoningEffort: getElement<HTMLSelectElement>("deepseek-reasoning-effort")');
   });
 
   it("loads status on open and saves through the model provider API", async () => {
@@ -36,5 +40,7 @@ describe("model provider settings dialog", () => {
     expect(main).toContain("api.setModelProviderSettings");
     expect(main).toContain("hasDeepSeekApiKey");
     expect(main).toContain("hasTavilyApiKey");
+    expect(main).toContain("elements.deepSeekReasoningEffort.value = current.deepSeekReasoningEffort");
+    expect(main).toContain("deepSeekReasoningEffort: elements.deepSeekReasoningEffort.value");
   });
 });

@@ -76,6 +76,7 @@ export const elements = {
   deepSeekModelSettings: getElement<HTMLElement>("deepseek-model-settings"),
   deepSeekBaseUrl: getElement<HTMLInputElement>("deepseek-base-url"),
   deepSeekModel: getElement<HTMLInputElement>("deepseek-model"),
+  deepSeekReasoningEffort: getElement<HTMLSelectElement>("deepseek-reasoning-effort"),
   deepSeekApiKey: getElement<HTMLInputElement>("deepseek-api-key"),
   deepSeekApiKeyStatus: getElement<HTMLElement>("deepseek-api-key-status"),
   clearDeepSeekApiKey: getElement<HTMLButtonElement>("clear-deepseek-api-key"),

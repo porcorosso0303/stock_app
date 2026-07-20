@@ -396,6 +396,7 @@ function createApi(
       providerId: "codex-cli",
       deepSeekBaseUrl: "https://api.deepseek.com",
       deepSeekModel: "deepseek-v4-pro",
+      deepSeekReasoningEffort: "high",
       hasDeepSeekApiKey: false,
       hasTavilyApiKey: false
     }),

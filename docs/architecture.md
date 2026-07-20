@@ -95,7 +95,7 @@ src/main/modules/watch/watch-ipc.ts
 
 这使 renderer 首次启动时能一次拿到应用配置、历史记录、Codex 状态和盯盘脑图。
 
-模型服务设置不进入 bootstrap。Renderer 收到 `model-provider-settings:open` 后单独读取设置；读取结果只包含非敏感配置以及 `hasDeepSeekApiKey`、`hasTavilyApiKey`，主进程不会把已保存密钥或密文返回 renderer。保存时主进程同时校验 Base URL、模型名称和变更后的密钥状态；DeepSeek 模式缺少任一必需密钥时，在修改密钥文件前拒绝保存。
+模型服务设置不进入 bootstrap。Renderer 收到 `model-provider-settings:open` 后单独读取设置；读取结果只包含非敏感配置以及 `hasDeepSeekApiKey`、`hasTavilyApiKey`，主进程不会把已保存密钥或密文返回 renderer。保存时主进程同时校验 Base URL、模型名称、思考强度和变更后的密钥状态；思考强度只接受 `high` 或 `max`。DeepSeek 模式缺少任一必需密钥时，在修改密钥文件前拒绝保存。
 
 ### Research IPC
 
@@ -215,12 +215,13 @@ interface AppConfig {
   modelProviderId?: "codex-cli" | "deepseek";
   deepSeekBaseUrl?: string;
   deepSeekModel?: string;
+  deepSeekReasoningEffort?: "high" | "max";
 }
 ```
 
 `watchMarketProviderId` 是盯盘行情 provider 选择配置。顶部 Electron 菜单 `Setting -> 数据源` 不直接承载所有选项，而是通知 renderer 打开独立的数据源设置弹窗。用户在弹窗中选择“东方财富”或“模拟数据”并保存后，renderer 调用 `watch-market-provider:set`；主进程写入 `user_data/config.json`，切换当前 provider，并通过 `watch-market-provider:changed` 通知 renderer 重新加载盯盘行情。
 
-`Setting -> 模型服务` 使用相同的独立弹窗结构。`modelProviderId` 是股票调研和持仓股消息共同使用的模型服务；`deepSeekBaseUrl` 和 `deepSeekModel` 是非敏感 DeepSeek 配置。旧 `researchProviderId` 只用于兼容读取，缺少新字段时默认选择 `codex-cli`。DeepSeek 默认 Base URL 是 `https://api.deepseek.com`，默认模型是 `deepseek-v4-pro`；本机 `localhost`/`127.0.0.1` 兼容端点可以使用 HTTP，其他地址必须使用 HTTPS。
+`Setting -> 模型服务` 使用相同的独立弹窗结构。`modelProviderId` 是股票调研和持仓股消息共同使用的模型服务；`deepSeekBaseUrl`、`deepSeekModel` 和 `deepSeekReasoningEffort` 是非敏感 DeepSeek 配置。旧 `researchProviderId` 只用于兼容读取，缺少新字段时默认选择 `codex-cli`。DeepSeek 默认 Base URL 是 `https://api.deepseek.com`，默认模型是 `deepseek-v4-pro`，默认思考强度是 `high`；设置界面只提供 `high` 和 `max`。旧配置缺少思考强度或磁盘值无法识别时读取为 `high`，保存接口仍严格拒绝未知值。本机 `localhost`/`127.0.0.1` 兼容端点可以使用 HTTP，其他地址必须使用 HTTPS。
 
 ### 盯盘纯函数
 
@@ -449,7 +450,7 @@ src/main/deepseek-agent-runner.ts
 src/main/tavily-web-tools.ts
 ```
 
-`DeepSeekAgentRunner` 直接调用 DeepSeek OpenAI-compatible `POST <baseUrl>/chat/completions`，启用 SSE 流式响应和 `tool_choice: auto`。它负责：
+`DeepSeekAgentRunner` 直接调用 DeepSeek OpenAI-compatible `POST <baseUrl>/chat/completions`，启用 SSE 流式响应和 `tool_choice: auto`。每次请求都显式发送 `thinking: { type: "enabled" }`，并把任务设置快照中的 `deepSeekReasoningEffort` 作为 `reasoning_effort` 发送；首轮和所有工具调用后续轮使用相同值。它负责：
 
 - 解析跨任意字节边界的 SSE 事件。
 - 分别累计可见 `content` 和 `reasoning_content`，并把每个非空原始增量实时交给上层；不再用“思考中（N 字）”替代或打断完整推理。
@@ -948,10 +949,11 @@ user_data/runs/<run-id>/.agents/skills/research-a-share-stock/
 - `modelProviderId`
 - `deepSeekBaseUrl`
 - `deepSeekModel`
+- `deepSeekReasoningEffort`
 
 `watchMarketProviderId` 已用于持久化用户在数据源设置弹窗中的选择，并由 main 装配的 `SelectableMarketDataProvider` 执行运行时切换。`researchProviderId` 是旧版本兼容字段；新代码读取时映射到 `modelProviderId`，后续保存使用新字段。
 `watchNewsIntervalHours` 是持仓股消息面后台捕捉周期，默认 3 小时；Setting -> 持仓股消息 打开独立设置弹窗修改该值，保存后 main 侧定时器立即重建。
-`modelProviderId`、`deepSeekBaseUrl`、`deepSeekModel` 由 Setting -> 模型服务维护。它们不包含密钥。
+`modelProviderId`、`deepSeekBaseUrl`、`deepSeekModel`、`deepSeekReasoningEffort` 由 Setting -> 模型服务维护。它们不包含密钥。任务开始时 `ModelProviderManager` 会冻结包含这些字段的配置快照，因此修改思考强度不会影响已经运行的调研或消息分析任务。
 
 ### model-secrets.json
 

@@ -130,6 +130,7 @@ void app.whenReady().then(async () => {
       apiKey: requireModelSecret(context.secrets.deepSeekApiKey, "DeepSeek API Key"),
       baseUrl: context.settings.deepSeekBaseUrl,
       model: context.settings.deepSeekModel,
+      reasoningEffort: context.settings.deepSeekReasoningEffort,
       transport: modelHttpTransport,
       webTools,
       onProgress,

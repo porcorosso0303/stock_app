@@ -47,6 +47,7 @@ function createHarness(responses: HttpResponse[], options: {
     apiKey,
     baseUrl: "https://api.deepseek.com/",
     model: "deepseek-v4-pro",
+    reasoningEffort: "max",
     transport: { request },
     webTools: { search, extract },
     onProgress: (event) => progress.push(event),
@@ -70,6 +71,8 @@ describe("DeepSeekAgentRunner", () => {
       headers: { Authorization: "Bearer deepseek-secret-key" },
       body: {
         model: "deepseek-v4-pro",
+        thinking: { type: "enabled" },
+        reasoning_effort: "max",
         stream: true,
         tool_choice: "auto",
         messages: [
@@ -108,6 +111,10 @@ describe("DeepSeekAgentRunner", () => {
       topic: "news"
     }));
     const secondBody = requests[1].body as { messages: Array<Record<string, unknown>> };
+    expect(secondBody).toMatchObject({
+      thinking: { type: "enabled" },
+      reasoning_effort: "max"
+    });
     expect(secondBody.messages[2]).toEqual({
       role: "assistant",
       content: "",
@@ -164,6 +171,7 @@ describe("DeepSeekAgentRunner", () => {
       apiKey: key,
       baseUrl: "https://api.deepseek.com",
       model: "deepseek-v4-pro",
+      reasoningEffort: "high",
       transport: { request },
       webTools: { search: vi.fn(), extract: vi.fn() },
       onProgress: (event) => progress.push(event)
@@ -186,6 +194,7 @@ describe("DeepSeekAgentRunner", () => {
       apiKey: "key",
       baseUrl: "https://api.deepseek.com",
       model: "deepseek-v4-pro",
+      reasoningEffort: "high",
       transport: { request },
       webTools: { search: vi.fn(), extract: vi.fn() }
     });
@@ -218,6 +227,7 @@ describe("DeepSeekAgentRunner", () => {
       apiKey: "key",
       baseUrl: "https://api.deepseek.com",
       model: "deepseek-v4-pro",
+      reasoningEffort: "high",
       transport: { request },
       webTools: { search: vi.fn(), extract: vi.fn() }
     });

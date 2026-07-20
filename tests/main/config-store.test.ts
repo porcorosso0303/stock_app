@@ -95,7 +95,8 @@ describe("ConfigStore", () => {
     await expect(store.getModelProviderSettings()).resolves.toEqual({
       providerId: "codex-cli",
       deepSeekBaseUrl: "https://api.deepseek.com",
-      deepSeekModel: "deepseek-v4-pro"
+      deepSeekModel: "deepseek-v4-pro",
+      deepSeekReasoningEffort: "high"
     });
   });
 
@@ -117,23 +118,31 @@ describe("ConfigStore", () => {
     await store.setModelProviderSettings({
       providerId: "deepseek",
       deepSeekBaseUrl: "https://gateway.example.com/v1",
-      deepSeekModel: "custom-model"
+      deepSeekModel: "custom-model",
+      deepSeekReasoningEffort: "max"
     });
 
     await expect(new ConfigStore(path).getModelProviderSettings()).resolves.toEqual({
       providerId: "deepseek",
       deepSeekBaseUrl: "https://gateway.example.com/v1",
-      deepSeekModel: "custom-model"
+      deepSeekModel: "custom-model",
+      deepSeekReasoningEffort: "max"
     });
     expect(await new ConfigStore(path).get()).not.toHaveProperty("deepSeekApiKey");
     expect(await new ConfigStore(path).get()).not.toHaveProperty("tavilyApiKey");
   });
 
   it.each([
-    [{ providerId: "unknown", deepSeekBaseUrl: "https://api.deepseek.com", deepSeekModel: "deepseek-v4-pro" }, "模型服务"],
-    [{ providerId: "deepseek", deepSeekBaseUrl: "http://api.deepseek.com", deepSeekModel: "deepseek-v4-pro" }, "HTTPS"],
-    [{ providerId: "deepseek", deepSeekBaseUrl: "not a url", deepSeekModel: "deepseek-v4-pro" }, "URL"],
-    [{ providerId: "deepseek", deepSeekBaseUrl: "https://api.deepseek.com", deepSeekModel: "  " }, "模型名称"]
+    [{ providerId: "unknown", deepSeekBaseUrl: "https://api.deepseek.com", deepSeekModel: "deepseek-v4-pro", deepSeekReasoningEffort: "high" }, "模型服务"],
+    [{ providerId: "deepseek", deepSeekBaseUrl: "http://api.deepseek.com", deepSeekModel: "deepseek-v4-pro", deepSeekReasoningEffort: "high" }, "HTTPS"],
+    [{ providerId: "deepseek", deepSeekBaseUrl: "not a url", deepSeekModel: "deepseek-v4-pro", deepSeekReasoningEffort: "high" }, "URL"],
+    [{ providerId: "deepseek", deepSeekBaseUrl: "https://api.deepseek.com", deepSeekModel: "  ", deepSeekReasoningEffort: "high" }, "模型名称"],
+    [{
+      providerId: "deepseek",
+      deepSeekBaseUrl: "https://api.deepseek.com",
+      deepSeekModel: "deepseek-v4-pro",
+      deepSeekReasoningEffort: "extreme"
+    }, "思考强度"]
   ])("rejects invalid model settings %#", async (settings, message) => {
     const directory = await createTempDirectory();
     const store = new ConfigStore(join(directory, "config.json"));
@@ -151,7 +160,8 @@ describe("ConfigStore", () => {
     await expect(store.setModelProviderSettings({
       providerId: "deepseek",
       deepSeekBaseUrl,
-      deepSeekModel: "local-model"
+      deepSeekModel: "local-model",
+      deepSeekReasoningEffort: "high"
     })).resolves.toMatchObject({ deepSeekBaseUrl });
   });
 });

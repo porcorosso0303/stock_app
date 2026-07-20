@@ -13,14 +13,17 @@ export interface AppConfig {
   modelProviderId?: ModelProviderId;
   deepSeekBaseUrl?: string;
   deepSeekModel?: string;
+  deepSeekReasoningEffort?: DeepSeekReasoningEffort;
 }
 
 export type ModelProviderId = "codex-cli" | "deepseek";
+export type DeepSeekReasoningEffort = "high" | "max";
 
 export interface ModelProviderSettings {
   providerId: ModelProviderId;
   deepSeekBaseUrl: string;
   deepSeekModel: string;
+  deepSeekReasoningEffort: DeepSeekReasoningEffort;
 }
 
 export interface ModelProviderSettingsView extends ModelProviderSettings {

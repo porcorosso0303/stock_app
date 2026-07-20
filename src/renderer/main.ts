@@ -111,6 +111,7 @@ function bindModelProviderSettings(initialCodexStatus: CodexEnvironmentStatus): 
       elements.modelProviderSelect.value = current.providerId;
       elements.deepSeekBaseUrl.value = current.deepSeekBaseUrl;
       elements.deepSeekModel.value = current.deepSeekModel;
+      elements.deepSeekReasoningEffort.value = current.deepSeekReasoningEffort;
       elements.deepSeekApiKey.value = "";
       elements.tavilyApiKey.value = "";
       elements.modelProviderStatus.textContent = "";
@@ -138,6 +139,7 @@ function bindModelProviderSettings(initialCodexStatus: CodexEnvironmentStatus): 
         providerId,
         deepSeekBaseUrl: elements.deepSeekBaseUrl.value,
         deepSeekModel: elements.deepSeekModel.value,
+        deepSeekReasoningEffort: elements.deepSeekReasoningEffort.value as ModelProviderSettingsView["deepSeekReasoningEffort"],
         deepSeekApiKey: elements.deepSeekApiKey.value.trim() || undefined,
         tavilyApiKey: elements.tavilyApiKey.value.trim() || undefined,
         clearDeepSeekApiKey,

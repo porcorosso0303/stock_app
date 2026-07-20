@@ -1,5 +1,6 @@
 import type {
   AppConfig,
+  DeepSeekReasoningEffort,
   ModelProviderId,
   ModelProviderSettings,
   WatchMarketProviderId
@@ -9,7 +10,8 @@ import { JsonStore } from "./json-store";
 export const DEFAULT_MODEL_PROVIDER_SETTINGS: ModelProviderSettings = {
   providerId: "codex-cli",
   deepSeekBaseUrl: "https://api.deepseek.com",
-  deepSeekModel: "deepseek-v4-pro"
+  deepSeekModel: "deepseek-v4-pro",
+  deepSeekReasoningEffort: "high"
 };
 
 export class ConfigStore {
@@ -28,7 +30,8 @@ export class ConfigStore {
     return normalizeModelProviderSettings({
       providerId: normalizeProviderId(config.modelProviderId ?? config.researchProviderId),
       deepSeekBaseUrl: config.deepSeekBaseUrl ?? DEFAULT_MODEL_PROVIDER_SETTINGS.deepSeekBaseUrl,
-      deepSeekModel: config.deepSeekModel ?? DEFAULT_MODEL_PROVIDER_SETTINGS.deepSeekModel
+      deepSeekModel: config.deepSeekModel ?? DEFAULT_MODEL_PROVIDER_SETTINGS.deepSeekModel,
+      deepSeekReasoningEffort: normalizeStoredDeepSeekReasoningEffort(config.deepSeekReasoningEffort)
     });
   }
 
@@ -38,7 +41,8 @@ export class ConfigStore {
       ...await this.get(),
       modelProviderId: normalized.providerId,
       deepSeekBaseUrl: normalized.deepSeekBaseUrl,
-      deepSeekModel: normalized.deepSeekModel
+      deepSeekModel: normalized.deepSeekModel,
+      deepSeekReasoningEffort: normalized.deepSeekReasoningEffort
     };
     await this.store.write(config);
     return config;
@@ -81,11 +85,20 @@ export function normalizeModelProviderSettings(value: ModelProviderSettings): Mo
   }
 
   const deepSeekBaseUrl = normalizeDeepSeekBaseUrl(value.deepSeekBaseUrl);
+  const deepSeekReasoningEffort = value.deepSeekReasoningEffort;
+  if (deepSeekReasoningEffort !== "high" && deepSeekReasoningEffort !== "max") {
+    throw new Error("DeepSeek 思考强度必须是 high 或 max");
+  }
   return {
     providerId: value.providerId,
     deepSeekBaseUrl,
-    deepSeekModel
+    deepSeekModel,
+    deepSeekReasoningEffort
   };
+}
+
+function normalizeStoredDeepSeekReasoningEffort(value: unknown): DeepSeekReasoningEffort {
+  return value === "max" ? "max" : DEFAULT_MODEL_PROVIDER_SETTINGS.deepSeekReasoningEffort;
 }
 
 function normalizeDeepSeekBaseUrl(value: string): string {

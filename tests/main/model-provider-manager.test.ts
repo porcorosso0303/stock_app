@@ -4,6 +4,7 @@ import {
   type ModelProviderBundleFactory,
   type ModelProviderContext
 } from "../../src/main/model-provider-manager";
+import type { DeepSeekReasoningEffort } from "../../src/shared/types";
 
 function bundle(id: "codex-cli" | "deepseek"): ModelProviderBundleFactory {
   return {
@@ -28,7 +29,8 @@ describe("ModelProviderManager", () => {
         getModelProviderSettings: async () => ({
           providerId: "codex-cli",
           deepSeekBaseUrl: "https://api.deepseek.com",
-          deepSeekModel: "deepseek-v4-pro"
+          deepSeekModel: "deepseek-v4-pro",
+          deepSeekReasoningEffort: "high"
         })
       },
       secretsStore: { getSecrets },
@@ -45,7 +47,8 @@ describe("ModelProviderManager", () => {
         getModelProviderSettings: async () => ({
           providerId: "deepseek",
           deepSeekBaseUrl: "https://api.deepseek.com",
-          deepSeekModel: "deepseek-v4-pro"
+          deepSeekModel: "deepseek-v4-pro",
+          deepSeekReasoningEffort: "high"
         })
       },
       secretsStore: { getSecrets: async () => ({ deepSeekApiKey: "model-key" }) },
@@ -58,12 +61,14 @@ describe("ModelProviderManager", () => {
   it("takes a fresh immutable configuration snapshot for each resolved task", async () => {
     const deepseek = bundle("deepseek");
     let model = "deepseek-v4-pro";
+    let reasoningEffort: DeepSeekReasoningEffort = "high";
     const manager = new ModelProviderManager({
       configStore: {
         getModelProviderSettings: async () => ({
           providerId: "deepseek",
           deepSeekBaseUrl: "https://api.deepseek.com",
-          deepSeekModel: model
+          deepSeekModel: model,
+          deepSeekReasoningEffort: reasoningEffort
         })
       },
       secretsStore: {
@@ -74,12 +79,22 @@ describe("ModelProviderManager", () => {
 
     const first = await manager.resolveResearchProvider();
     model = "deepseek-v4-flash";
-    const second = await manager.resolveResearchProvider();
+    reasoningEffort = "max";
+    await manager.resolveWatchNewsProvider();
 
     expect(first.label).toContain("deepseek-v4-pro");
-    expect(second.label).toContain("deepseek-v4-flash");
-    const factory = vi.mocked(deepseek.createResearchProvider);
-    expect(factory.mock.calls[0][0]).not.toBe(factory.mock.calls[1][0]);
-    expect(Object.isFrozen(factory.mock.calls[0][0].settings)).toBe(true);
+    const researchContext = vi.mocked(deepseek.createResearchProvider).mock.calls[0][0];
+    const watchNewsContext = vi.mocked(deepseek.createWatchNewsProvider).mock.calls[0][0];
+    expect(researchContext.settings).toMatchObject({
+      deepSeekModel: "deepseek-v4-pro",
+      deepSeekReasoningEffort: "high"
+    });
+    expect(watchNewsContext.settings).toMatchObject({
+      deepSeekModel: "deepseek-v4-flash",
+      deepSeekReasoningEffort: "max"
+    });
+    expect(researchContext).not.toBe(watchNewsContext);
+    expect(Object.isFrozen(researchContext.settings)).toBe(true);
+    expect(Object.isFrozen(watchNewsContext.settings)).toBe(true);
   });
 });

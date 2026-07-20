@@ -96,7 +96,11 @@ export function registerAppIpc(dependencies: AppIpcDependencies): void {
     const settings = normalizeModelProviderSettings({
       providerId: requireString(input.providerId, "providerId") as ModelProviderSettings["providerId"],
       deepSeekBaseUrl: requireString(input.deepSeekBaseUrl, "deepSeekBaseUrl"),
-      deepSeekModel: requireString(input.deepSeekModel, "deepSeekModel")
+      deepSeekModel: requireString(input.deepSeekModel, "deepSeekModel"),
+      deepSeekReasoningEffort: requireString(
+        input.deepSeekReasoningEffort,
+        "deepSeekReasoningEffort"
+      ) as ModelProviderSettings["deepSeekReasoningEffort"]
     });
     const deepSeekApiKey = optionalString(input.deepSeekApiKey, "deepSeekApiKey");
     const tavilyApiKey = optionalString(input.tavilyApiKey, "tavilyApiKey");
