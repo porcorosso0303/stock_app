@@ -298,6 +298,19 @@ describe("registerIpcHandlers", () => {
     });
   });
 
+  it("rejects clearing a required DeepSeek key before changing encrypted storage", async () => {
+    const { invoke, updateModelSecrets } = createHarness();
+
+    await expect(invoke(IPC.setModelProviderSettings, {
+      providerId: "deepseek",
+      deepSeekBaseUrl: "https://api.deepseek.com",
+      deepSeekModel: "deepseek-v4-pro",
+      clearDeepSeekApiKey: true
+    })).rejects.toThrow("DeepSeek API Key");
+
+    expect(updateModelSecrets).not.toHaveBeenCalled();
+  });
+
   it("includes the persisted watch tree in bootstrap data", async () => {
     const watchTree = {
       root: { id: "root", type: "category", name: "自选股", children: [] }

@@ -19,7 +19,6 @@ describe("watch provider selection wiring", () => {
     expect(source).toMatch(/import\s*\{[\s\S]*\bnet\b[\s\S]*\}\s*from\s*"electron"/);
     expect(source).toContain("createElectronNetFetch");
     expect(source).toContain("new EastMoneyMarketDataProvider(createElectronNetFetch(net))");
-    expect(source).not.toContain("net.fetch");
   });
 
   it("keeps Codex and DeepSeek behind the common research provider boundary", async () => {
@@ -30,5 +29,20 @@ describe("watch provider selection wiring", () => {
     expect(deepseek).toContain("implements ResearchProvider");
     expect(deepseek).toContain("buildDeepSeekResearchPrompts");
     expect(deepseek).not.toContain("ResearchSkillPreparer");
+  });
+
+  it("wires research and watch news through the task-level model provider manager", async () => {
+    const source = await readFile("src/main/index.ts", "utf8");
+
+    expect(source).toContain("new ModelProviderManager");
+    expect(source).toContain("CodexCliResearchProvider");
+    expect(source).toContain("DeepSeekResearchProvider");
+    expect(source).toContain("CodexWatchNewsAnalysisProvider");
+    expect(source).toContain("DeepSeekWatchNewsAnalysisProvider");
+    expect(source).toContain("resolveResearchProvider");
+    expect(source).toContain("resolveWatchNewsProvider");
+    expect(source).toContain("new TavilyWebTools");
+    expect(source).toContain("new DeepSeekAgentRunner");
+    expect(source).toContain("createFetchHttpTransport");
   });
 });

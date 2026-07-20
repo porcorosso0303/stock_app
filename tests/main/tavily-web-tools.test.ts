@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   TavilyWebTools,
+  createFetchHttpTransport,
   type HttpRequest,
   type HttpResponse,
   type HttpTransport
@@ -25,6 +26,29 @@ function harness(nextResponse: HttpResponse = response(200, { results: [] })) {
 }
 
 describe("TavilyWebTools", () => {
+  it("adapts Fetch responses and JSON-encodes request bodies", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      status: 200,
+      body: null,
+      text: async () => "{\"ok\":true}"
+    });
+    const transport = createFetchHttpTransport(fetchImpl);
+    const controller = new AbortController();
+
+    await expect(transport.request({
+      url: "https://example.com/api",
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: { value: 1 },
+      signal: controller.signal
+    })).resolves.toEqual({ status: 200, body: "{\"ok\":true}" });
+    expect(fetchImpl).toHaveBeenCalledWith("https://example.com/api", expect.objectContaining({
+      method: "POST",
+      body: "{\"value\":1}",
+      signal: controller.signal
+    }));
+  });
+
   it("searches with Bearer authentication and normalized filters", async () => {
     const { tools, request } = harness(response(200, {
       results: [{

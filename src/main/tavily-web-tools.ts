@@ -15,6 +15,44 @@ export interface HttpTransport {
   request(input: HttpRequest): Promise<HttpResponse>;
 }
 
+interface FetchResponseLike {
+  status: number;
+  body: {
+    getReader(): {
+      read(): Promise<{ done: boolean; value?: Uint8Array }>;
+      releaseLock?(): void;
+    };
+  } | null;
+  text(): Promise<string>;
+}
+
+type HttpFetchLike = (
+  url: string,
+  init: {
+    method: string;
+    headers: Record<string, string>;
+    body?: string;
+    signal: AbortSignal;
+  }
+) => Promise<FetchResponseLike>;
+
+export function createFetchHttpTransport(fetchImpl: HttpFetchLike): HttpTransport {
+  return {
+    request: async (input) => {
+      const response = await fetchImpl(input.url, {
+        method: input.method,
+        headers: input.headers,
+        ...(input.body === undefined ? {} : { body: JSON.stringify(input.body) }),
+        signal: input.signal
+      });
+      return {
+        status: response.status,
+        body: response.body ? readFetchStream(response.body) : await response.text()
+      };
+    }
+  };
+}
+
 export interface WebSearchInput {
   query: string;
   topic?: "general" | "news" | "finance";
@@ -263,4 +301,17 @@ function readString(value: unknown): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+async function* readFetchStream(stream: NonNullable<FetchResponseLike["body"]>): AsyncIterable<Uint8Array> {
+  const reader = stream.getReader();
+  try {
+    while (true) {
+      const result = await reader.read();
+      if (result.done) return;
+      if (result.value) yield result.value;
+    }
+  } finally {
+    reader.releaseLock?.();
+  }
 }

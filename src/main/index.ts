@@ -13,10 +13,13 @@ import { resolveAppDataDirectory } from "./app-data-directory";
 import { CodexLocator } from "./codex-locator";
 import { getCodexLauncherOverride } from "./codex-launcher-override";
 import { CodexRunner } from "./codex-runner";
+import { DeepSeekAgentRunner } from "./deepseek-agent-runner";
 import { ConfigStore } from "./config-store";
 import { ModelSecretsStore } from "./model-secrets-store";
+import { ModelProviderManager, type ModelProviderContext } from "./model-provider-manager";
 import { buildApplicationMenuTemplate } from "./app-menu";
 import { CodexCliResearchProvider } from "./modules/research/providers/codex-cli-provider";
+import { DeepSeekResearchProvider } from "./modules/research/providers/deepseek-provider";
 import {
   createElectronNetFetch,
   EastMoneyMarketDataProvider
@@ -36,6 +39,7 @@ import { WatchMarketCacheStore } from "./watch-market-cache-store";
 import { WatchMarketService } from "./watch-market-service";
 import {
   CodexWatchNewsAnalysisProvider,
+  DeepSeekWatchNewsAnalysisProvider,
   EastMoneyWatchNewsNoticeSource
 } from "./watch-news-analysis-provider";
 import { WatchNewsService } from "./watch-news-service";
@@ -43,6 +47,7 @@ import { WatchNewsStore } from "./watch-news-store";
 import { WatchTreeStore } from "./watch-tree-store";
 import { IPC } from "../shared/ipc";
 import type { WatchMarketProviderId } from "../shared/types";
+import { createFetchHttpTransport, TavilyWebTools } from "./tavily-web-tools";
 
 let mainWindow: BrowserWindow | undefined;
 
@@ -110,16 +115,61 @@ void app.whenReady().then(async () => {
   const pdfExporter = new PdfExporter({
     createWindow: () => new BrowserWindow({ show: false })
   });
-  const researchProvider = new CodexCliResearchProvider({
-    codexLocator,
-    createRunner: (options) => new CodexRunner(options),
-    researchSkillPreparer
+  const modelHttpTransport = createFetchHttpTransport(async (url, init) => await net.fetch(url, init));
+  const watchNewsNoticeSource = new EastMoneyWatchNewsNoticeSource(createElectronNetFetch(net));
+  const createDeepSeekAgent = (
+    context: ModelProviderContext,
+    onProgress: ConstructorParameters<typeof DeepSeekAgentRunner>[0]["onProgress"]
+  ): DeepSeekAgentRunner => {
+    const webTools = new TavilyWebTools({
+      apiKey: requireModelSecret(context.secrets.tavilyApiKey, "Tavily API Key"),
+      transport: modelHttpTransport
+    });
+    return new DeepSeekAgentRunner({
+      apiKey: requireModelSecret(context.secrets.deepSeekApiKey, "DeepSeek API Key"),
+      baseUrl: context.settings.deepSeekBaseUrl,
+      model: context.settings.deepSeekModel,
+      transport: modelHttpTransport,
+      webTools,
+      onProgress
+    });
+  };
+  const modelProviderManager = new ModelProviderManager({
+    configStore,
+    secretsStore: modelSecretsStore,
+    bundles: [{
+      id: "codex-cli",
+      createResearchProvider: () => new CodexCliResearchProvider({
+        codexLocator,
+        createRunner: (options) => new CodexRunner(options),
+        researchSkillPreparer
+      }),
+      createWatchNewsProvider: () => new CodexWatchNewsAnalysisProvider({
+        codexLocator,
+        userDataDirectory: userData,
+        noticeSource: watchNewsNoticeSource,
+        createRunner: (options) => new CodexRunner(options)
+      })
+    }, {
+      id: "deepseek",
+      createResearchProvider: (context) => new DeepSeekResearchProvider({
+        model: context.settings.deepSeekModel,
+        researchSpecStore,
+        createAgent: (onProgress) => createDeepSeekAgent(context, onProgress)
+      }),
+      createWatchNewsProvider: (context) => new DeepSeekWatchNewsAnalysisProvider({
+        model: context.settings.deepSeekModel,
+        userDataDirectory: userData,
+        noticeSource: watchNewsNoticeSource,
+        createAgent: (onProgress) => createDeepSeekAgent(context, onProgress)
+      })
+    }]
   });
   const researchService = new ResearchService({
     userDataDirectory: userData,
     configStore,
     historyStore,
-    resolveResearchProvider: async () => researchProvider,
+    resolveResearchProvider: async () => await modelProviderManager.resolveResearchProvider(),
     pdfExporter,
     onProgress: (event) => {
       mainWindow?.webContents.send(IPC.researchEvent, event);
@@ -144,15 +194,9 @@ void app.whenReady().then(async () => {
     });
   };
   const watchNewsStore = new WatchNewsStore(join(userData, "watch-news.json"));
-  const watchNewsProvider = new CodexWatchNewsAnalysisProvider({
-    codexLocator,
-    userDataDirectory: userData,
-    noticeSource: new EastMoneyWatchNewsNoticeSource(createElectronNetFetch(net)),
-    createRunner: (options) => new CodexRunner(options)
-  });
   const watchNewsService = new WatchNewsService(
     watchNewsStore,
-    async () => watchNewsProvider,
+    async () => await modelProviderManager.resolveWatchNewsProvider(),
     undefined,
     notifyWatchNewsUpdated
   );
@@ -270,4 +314,9 @@ function normalizeWatchNewsIntervalHours(value: unknown): number {
     return 3;
   }
   return Math.min(168, Math.max(0.1, numberValue));
+}
+
+function requireModelSecret(value: string | undefined, name: string): string {
+  if (!value) throw new Error(`${name} 尚未配置`);
+  return value;
 }
