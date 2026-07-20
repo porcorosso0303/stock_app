@@ -21,4 +21,14 @@ describe("watch provider selection wiring", () => {
     expect(source).toContain("new EastMoneyMarketDataProvider(createElectronNetFetch(net))");
     expect(source).not.toContain("net.fetch");
   });
+
+  it("keeps Codex and DeepSeek behind the common research provider boundary", async () => {
+    const codex = await readFile("src/main/modules/research/providers/codex-cli-provider.ts", "utf8");
+    const deepseek = await readFile("src/main/modules/research/providers/deepseek-provider.ts", "utf8");
+
+    expect(codex).toContain("implements ResearchProvider");
+    expect(deepseek).toContain("implements ResearchProvider");
+    expect(deepseek).toContain("buildDeepSeekResearchPrompts");
+    expect(deepseek).not.toContain("ResearchSkillPreparer");
+  });
 });
