@@ -191,6 +191,50 @@
         </div>
       </form>
     </dialog>
+    <dialog id="model-provider-dialog" class="settings-dialog model-provider-dialog">
+      <form id="model-provider-form">
+        <h2>模型服务设置</h2>
+        <p class="settings-hint">新设置只影响之后开始的调研和消息分析任务，正在运行的任务不会切换模型。</p>
+        <label for="model-provider-select">模型服务</label>
+        <select id="model-provider-select">
+          <option value="codex-cli">OpenAI Codex</option>
+          <option value="deepseek">DeepSeek</option>
+        </select>
+        <section id="codex-model-settings" class="model-settings-section">
+          <div class="settings-inline-row">
+            <span id="codex-model-status" class="settings-state">正在检测 Codex CLI...</span>
+            <button id="redetect-model-codex" type="button">重新检测</button>
+          </div>
+        </section>
+        <section id="deepseek-model-settings" class="model-settings-section" hidden>
+          <label for="deepseek-base-url">DeepSeek Base URL</label>
+          <input id="deepseek-base-url" type="url" autocomplete="off" />
+          <label for="deepseek-model">模型</label>
+          <input id="deepseek-model" list="deepseek-model-options" autocomplete="off" />
+          <datalist id="deepseek-model-options">
+            <option value="deepseek-v4-pro"></option>
+            <option value="deepseek-v4-flash"></option>
+          </datalist>
+          <label for="deepseek-api-key">DeepSeek API Key</label>
+          <input id="deepseek-api-key" type="password" autocomplete="new-password" placeholder="留空表示不修改" />
+          <div class="settings-inline-row">
+            <span id="deepseek-api-key-status" class="settings-state">未配置</span>
+            <button id="clear-deepseek-api-key" type="button">清除</button>
+          </div>
+          <label for="tavily-api-key">Tavily API Key</label>
+          <input id="tavily-api-key" type="password" autocomplete="new-password" placeholder="留空表示不修改" />
+          <div class="settings-inline-row">
+            <span id="tavily-api-key-status" class="settings-state">未配置</span>
+            <button id="clear-tavily-api-key" type="button">清除</button>
+          </div>
+        </section>
+        <p id="model-provider-status" class="dialog-error"></p>
+        <div class="dialog-actions">
+          <button id="cancel-model-provider" type="button">取消</button>
+          <button class="primary" type="submit">保存</button>
+        </div>
+      </form>
+    </dialog>
     <dialog id="watch-news-settings-dialog" class="settings-dialog">
       <form id="watch-news-settings-form">
         <h2>持仓股消息设置</h2>

@@ -2,8 +2,10 @@ import type {
   AppBootstrap,
   AppConfig,
   CodexEnvironmentStatus,
+  ModelProviderSettingsView,
   ResearchProgressEvent,
   ResearchRecord,
+  SaveModelProviderSettingsRequest,
   StockQuote,
   StockSearchResult,
   WatchDataTransferResult,
@@ -30,6 +32,9 @@ export const IPC = {
   openPdf: "history:open-pdf",
   retryPdf: "history:retry-pdf",
   redetectCodex: "codex:redetect",
+  getModelProviderSettings: "model-provider-settings:get",
+  setModelProviderSettings: "model-provider-settings:set",
+  openModelProviderSettings: "model-provider-settings:open",
   getWatchTree: "watch-tree:get",
   saveWatchTree: "watch-tree:save",
   getWatchQuotes: "watch-quotes:get",
@@ -70,6 +75,8 @@ export interface StockResearchApi {
   openPdf(id: string): Promise<void>;
   retryPdf(id: string): Promise<ResearchRecord>;
   redetectCodex(): Promise<CodexEnvironmentStatus>;
+  getModelProviderSettings(): Promise<ModelProviderSettingsView>;
+  setModelProviderSettings(settings: SaveModelProviderSettingsRequest): Promise<ModelProviderSettingsView>;
   getWatchTree(): Promise<WatchTreeConfig>;
   saveWatchTree(config: WatchTreeConfig): Promise<WatchTreeConfig>;
   getWatchQuotes(secids: string[]): Promise<StockQuote[]>;
@@ -87,6 +94,7 @@ export interface StockResearchApi {
   setWatchNewsSettings(settings: WatchNewsSettings): Promise<AppConfig>;
   setWatchMarketProvider(providerId: WatchMarketProviderId): Promise<AppConfig>;
   onOpenWatchNewsSettings(callback: () => void): () => void;
+  onOpenModelProviderSettings(callback: () => void): () => void;
   onOpenWatchMarketProviderSettings(callback: () => void): () => void;
   onWatchMarketProviderChanged(callback: () => void): () => void;
   onWatchNewsUpdated(callback: () => void): () => void;

@@ -392,6 +392,18 @@ function createApi(
       stderrPath: ""
     }),
     redetectCodex: async () => ({ available: false, message: "Unavailable in controller tests" }),
+    getModelProviderSettings: async () => ({
+      providerId: "codex-cli",
+      deepSeekBaseUrl: "https://api.deepseek.com",
+      deepSeekModel: "deepseek-v4-pro",
+      hasDeepSeekApiKey: false,
+      hasTavilyApiKey: false
+    }),
+    setModelProviderSettings: async (settings) => ({
+      ...settings,
+      hasDeepSeekApiKey: Boolean(settings.deepSeekApiKey),
+      hasTavilyApiKey: Boolean(settings.tavilyApiKey)
+    }),
     getWatchTree: async () => ({}),
     saveWatchTree,
     getWatchQuotes: async () => [],
@@ -414,6 +426,7 @@ function createApi(
     setWatchNewsSettings: async (settings) => ({ watchNewsIntervalHours: settings.intervalHours }),
     setWatchMarketProvider: async (watchMarketProviderId) => ({ watchMarketProviderId }),
     onOpenWatchNewsSettings: () => () => undefined,
+    onOpenModelProviderSettings: () => () => undefined,
     onOpenWatchMarketProviderSettings: () => () => undefined,
     onWatchMarketProviderChanged: () => () => undefined,
     onWatchNewsUpdated: () => () => undefined,

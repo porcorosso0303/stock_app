@@ -29,6 +29,21 @@ function createHarness(options: {
 } = {}) {
   const handlers = new Map<string, (_event: unknown, value?: unknown) => unknown>();
   const setReportDirectory = vi.fn().mockResolvedValue({});
+  const setModelProviderSettings = vi.fn().mockResolvedValue({
+    modelProviderId: "deepseek",
+    deepSeekBaseUrl: "https://api.deepseek.com",
+    deepSeekModel: "deepseek-v4-pro"
+  });
+  const modelSecretStatus = {
+    hasDeepSeekApiKey: true,
+    hasTavilyApiKey: false
+  };
+  const updateModelSecrets = vi.fn().mockImplementation(async (update) => {
+    if (update.deepSeekApiKey) modelSecretStatus.hasDeepSeekApiKey = true;
+    if (update.tavilyApiKey) modelSecretStatus.hasTavilyApiKey = true;
+    if (update.clearDeepSeekApiKey) modelSecretStatus.hasDeepSeekApiKey = false;
+    if (update.clearTavilyApiKey) modelSecretStatus.hasTavilyApiKey = false;
+  });
   const setWatchNewsIntervalHours = vi.fn().mockResolvedValue({ watchNewsIntervalHours: 3 });
   const setResearchSpec = vi.fn().mockResolvedValue(undefined);
   const resetResearchSpec = vi.fn().mockResolvedValue("default spec");
@@ -74,7 +89,17 @@ function createHarness(options: {
     configStore: {
       get: async () => ({}),
       setReportDirectory,
-      setWatchNewsIntervalHours
+      setWatchNewsIntervalHours,
+      getModelProviderSettings: async () => ({
+        providerId: "codex-cli" as const,
+        deepSeekBaseUrl: "https://api.deepseek.com",
+        deepSeekModel: "deepseek-v4-pro"
+      }),
+      setModelProviderSettings
+    },
+    modelSecretsStore: {
+      getStatus: async () => ({ ...modelSecretStatus }),
+      update: updateModelSecrets
     },
     researchSpecStore: {
       get: async () => "current spec",
@@ -144,7 +169,9 @@ function createHarness(options: {
     refreshWatchMarketData,
     searchStocks,
     exportWatchData,
-    importWatchData
+    importWatchData,
+    setModelProviderSettings,
+    updateModelSecrets
   };
 }
 
@@ -224,6 +251,50 @@ describe("registerIpcHandlers", () => {
         available: false,
         message: expect.stringContaining("PowerShell blocked")
       }
+    });
+  });
+
+  it("returns model settings with key status but without secret values", async () => {
+    const { invoke } = createHarness();
+
+    const settings = await invoke(IPC.getModelProviderSettings);
+
+    expect(settings).toEqual({
+      providerId: "codex-cli",
+      deepSeekBaseUrl: "https://api.deepseek.com",
+      deepSeekModel: "deepseek-v4-pro",
+      hasDeepSeekApiKey: true,
+      hasTavilyApiKey: false
+    });
+    expect(JSON.stringify(settings)).not.toContain("api-key");
+  });
+
+  it("saves model settings and forwards only explicit key changes", async () => {
+    const { invoke, setModelProviderSettings, updateModelSecrets } = createHarness();
+
+    const result = await invoke(IPC.setModelProviderSettings, {
+      providerId: "deepseek",
+      deepSeekBaseUrl: "https://api.deepseek.com",
+      deepSeekModel: "deepseek-v4-pro",
+      deepSeekApiKey: "new-model-key",
+      tavilyApiKey: "new-search-key"
+    });
+
+    expect(updateModelSecrets).toHaveBeenCalledWith({
+      deepSeekApiKey: "new-model-key",
+      tavilyApiKey: "new-search-key",
+      clearDeepSeekApiKey: false,
+      clearTavilyApiKey: false
+    });
+    expect(setModelProviderSettings).toHaveBeenCalledWith({
+      providerId: "deepseek",
+      deepSeekBaseUrl: "https://api.deepseek.com",
+      deepSeekModel: "deepseek-v4-pro"
+    });
+    expect(result).toMatchObject({
+      providerId: "deepseek",
+      hasDeepSeekApiKey: true,
+      hasTavilyApiKey: true
     });
   });
 

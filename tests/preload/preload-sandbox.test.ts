@@ -7,5 +7,8 @@ describe("sandboxed preload", () => {
 
     expect(source).not.toMatch(/import\s+\{[^}]*\bIPC\b[^}]*\}\s+from\s+["']\.\.\/shared\/ipc["']/);
     expect(source).toContain("satisfies typeof import(\"../shared/ipc\").IPC");
+    expect(source).toContain("getModelProviderSettings");
+    expect(source).toContain("setModelProviderSettings");
+    expect(source).toContain("onOpenModelProviderSettings");
   });
 });

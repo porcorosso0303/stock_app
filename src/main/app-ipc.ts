@@ -2,10 +2,19 @@ import { IPC } from "../shared/ipc";
 import type {
   AppConfig,
   CodexEnvironmentStatus,
+  ModelProviderSettings,
+  ModelProviderSettingsView,
   ResearchRecord,
   WatchTreeConfig
 } from "../shared/types";
-import { getErrorMessage, type IpcMainLike } from "./ipc-utils";
+import { normalizeModelProviderSettings } from "./config-store";
+import type { ModelSecretsStatus, ModelSecretsUpdate } from "./model-secrets-store";
+import {
+  getErrorMessage,
+  requireObject,
+  requireString,
+  type IpcMainLike
+} from "./ipc-utils";
 
 export interface DialogLike {
   showOpenDialog(options: {
@@ -16,6 +25,13 @@ export interface DialogLike {
 export interface ConfigStoreLike {
   get(): Promise<AppConfig>;
   setReportDirectory(path: string): Promise<AppConfig>;
+  getModelProviderSettings(): Promise<ModelProviderSettings>;
+  setModelProviderSettings(settings: ModelProviderSettings): Promise<AppConfig>;
+}
+
+export interface ModelSecretsStoreLike {
+  getStatus(): Promise<ModelSecretsStatus>;
+  update(update: ModelSecretsUpdate): Promise<void>;
 }
 
 export interface HistoryStoreLike {
@@ -34,6 +50,7 @@ export interface AppIpcDependencies {
   ipcMain: IpcMainLike;
   dialog: DialogLike;
   configStore: ConfigStoreLike;
+  modelSecretsStore: ModelSecretsStoreLike;
   historyStore: HistoryStoreLike;
   codexLocator: CodexLocatorLike;
   watchTreeStore: WatchTreeStoreLike;
@@ -44,6 +61,7 @@ export function registerAppIpc(dependencies: AppIpcDependencies): void {
     ipcMain,
     dialog,
     configStore,
+    modelSecretsStore,
     historyStore,
     codexLocator,
     watchTreeStore
@@ -67,6 +85,44 @@ export function registerAppIpc(dependencies: AppIpcDependencies): void {
   });
 
   ipcMain.handle(IPC.redetectCodex, async () => await detectCodexSafely(codexLocator));
+
+  ipcMain.handle(IPC.getModelProviderSettings, async (): Promise<ModelProviderSettingsView> => ({
+    ...await configStore.getModelProviderSettings(),
+    ...await modelSecretsStore.getStatus()
+  }));
+
+  ipcMain.handle(IPC.setModelProviderSettings, async (_event, value): Promise<ModelProviderSettingsView> => {
+    const input = requireObject(value);
+    const settings = normalizeModelProviderSettings({
+      providerId: requireString(input.providerId, "providerId") as ModelProviderSettings["providerId"],
+      deepSeekBaseUrl: requireString(input.deepSeekBaseUrl, "deepSeekBaseUrl"),
+      deepSeekModel: requireString(input.deepSeekModel, "deepSeekModel")
+    });
+    await modelSecretsStore.update({
+      deepSeekApiKey: optionalString(input.deepSeekApiKey, "deepSeekApiKey"),
+      tavilyApiKey: optionalString(input.tavilyApiKey, "tavilyApiKey"),
+      clearDeepSeekApiKey: input.clearDeepSeekApiKey === true,
+      clearTavilyApiKey: input.clearTavilyApiKey === true
+    });
+    const secretStatus = await modelSecretsStore.getStatus();
+    if (settings.providerId === "deepseek") {
+      if (!secretStatus.hasDeepSeekApiKey) {
+        throw new Error("请选择 DeepSeek 前先配置 DeepSeek API Key");
+      }
+      if (!secretStatus.hasTavilyApiKey) {
+        throw new Error("请选择 DeepSeek 前先配置 Tavily API Key");
+      }
+    }
+    await configStore.setModelProviderSettings(settings);
+    return { ...settings, ...secretStatus };
+  });
+}
+
+function optionalString(value: unknown, name: string): string | undefined {
+  if (value === undefined || value === "") {
+    return undefined;
+  }
+  return requireString(value, name);
 }
 
 async function detectCodexSafely(

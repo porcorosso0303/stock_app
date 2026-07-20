@@ -5,6 +5,7 @@ import {
   ipcMain,
   Menu,
   net,
+  safeStorage,
   shell
 } from "electron";
 import { join } from "node:path";
@@ -13,6 +14,7 @@ import { CodexLocator } from "./codex-locator";
 import { getCodexLauncherOverride } from "./codex-launcher-override";
 import { CodexRunner } from "./codex-runner";
 import { ConfigStore } from "./config-store";
+import { ModelSecretsStore } from "./model-secrets-store";
 import { buildApplicationMenuTemplate } from "./app-menu";
 import { CodexCliResearchProvider } from "./modules/research/providers/codex-cli-provider";
 import {
@@ -75,6 +77,10 @@ void app.whenReady().then(async () => {
     executablePath: process.execPath
   });
   const configStore = new ConfigStore(join(userData, "config.json"));
+  const modelSecretsStore = new ModelSecretsStore(
+    join(userData, "model-secrets.json"),
+    safeStorage
+  );
   const historyStore = new HistoryStore(join(userData, "history.json"));
   const watchTreeStore = new WatchTreeStore(join(userData, "watch-tree.json"));
   const embeddedSkillDirectory = resolveEmbeddedSkillDirectory({
@@ -179,6 +185,7 @@ void app.whenReady().then(async () => {
     dialog,
     shell,
     configStore,
+    modelSecretsStore,
     researchSpecStore,
     historyStore,
     researchService,
@@ -202,6 +209,11 @@ void app.whenReady().then(async () => {
       onOpenWatchNewsSettings: () => {
         BrowserWindow.getAllWindows().forEach((window) => {
           window.webContents.send(IPC.openWatchNewsSettings);
+        });
+      },
+      onOpenModelProviderSettings: () => {
+        BrowserWindow.getAllWindows().forEach((window) => {
+          window.webContents.send(IPC.openModelProviderSettings);
         });
       }
     })));

@@ -15,6 +15,9 @@ const IPC = {
   openPdf: "history:open-pdf",
   retryPdf: "history:retry-pdf",
   redetectCodex: "codex:redetect",
+  getModelProviderSettings: "model-provider-settings:get",
+  setModelProviderSettings: "model-provider-settings:set",
+  openModelProviderSettings: "model-provider-settings:open",
   getWatchTree: "watch-tree:get",
   saveWatchTree: "watch-tree:save",
   getWatchQuotes: "watch-quotes:get",
@@ -51,6 +54,8 @@ const api: StockResearchApi = {
   openPdf: async (id) => await ipcRenderer.invoke(IPC.openPdf, { id }),
   retryPdf: async (id) => await ipcRenderer.invoke(IPC.retryPdf, { id }),
   redetectCodex: async () => await ipcRenderer.invoke(IPC.redetectCodex),
+  getModelProviderSettings: async () => await ipcRenderer.invoke(IPC.getModelProviderSettings),
+  setModelProviderSettings: async (settings) => await ipcRenderer.invoke(IPC.setModelProviderSettings, settings),
   getWatchTree: async () => await ipcRenderer.invoke(IPC.getWatchTree),
   saveWatchTree: async (config) => await ipcRenderer.invoke(IPC.saveWatchTree, { config }),
   getWatchQuotes: async (secids) => await ipcRenderer.invoke(IPC.getWatchQuotes, { secids }),
@@ -71,6 +76,11 @@ const api: StockResearchApi = {
     const listener = () => callback();
     ipcRenderer.on(IPC.openWatchNewsSettings, listener);
     return () => ipcRenderer.removeListener(IPC.openWatchNewsSettings, listener);
+  },
+  onOpenModelProviderSettings: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on(IPC.openModelProviderSettings, listener);
+    return () => ipcRenderer.removeListener(IPC.openModelProviderSettings, listener);
   },
   onOpenWatchMarketProviderSettings: (callback) => {
     const listener = () => callback();
