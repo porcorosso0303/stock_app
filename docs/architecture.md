@@ -43,7 +43,7 @@ src/shared/    主进程、preload、renderer 共用类型、IPC 定义和纯函
 1. `app.whenReady()` 后解析用户数据目录。
 2. 创建配置、历史、调研规范、盯盘树、行情缓存等 store。
 3. 解析内嵌 skill 目录。
-4. 创建 Codex 检测器、PDF 导出器、调研 provider、调研服务、行情 provider、盯盘行情服务。
+4. 创建 Codex 检测器、模型密钥 store、模型 provider manager、PDF 导出器、调研服务、行情 provider、盯盘行情服务和消息服务。
 5. 调用 `registerIpcHandlers()` 注册 IPC。
 6. 创建主窗口并加载 renderer 页面。
 
@@ -83,6 +83,8 @@ src/main/modules/watch/watch-ipc.ts
 - `getBootstrap`
 - `chooseReportDirectory`
 - `redetectCodex`
+- `getModelProviderSettings`
+- `setModelProviderSettings`
 
 `getBootstrap` 返回：
 
@@ -92,6 +94,8 @@ src/main/modules/watch/watch-ipc.ts
 - `watchTree`
 
 这使 renderer 首次启动时能一次拿到应用配置、历史记录、Codex 状态和盯盘脑图。
+
+模型服务设置不进入 bootstrap。Renderer 收到 `model-provider-settings:open` 后单独读取设置；读取结果只包含非敏感配置以及 `hasDeepSeekApiKey`、`hasTavilyApiKey`，主进程不会把已保存密钥或密文返回 renderer。保存时主进程同时校验 Base URL、模型名称和变更后的密钥状态；DeepSeek 模式缺少任一必需密钥时，在修改密钥文件前拒绝保存。
 
 ### Research IPC
 
@@ -207,10 +211,16 @@ interface AppConfig {
   reportDirectory?: string;
   watchMarketProviderId?: "east-money" | "mock-cache";
   researchProviderId?: string;
+  watchNewsIntervalHours?: number;
+  modelProviderId?: "codex-cli" | "deepseek";
+  deepSeekBaseUrl?: string;
+  deepSeekModel?: string;
 }
 ```
 
-`watchMarketProviderId` 是盯盘行情 provider 选择配置。顶部 Electron 菜单 `Setting -> 数据源` 不直接承载所有选项，而是通知 renderer 打开独立的数据源设置弹窗。用户在弹窗中选择“东方财富”或“模拟数据”并保存后，renderer 调用 `watch-market-provider:set`；主进程写入 `user_data/config.json`，切换当前 provider，并通过 `watch-market-provider:changed` 通知 renderer 重新加载盯盘行情。`Setting` 下后续新增模型 API 等配置时，应复用这种“菜单入口 -> 独立设置界面 -> IPC 保存”的结构，避免把大量配置项堆在系统菜单里。`researchProviderId` 是股票调研 provider 的预留扩展点。
+`watchMarketProviderId` 是盯盘行情 provider 选择配置。顶部 Electron 菜单 `Setting -> 数据源` 不直接承载所有选项，而是通知 renderer 打开独立的数据源设置弹窗。用户在弹窗中选择“东方财富”或“模拟数据”并保存后，renderer 调用 `watch-market-provider:set`；主进程写入 `user_data/config.json`，切换当前 provider，并通过 `watch-market-provider:changed` 通知 renderer 重新加载盯盘行情。
+
+`Setting -> 模型服务` 使用相同的独立弹窗结构。`modelProviderId` 是股票调研和持仓股消息共同使用的模型服务；`deepSeekBaseUrl` 和 `deepSeekModel` 是非敏感 DeepSeek 配置。旧 `researchProviderId` 只用于兼容读取，缺少新字段时默认选择 `codex-cli`。DeepSeek 默认 Base URL 是 `https://api.deepseek.com`，默认模型是 `deepseek-v4-pro`；本机 `localhost`/`127.0.0.1` 兼容端点可以使用 HTTP，其他地址必须使用 HTTPS。
 
 ### 盯盘纯函数
 
@@ -299,7 +309,7 @@ JSON store 的职责是：
 
 ## 股票调研模块
 
-股票调研模块分为 renderer 控制器、IPC、service、provider、Codex runner 和持久化 store。
+股票调研模块分为 renderer 控制器、IPC、service、任务级模型 provider、模型执行器和持久化 store。
 
 ### Renderer 调研控制器
 
@@ -348,14 +358,14 @@ src/main/research-service.ts
 - 检查报告目录。
 - 检查当前是否已有调研任务。
 - 创建 run 目录和 `ResearchRecord`。
-- 调用 `ResearchProvider` 执行调研。
+- 在任务开始时通过 resolver 获取并固定一个 `ResearchProvider`，再执行调研。
 - 写入最终 Markdown。
 - 调用 PDF exporter。
 - 更新历史状态。
 - 处理取消、失败、PDF 导出失败、PDF 重试导出和报告读取。
 - 通过 `onProgress` 向主窗口转发进度事件。
 
-`ResearchService` 不知道 Codex CLI 的启动参数、prompt 内容、skill 复制细节。它只依赖 `ResearchProvider`。
+`ResearchService` 不知道 Codex CLI 或 DeepSeek 的启动参数、prompt、联网工具和凭据。它只依赖 `ResearchProvider` resolver。Resolver 在每次 `start()` 时只调用一次，返回对象保存在活动任务中；`cancel()` 也调用该对象。因此任务运行期间修改模型设置不会切换或取消当前任务，下一次任务才读取新设置。
 
 ### ResearchProvider
 
@@ -381,6 +391,7 @@ interface ResearchProvider {
 
 ```text
 src/main/modules/research/providers/codex-cli-provider.ts
+src/main/modules/research/providers/deepseek-provider.ts
 ```
 
 `CodexCliResearchProvider` 的职责：
@@ -393,7 +404,59 @@ src/main/modules/research/providers/codex-cli-provider.ts
 - 转发 Codex 输出文本。
 - 取消当前 runner。
 
-未来接入自定义 AI 模型时，应新增 provider 实现，而不是修改 `ResearchService` 主流程。
+`DeepSeekResearchProvider` 的职责：
+
+- 读取当前 `ResearchSpecStore` 中的用户调研规范。
+- 构造不依赖 Codex skill 的 A 股调研提示词，要求区分事实与推断、保留矛盾证据、标注日期和来源链接。
+- 创建任务独占的 `DeepSeekAgentRunner`，转发模型输出、搜索动作和状态。
+- 把最终 Markdown 转换成相同的 `ResearchProviderResult`。
+- 取消当前 DeepSeek Agent。
+
+新增模型时应增加 provider bundle 和业务 provider 实现，不修改 `ResearchService` 主流程。
+
+### 模型 Provider Manager
+
+文件：
+
+```text
+src/main/model-provider-manager.ts
+src/main/model-secrets-store.ts
+```
+
+`ModelProviderManager` 是模型选择的唯一主进程入口。它在 resolver 被调用时读取 `ConfigStore.getModelProviderSettings()`；仅在 DeepSeek 模式下解密所需密钥，然后创建冻结的 `ModelProviderContext`。Context 包含不可变设置和当前任务密钥快照。Manager 从相应 `ModelProviderBundleFactory` 创建 `ResearchProvider` 或 `WatchNewsAnalysisProvider`。
+
+当前 bundle：
+
+- `codex-cli`：创建 `CodexCliResearchProvider` 和 `CodexWatchNewsAnalysisProvider`。
+- `deepseek`：创建 `DeepSeekResearchProvider` 和 `DeepSeekWatchNewsAnalysisProvider`。
+
+Manager 不缓存可变全局 Provider，也不把明文密钥写回配置。设置保存只影响之后的 resolver 调用。
+
+### DeepSeek Agent 与 Tavily 工具
+
+文件：
+
+```text
+src/main/deepseek-agent-runner.ts
+src/main/tavily-web-tools.ts
+```
+
+`DeepSeekAgentRunner` 直接调用 DeepSeek OpenAI-compatible `POST <baseUrl>/chat/completions`，启用 SSE 流式响应和 `tool_choice: auto`。它负责：
+
+- 解析跨任意字节边界的 SSE 事件。
+- 分别累计可见 `content` 和 `reasoning_content`。
+- 拼接分段的工具名称和 JSON 参数。
+- 在工具回合之后完整回放 assistant 的 `reasoning_content`、`content`、`tool_calls`，再追加对应 tool 消息。
+- 运行时校验工具参数，限制工具轮数、URL 数量、结果数量、正文长度和总输出长度。
+- 调研和消息任务要求至少一次网页工具调用成功；全部检索失败或模型完全未检索时拒绝生成缺少当前证据的结论。
+- 传递取消信号、归一化 DeepSeek 鉴权/余额/模型/HTTP 错误，并统一脱敏。单次请求的取消监听和请求超时覆盖 HTTP 建连、响应头以及完整 SSE 正文读取，正文结束后才清理，避免流式响应卡住后无法取消。
+
+提供给模型的工具是：
+
+- `web_search`：调用 Tavily Search API。
+- `web_extract`：调用 Tavily Extract API。
+
+`TavilyWebTools` 把 Tavily 原始 Search/Extract 响应转换为 provider-neutral 的 `WebSearchResult` 和 `WebExtractResult`，只接受 HTTP(S) 正文 URL，并处理域名、日期、主题和数量过滤。DeepSeek 和 Tavily 都通过 `createFetchHttpTransport(net.fetch)` 使用 Electron Chromium 网络栈；Transport 保留响应流，Agent 可以实时解析 SSE。API Key 只放在 Bearer 请求头，不放在 URL 或调试输出中。
 
 ### Codex 相关组件
 
@@ -426,10 +489,11 @@ Renderer research-controller
   -> preload StockResearchApi.startResearch()
   -> IPC research:start
   -> ResearchService.start()
+  -> ModelProviderManager.resolveResearchProvider()
   -> ResearchProvider.detect()
   -> ResearchProvider.run()
-  -> CodexCliResearchProvider
-  -> CodexRunner
+  -> CodexCliResearchProvider -> CodexRunner
+     or DeepSeekResearchProvider -> DeepSeekAgentRunner -> TavilyWebTools
   -> report.md
   -> ResearchService writes history and exports PDF
   -> Renderer receives ResearchRecord and refreshes history
@@ -438,9 +502,9 @@ Renderer research-controller
 实时输出流：
 
 ```text
-CodexRunner stdout
-  -> CodexJsonlParser
-  -> CodexCliResearchProvider request.onOutput()
+Provider output
+  -> CodexJsonlParser or DeepSeekAgentProgress
+  -> ResearchProvider request.onOutput()
   -> ResearchService onProgress
   -> BrowserWindow.webContents.send(IPC.researchEvent)
   -> preload onResearchEvent()
@@ -633,23 +697,23 @@ src/main/watch-news-analysis-provider.ts
 职责：
 
 - 从 `WatchTreeConfig` 中收集所有 `isHolding: true` 的唯一股票，作为批量消息捕捉目标。
-- 通过 `WatchNewsAnalysisProvider` 调用默认 GPT/Codex 分析通道，对单只股票执行最近 48 小时消息捕捉与分析。
-- 当前 `CodexWatchNewsAnalysisProvider` 会先通过 `EastMoneyWatchNewsNoticeSource` 确定性拉取东方财富公告聚合中的最近公告候选，再把候选公告注入模型 prompt。该步骤用于覆盖财报预告、业绩预告、异常波动、重大合同等法定信息披露消息，不属于盯盘行情数据 provider。
-- 消息处理采用两阶段持久化。provider 筛出重要权威公告后，通过异步部分结果回调立即交给 `WatchNewsService`；service 在启动 Codex 深度分析前就完成落库并触发 `watch-news:updated`。因此用户不必等待模型结束，也不必等待同批其他股票结束，即可看到已捕获公告。
+- 每次单股或批量分析开始时，通过模型 Provider resolver 获取任务快照。一次批量任务只解析一次 Provider，所有并发股票共用该 provider；用户切换模型不会影响正在运行的批次，下一批才使用新模型。
+- `CodexWatchNewsAnalysisProvider` 和 `DeepSeekWatchNewsAnalysisProvider` 共用同文件内的消息编排：先通过 `EastMoneyWatchNewsNoticeSource` 确定性拉取东方财富公告聚合中的最近公告候选，再把候选公告注入模型 prompt。该步骤用于覆盖财报预告、业绩预告、异常波动、重大合同等法定信息披露消息，不属于盯盘行情数据 provider。
+- 消息处理采用两阶段持久化。provider 筛出重要权威公告后，通过异步部分结果回调立即交给 `WatchNewsService`；service 在模型深度分析完成前就完成落库并触发 `watch-news:updated`。因此用户不必等待模型结束，也不必等待同批其他股票结束，即可看到已捕获公告。
 - AI 完成后，完整摘要和分析再次交给 store。相同去重键，或同一股票下标题相同且仍标记“AI 分析未完成”的消息，会原位升级并保留原消息 id、首次获取时间和已读状态，不产生第二条重复消息。provider 不直接访问存储或 Electron 窗口。
 - 正常扫描的公告窗口是最近 48 小时；当该股票尚无任何消息历史时，首次扫描使用最近 7 天的有限回补窗口，用于恢复此前因软件未运行或模型通道失败而漏存的公告。联网媒体搜索仍严格限制为最近 48 小时。
 - 权威公告抓取和 AI 分析是两个可靠性边界。模型成功时优先保存模型生成的摘要与分析；模型失败、超时、取消或返回格式错误时，财报、业绩、重大合同、监管、异常波动等重要公告仍会转换为 `WatchNewsDraft` 落库，并明确标记“AI 分析未完成”，防止已抓到的法定公告因模型故障丢失。
-- 消息分析使用活动感知的双重超时，每只股票的 `CodexRunner` 独立计时：连续 3 分钟没有可解析的正常模型消息或联网搜索进度时停止；只要持续有有效进度就继续运行，但单只股票最多运行 12 分钟。stderr、连接错误和错误级事件不算进度，因此持续断线不会延长空闲超时。超时后 runner 停止自己持有的子进程、把具体错误写入 Debug 元数据，并按上一条规则保留已经抓到的权威公告。批量持仓股分析中的各股票互不共享超时预算。
+- 消息分析使用活动感知的双重超时，每只股票独立计时：连续 3 分钟没有可解析的正常模型消息或联网搜索进度时停止；只要持续有有效进度就继续运行，但单只股票最多运行 12 分钟。Codex 由 `CodexRunner` 计时；DeepSeek provider 根据 `DeepSeekAgentProgress` 重置空闲计时，并把 Agent 单次流式请求上限配置为 12 分钟，确保持续输出不会被默认 3 分钟请求超时提前截断。超时后写入具体 Debug 错误，并按上一条规则保留已经抓到的权威公告。批量持仓股分析中的各股票互不共享超时预算。
 - Codex CLI 非零退出时，`CodexRunner` 优先读取 `stderr`；如果 `stderr` 为空，则使用 JSONL 事件流中最后一条错误级事件，不能退化为没有诊断价值的退出码。额度耗尽错误会归一化为中文提示并保留服务端给出的可重试时间。`WatchNewsService` 把该具体错误写入单股分析结果，renderer 在盯盘状态栏展示“股票名 + 失败原因”；批量任务同时提示其余失败股票数量。
 - 消息源和筛选规则由 provider prompt 约束：交易所公告/法定信息披露公告、公司官网、上证 e 互动、深交所互动易、官方投资者问答、东方财富、澎湃、界面新闻、科创板日报、雪球当日交易时段帖子及其权威渠道查证。
 - `WatchNewsStore` 维护 `watch-news.json`，按 `secid + 来源/标题/链接/摘要` 生成去重 key，重复消息不再写入。所有增加、升级和已读写操作通过 store 内部 mutation queue 串行执行，避免多个股票并发回调时发生读改写覆盖。
 - 消息是否未读由 `readAt` 判断。Renderer 鼠标悬停新消息感叹号后调用 `markWatchNewsRead()`，写入 `readAt` 并隐藏感叹号。
 - Main 进程根据 `config.json.watchNewsIntervalHours` 设置后台定时任务，默认 3 小时。手动“持仓股消息”按钮和股票右键“最新消息”不会依赖定时器。
-- 每次 Codex 消息分析都会在 `user_data/watch-news-runs/<run-id>/` 下保留临时 debug 资料：`prompt.txt`、`events.jsonl`、`stderr.log`、`report.md` 和 `meta.json`。`WatchNewsDebugRun` 同时返回解析事件、完整原始 JSONL 和根据 `meta.errorMessage`/`report.md` 推断的 `running | completed | failed` 状态。Renderer 通过“消息Debug”按钮或持仓股右键“分析Debug”读取最近一次运行；窗口打开期间每秒刷新，展示运行状态、模型搜索、原始 JSONL、stderr、prompt、report 和错误信息，关闭窗口或离开盯盘模块时停止刷新。该窗口用于排查模型通道或消息源问题，不参与消息去重和业务状态。
+- 每次消息分析都会在 `user_data/watch-news-runs/<run-id>/` 下保留 debug 资料：`prompt.txt`、`events.jsonl`、`stderr.log`、`report.md` 和 `meta.json`。Codex 的 `events.jsonl` 是原始 CLI 事件；DeepSeek 写入统一的模型/工具进度事件。`WatchNewsDebugRun` 同时返回解析事件、完整原始 JSONL 和根据 `meta.errorMessage`/`report.md` 推断的 `running | completed | failed` 状态。Renderer 通过“消息Debug”按钮或持仓股右键“分析Debug”读取最近一次运行；窗口打开期间每秒刷新。该窗口只用于排查，不参与消息去重和业务状态。
 - 用户对单只股票执行“最新消息”后，renderer 在分析结束时刷新该股票的消息历史；存在消息时自动打开现有历史消息面板直接展示结果，不存在消息时只显示明确的分析结果状态，不打开空面板。批量持仓股消息分析不自动弹出多个历史窗口。
 - 消息历史面板标题栏支持指针拖动，但拖动入口必须排除标题栏内的 `button` 等交互控件；关闭按钮按下时不得启动指针捕获，确保点击 `×` 可以可靠隐藏面板。
 
-`WatchNewsAnalysisProvider` 是消息面 AI 适配层。当前实现是 `CodexWatchNewsAnalysisProvider`，复用现有 Codex CLI 只读联网能力，要求模型只输出 JSON 数组。未来接入 OpenAI API、Tushare 新闻接口或券商资讯接口时，应新增 provider 实现并保持 `WatchNewsService`、renderer 和 `watch-news.json` 格式不变。
+`WatchNewsAnalysisProvider` 是消息面 AI 适配层。当前实现包括复用 Codex CLI 只读联网能力的 `CodexWatchNewsAnalysisProvider`，以及使用 DeepSeek + Tavily 的 `DeepSeekWatchNewsAnalysisProvider`。两者输出统一 `WatchNewsDraft[]`，并共享公告预取、降级保存、结果校验、Debug 读取和超时语义。新增实现应保持 `WatchNewsService`、renderer 和 `watch-news.json` 格式不变。
 
 导出目录包含：
 
@@ -841,6 +905,7 @@ src/renderer/main.ts
 
 ```text
 user_data/config.json
+user_data/model-secrets.json
 user_data/history.json
 user_data/stock_research_spec.md
 user_data/watch-tree.json
@@ -871,9 +936,17 @@ user_data/runs/<run-id>/.agents/skills/research-a-share-stock/
 - `watchMarketProviderId`
 - `researchProviderId`
 - `watchNewsIntervalHours`
+- `modelProviderId`
+- `deepSeekBaseUrl`
+- `deepSeekModel`
 
-`watchMarketProviderId` 已用于持久化用户在数据源设置弹窗中的选择，并由 main 装配的 `SelectableMarketDataProvider` 执行运行时切换。`researchProviderId` 仍是自定义调研 provider 的扩展预留。
+`watchMarketProviderId` 已用于持久化用户在数据源设置弹窗中的选择，并由 main 装配的 `SelectableMarketDataProvider` 执行运行时切换。`researchProviderId` 是旧版本兼容字段；新代码读取时映射到 `modelProviderId`，后续保存使用新字段。
 `watchNewsIntervalHours` 是持仓股消息面后台捕捉周期，默认 3 小时；Setting -> 持仓股消息 打开独立设置弹窗修改该值，保存后 main 侧定时器立即重建。
+`modelProviderId`、`deepSeekBaseUrl`、`deepSeekModel` 由 Setting -> 模型服务维护。它们不包含密钥。
+
+### model-secrets.json
+
+由 `ModelSecretsStore` 维护，格式版本为 1。`deepSeekApiKey` 和 `tavilyApiKey` 使用 Electron `safeStorage.encryptString()` 加密后以 Base64 保存。系统安全存储不可用时拒绝写入，不回退到明文。读取设置的 IPC 只返回两个 `has...ApiKey` 布尔值；明文只在主进程构造任务快照时短暂存在，不进入 renderer、普通配置、脑图导出包、prompt、事件日志或错误信息。
 
 ### history.json
 
@@ -934,7 +1007,7 @@ interface WatchNewsHistory {
 
 ### watch-news-runs
 
-由 `CodexWatchNewsAnalysisProvider` 维护。每次持仓股消息分析创建一个目录：
+由当前 `WatchNewsAnalysisProvider` 维护。每次持仓股消息分析创建一个目录：
 
 ```text
 user_data/watch-news-runs/<ISO时间>-<secid>/
@@ -944,8 +1017,8 @@ user_data/watch-news-runs/<ISO时间>-<secid>/
 
 - `prompt.txt`：本次传给模型的完整 prompt，包含东方财富公告候选。
 - `meta.json`：股票 `secid`、名称、创建时间和可选错误信息。模型失败但权威公告已通过降级路径保存时，错误仍保留在该文件中，便于区分“完整 AI 分析”和“公告保底消息”。
-- `events.jsonl`：Codex CLI 输出的事件流，用于展示搜索 query、错误、模型过程。
-- `stderr.log`：Codex CLI stderr。
+- `events.jsonl`：Codex CLI 原始事件流，或 DeepSeek provider 写入的模型/工具进度事件。
+- `stderr.log`：Codex CLI stderr；DeepSeek 路径通常为空或不存在。
 - `report.md`：模型最终输出；如果模型通道失败，可能不存在。
 
 “消息Debug”窗口只读取这些文件并展示，不修改消息历史。
@@ -970,6 +1043,8 @@ watch-market-history.json
 ## 错误处理原则
 
 - Main process 对 IPC 入参做类型和结构校验。
+- 模型密钥通过 Electron `safeStorage` 加密，renderer 只能读取配置状态；所有模型和工具错误在展示前移除已知密钥及 Bearer 认证值。
+- DeepSeek Base URL 除本机兼容端点外必须使用 HTTPS；网页正文提取只接受 HTTP(S) URL。
 - Renderer 捕获用户操作错误并展示到对应状态区域。
 - 行情失败不伪造数据；股票节点显示暂无行情或保留已有缓存。
 - Codex 不可用或未登录时，显示明确提示。
@@ -993,15 +1068,16 @@ watch-market-history.json
 
 1. 在 `src/main/modules/research/providers/` 下新增 provider。
 2. 实现 `ResearchProvider`。
-3. provider 内部处理 token、base URL、模型参数、请求协议和取消逻辑。
-4. `ResearchService` 仍只处理 run、历史、报告和 PDF。
+3. 在 main 的 `ModelProviderBundleFactory` 中同时声明该模型对应的调研和消息 provider 工厂；新增配置和密钥时扩展 `ConfigStore`/`ModelSecretsStore`，不得让业务 Service 读取配置。
+4. provider 内部处理模型参数、请求协议和取消逻辑；可复用通用联网工具，但不得向 renderer 暴露密钥。
+5. `ResearchService` 仍只处理 run、历史、报告和 PDF，任务快照规则保持不变。
 
 ### 新增持仓股消息 AI provider
 
 新增持仓股消息 provider 时：
 
-1. 实现 `WatchNewsAnalysisProvider`。
-2. provider 内部负责消息源抓取、模型 token/base URL、模型选择、请求协议、输出解析和错误归一化。若 provider 使用外部源预抓取候选消息，应在 provider 内部完成，并把候选转换为统一 prompt 或统一内部结构。对交易所公告等确定性权威来源，必须保证模型故障不会导致已抓取候选被静默丢弃。
+1. 实现 `WatchNewsAnalysisProvider`，并在对应模型 bundle 注册工厂。
+2. 优先复用 `watch-news-analysis-provider.ts` 中的公告预取、降级、输出解析和 Debug 编排；模型实现只负责模型协议和补充消息检索。对交易所公告等确定性权威来源，必须保证模型故障不会导致已抓取候选被静默丢弃。
 3. 如需支持 Debug，provider 实现 `getLatestDebugRun()` 并返回 `WatchNewsDebugRun`；renderer 只依赖该共享类型，不直接读取文件。
 4. 输出统一转换为 `WatchNewsDraft[]`，由 `WatchNewsService` 统一去重、落库和返回结果。
 5. 不修改 `watch-view`、`watch-controller` 的消息展示逻辑，除非新增共享类型字段。
