@@ -247,6 +247,73 @@ describe("watch workspace tabs", () => {
       expect(elements.watchTree.innerHTML).toContain("+3.45%");
       expect(elements.watchTree.innerHTML).not.toContain("+1.23%");
     });
+
+    it("shows the compact refresh indicator only while a market request is in flight", async () => {
+      let completeRefresh!: (marketData: WatchMarketData) => void;
+      const pendingRefresh = new Promise<WatchMarketData>((resolve) => {
+        completeRefresh = resolve;
+      });
+      const refreshWatchMarketData = vi.fn(() => pendingRefresh);
+      const { elements } = createFixture({
+        activeWorkspaceId: "default",
+        workspaces: [{
+          id: "default",
+          name: "默认",
+          root: {
+            id: "root-a",
+            type: "category",
+            name: "第一组",
+            children: [{ id: "stock-a", type: "stock", name: "股票A", secid: "1.600001" }]
+          }
+        }]
+      }, {
+        isActive: true,
+        refreshWatchMarketData
+      });
+      elements.watchRefreshIndicator.hidden = true;
+
+      elements.refreshWatchQuotes.emit("click");
+
+      await vi.waitFor(() => expect(refreshWatchMarketData).toHaveBeenCalledOnce());
+      expect(elements.watchRefreshIndicator.hidden).toBe(false);
+
+      elements.refreshWatchQuotes.emit("click");
+      await Promise.resolve();
+      expect(refreshWatchMarketData).toHaveBeenCalledOnce();
+      expect(elements.watchRefreshIndicator.hidden).toBe(false);
+
+      completeRefresh(marketDataWithQuote("1.600001", 1.23));
+
+      await vi.waitFor(() => expect(elements.watchRefreshIndicator.hidden).toBe(true));
+    });
+
+    it("hides the compact refresh indicator after a market request fails", async () => {
+      const refreshWatchMarketData = vi.fn(async () => {
+        throw new Error("network unavailable");
+      });
+      const { elements } = createFixture({
+        activeWorkspaceId: "default",
+        workspaces: [{
+          id: "default",
+          name: "默认",
+          root: {
+            id: "root-a",
+            type: "category",
+            name: "第一组",
+            children: [{ id: "stock-a", type: "stock", name: "股票A", secid: "1.600001" }]
+          }
+        }]
+      }, {
+        isActive: true,
+        refreshWatchMarketData
+      });
+      elements.watchRefreshIndicator.hidden = true;
+
+      elements.refreshWatchQuotes.emit("click");
+
+      await vi.waitFor(() => expect(elements.watchMarketError.textContent).toBe("network unavailable"));
+      expect(elements.watchRefreshIndicator.hidden).toBe(true);
+    });
   });
 });
 
@@ -375,6 +442,7 @@ function createElements(): Record<string, TestElement> {
     "exportWatchData",
     "importWatchData",
     "watchStatus",
+    "watchRefreshIndicator",
     "watchWorkspaceTabs",
     "addWatchWorkspace",
     "watchTradingDate",

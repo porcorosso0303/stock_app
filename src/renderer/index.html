@@ -99,7 +99,10 @@
       <section id="watch-workspace" class="workspace watch-workspace" hidden>
         <header class="toolbar">
           <div class="watch-toolbar-status">
-            <span class="toolbar-label">盯盘脑图</span>
+            <div class="watch-toolbar-heading-row">
+              <span class="toolbar-label">盯盘脑图</span>
+              <span id="watch-refresh-indicator" class="watch-refresh-indicator" hidden aria-live="polite">⏳ 刷新中..</span>
+            </div>
             <div class="watch-workspace-tabs-row">
               <div id="watch-workspace-tabs" class="watch-workspace-tabs" role="tablist" aria-label="盯盘脑图展示区"></div>
               <button id="add-watch-workspace" class="watch-workspace-add" type="button" title="新增展示区">+</button>
@@ -109,7 +112,7 @@
               <select id="watch-trading-date" aria-label="数据日期"></select>
               <strong id="watch-market-error" class="watch-market-error"></strong>
             </div>
-            <strong id="watch-status">打开后自动刷新行情</strong>
+            <strong id="watch-status" class="watch-status-line"></strong>
           </div>
           <div class="toolbar-actions">
             <button id="refresh-watch-quotes" type="button">刷新行情</button>

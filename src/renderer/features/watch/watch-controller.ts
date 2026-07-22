@@ -233,8 +233,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   async function loadMarketData(): Promise<void> {
     const tradingDate = getWorkspaceDateState().selectedTradingDate;
     await updateMarketData(
-      (secids) => api.getWatchMarketData(secids, tradingDate ? { tradingDate } : undefined),
-      "正在加载行情..."
+      (secids) => api.getWatchMarketData(secids, tradingDate ? { tradingDate } : undefined)
     );
   }
 
@@ -246,8 +245,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
           return api.getWatchMarketData(secids, { tradingDate: state.selectedTradingDate });
         }
         return api.refreshWatchMarketData(secids, forceLatest ? { forceLatest: true } : undefined);
-      },
-      "正在刷新行情..."
+      }
     );
   }
 
@@ -255,8 +253,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     await updateAllWorkspaceMarketData(
       (secids, workspaceId) => getWorkspaceDateState(workspaceId).pinned
         ? undefined
-        : api.refreshWatchMarketData(secids, { forceLatest: true }),
-      "正在校验最近交易日行情..."
+        : api.refreshWatchMarketData(secids, { forceLatest: true })
     );
   }
 
@@ -490,8 +487,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   }
 
   async function updateMarketData(
-    load: (secids: string[]) => ReturnType<typeof api.getWatchMarketData>,
-    loadingMessage: string
+    load: (secids: string[]) => ReturnType<typeof api.getWatchMarketData>
   ): Promise<void> {
     if (!isActive()) {
       return;
@@ -501,9 +497,11 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     }
     const workspaceId = activeWorkspaceId();
     marketUpdateInFlight = true;
+    setMarketRefreshing(true);
     try {
-      await updateWorkspaceMarketData(workspaceId, load, loadingMessage);
+      await updateWorkspaceMarketData(workspaceId, load);
     } finally {
+      setMarketRefreshing(false);
       marketUpdateInFlight = false;
     }
   }
@@ -512,8 +510,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     load: (
       secids: string[],
       workspaceId: string
-    ) => ReturnType<typeof api.getWatchMarketData> | undefined,
-    loadingMessage: string
+    ) => ReturnType<typeof api.getWatchMarketData> | undefined
   ): Promise<void> {
     if (!isActive()) {
       return;
@@ -526,28 +523,31 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       return;
     }
     marketUpdateInFlight = true;
+    setMarketRefreshing(true);
     elements.watchMarketError.textContent = "";
-    elements.watchStatus.textContent = loadingMessage;
     try {
       for (const workspaceId of workspaceIds) {
         await updateWorkspaceMarketData(
           workspaceId,
-          (secids) => load(secids, workspaceId),
-          loadingMessage
+          (secids) => load(secids, workspaceId)
         );
       }
       if (activeWorkspaceId()) {
         elements.watchStatus.textContent = "";
       }
     } finally {
+      setMarketRefreshing(false);
       marketUpdateInFlight = false;
     }
   }
 
+  function setMarketRefreshing(refreshing: boolean): void {
+    elements.watchRefreshIndicator.hidden = !refreshing;
+  }
+
   async function updateWorkspaceMarketData(
     workspaceId: string | undefined,
-    load: (secids: string[]) => ReturnType<typeof api.getWatchMarketData> | undefined,
-    loadingMessage: string
+    load: (secids: string[]) => ReturnType<typeof api.getWatchMarketData> | undefined
   ): Promise<void> {
     const shouldUpdateVisibleUi = workspaceId === activeWorkspaceId();
     const secids = collectStockSecids(workspaceRoot(workspaceId));
@@ -562,7 +562,6 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     }
     if (shouldUpdateVisibleUi) {
       elements.watchMarketError.textContent = "";
-      elements.watchStatus.textContent = loadingMessage;
     }
     try {
       const marketData = await load(secids);
@@ -610,8 +609,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     state.selectedTradingDate = elements.watchTradingDate.value || undefined;
     state.pinned = Boolean(state.selectedTradingDate);
     await updateMarketData(
-      (secids) => api.getWatchMarketData(secids, state.selectedTradingDate ? { tradingDate: state.selectedTradingDate } : undefined),
-      "正在加载所选日期行情..."
+      (secids) => api.getWatchMarketData(secids, state.selectedTradingDate ? { tradingDate: state.selectedTradingDate } : undefined)
     );
   }
 
