@@ -74,4 +74,142 @@ describe("WatchMarketCacheStore", () => {
       await rm(directory, { recursive: true, force: true });
     }
   });
+
+  it("does not replace a valid same-day stock snapshot with a failed refresh", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "watch-market-cache-"));
+    try {
+      const store = new WatchMarketCacheStore(join(directory, "watch-quotes-cache.json"));
+      await store.write({
+        tradingDate: "2026-08-03",
+        updatedAt: "2026-08-03T01:31:00.000Z",
+        quotes: [
+          { secid: "1.600001", fetchedAt: "2026-08-03T01:31:00.000Z", changePercent: 1.2 },
+          { secid: "1.600002", fetchedAt: "2026-08-03T01:31:00.000Z", changePercent: -0.8 }
+        ],
+        trends: [
+          {
+            secid: "1.600001",
+            tradingDate: "2026-08-03",
+            fetchedAt: "2026-08-03T01:31:00.000Z",
+            points: [{ time: "09:31", changePercent: 1.2 }]
+          },
+          {
+            secid: "1.600002",
+            tradingDate: "2026-08-03",
+            fetchedAt: "2026-08-03T01:31:00.000Z",
+            points: [{ time: "09:31", changePercent: -0.8 }]
+          }
+        ]
+      });
+
+      await store.write({
+        tradingDate: "2026-08-03",
+        updatedAt: "2026-08-03T01:32:00.000Z",
+        quotes: [
+          { secid: "1.600001", fetchedAt: "2026-08-03T01:32:00.000Z", changePercent: 1.5 },
+          { secid: "1.600002", fetchedAt: "2026-08-03T01:32:00.000Z", changePercent: -1.1 }
+        ],
+        trends: [
+          {
+            secid: "1.600001",
+            tradingDate: "2026-08-03",
+            fetchedAt: "2026-08-03T01:32:00.000Z",
+            points: [{ time: "09:32", changePercent: 1.5 }]
+          },
+          {
+            secid: "1.600002",
+            tradingDate: "2026-08-03",
+            fetchedAt: "2026-08-03T01:32:00.000Z",
+            points: [],
+            errorMessage: "net::ERR_EMPTY_RESPONSE"
+          }
+        ]
+      });
+
+      const cache = await store.getForDate("2026-08-03");
+      expect(cache?.quotes.find((quote) => quote.secid === "1.600001")?.changePercent).toBe(1.5);
+      const retainedQuote = cache?.quotes.find((quote) => quote.secid === "1.600002");
+      const retainedTrend = cache?.trends.find((trend) => trend.secid === "1.600002");
+      expect(retainedQuote).toMatchObject({ changePercent: -0.8 });
+      expect(retainedQuote?.errorMessage).toBeUndefined();
+      expect(retainedTrend).toMatchObject({ points: [{ time: "09:31", changePercent: -0.8 }] });
+      expect(retainedTrend?.errorMessage).toBeUndefined();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps same-day stocks omitted by a later workspace-scoped write", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "watch-market-cache-"));
+    try {
+      const store = new WatchMarketCacheStore(join(directory, "watch-quotes-cache.json"));
+      await store.write({
+        tradingDate: "2026-08-03",
+        updatedAt: "2026-08-03T01:31:00.000Z",
+        quotes: [{ secid: "1.600002", fetchedAt: "2026-08-03T01:31:00.000Z", changePercent: -0.8 }],
+        trends: [{
+          secid: "1.600002",
+          tradingDate: "2026-08-03",
+          fetchedAt: "2026-08-03T01:31:00.000Z",
+          points: [{ time: "09:31", changePercent: -0.8 }]
+        }]
+      });
+
+      await store.write({
+        tradingDate: "2026-08-03",
+        updatedAt: "2026-08-03T01:32:00.000Z",
+        quotes: [{ secid: "1.600001", fetchedAt: "2026-08-03T01:32:00.000Z", changePercent: 1.5 }],
+        trends: [{
+          secid: "1.600001",
+          tradingDate: "2026-08-03",
+          fetchedAt: "2026-08-03T01:32:00.000Z",
+          points: [{ time: "09:32", changePercent: 1.5 }]
+        }]
+      });
+
+      await expect(store.getForDate("2026-08-03")).resolves.toMatchObject({
+        quotes: expect.arrayContaining([
+          expect.objectContaining({ secid: "1.600001" }),
+          expect.objectContaining({ secid: "1.600002" })
+        ]),
+        trends: expect.arrayContaining([
+          expect.objectContaining({ secid: "1.600001" }),
+          expect.objectContaining({ secid: "1.600002" })
+        ])
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("never combines quote and trend from different incomplete writes", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "watch-market-cache-"));
+    try {
+      const store = new WatchMarketCacheStore(join(directory, "watch-quotes-cache.json"));
+      await store.write({
+        tradingDate: "2026-08-03",
+        updatedAt: "2026-08-03T01:31:00.000Z",
+        quotes: [{ secid: "1.600001", fetchedAt: "2026-08-03T01:31:00.000Z", changePercent: 1.2 }],
+        trends: []
+      });
+      await store.write({
+        tradingDate: "2026-08-03",
+        updatedAt: "2026-08-03T01:32:00.000Z",
+        quotes: [],
+        trends: [{
+          secid: "1.600001",
+          tradingDate: "2026-08-03",
+          fetchedAt: "2026-08-03T01:32:00.000Z",
+          points: [{ time: "09:32", changePercent: 1.5 }]
+        }]
+      });
+
+      await expect(store.getForDate("2026-08-03")).resolves.toMatchObject({
+        quotes: [],
+        trends: []
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
 });

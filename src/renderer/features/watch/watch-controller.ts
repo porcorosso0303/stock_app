@@ -569,18 +569,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
         return;
       }
       const currentState = getWorkspaceMarketState(workspaceId);
-      if (!hasRenderableTrends(marketData.trends) && hasRenderableTrends([...currentState.trends.values()])) {
-        if (workspaceId === activeWorkspaceId()) {
-          elements.watchMarketError.textContent = summarizeMarketErrors(marketData.quotes, marketData.trends);
-          elements.watchStatus.textContent = "";
-        }
-        return;
-      }
-      setWorkspaceMarketState(workspaceId, {
-        quotes: new Map(marketData.quotes.map((quote) => [quote.secid, quote])),
-        trends: new Map(marketData.trends.map((trend) => [trend.secid, trend])),
-        marketHistory: marketData.history ?? currentMarketDataAsHistory(marketData)
-      });
+      setWorkspaceMarketState(workspaceId, mergeWorkspaceMarketState(currentState, marketData));
       const state = getWorkspaceDateState(workspaceId);
       if (marketData.tradingDate && !state.pinned) {
         state.selectedTradingDate = marketData.tradingDate;
@@ -1444,8 +1433,77 @@ function currentMarketDataAsHistory(
   }];
 }
 
-function hasRenderableTrends(marketTrends: StockTrend[]): boolean {
-  return marketTrends.some((trend) => trend.points.length > 0 && !trend.errorMessage);
+function mergeWorkspaceMarketState(
+  currentState: WorkspaceMarketState,
+  marketData: Awaited<ReturnType<StockResearchApi["getWatchMarketData"]>>
+): WorkspaceMarketState {
+  const tradingDate = marketData.tradingDate;
+  const historySnapshot = marketData.history?.find((day) => day.tradingDate === tradingDate);
+  const historyQuotes = new Map(historySnapshot?.quotes.map((quote) => [quote.secid, quote]) ?? []);
+  const historyTrends = new Map(historySnapshot?.trends.map((trend) => [trend.secid, trend]) ?? []);
+  const incomingQuotes = new Map(marketData.quotes.map((quote) => [quote.secid, quote]));
+  const incomingTrends = new Map(marketData.trends.map((trend) => [trend.secid, trend]));
+  const secids = new Set([
+    ...incomingQuotes.keys(),
+    ...incomingTrends.keys(),
+    ...currentState.quotes.keys(),
+    ...currentState.trends.keys(),
+    ...historyQuotes.keys(),
+    ...historyTrends.keys()
+  ]);
+  const quotes = new Map<string, StockQuote>();
+  const trends = new Map<string, StockTrend>();
+
+  for (const secid of secids) {
+    const incomingQuote = incomingQuotes.get(secid);
+    const incomingTrend = incomingTrends.get(secid);
+    if (incomingQuote && incomingTrend && isCompleteStockSnapshot(incomingQuote, incomingTrend, tradingDate)) {
+      quotes.set(secid, incomingQuote);
+      trends.set(secid, incomingTrend);
+      continue;
+    }
+
+    const currentQuote = currentState.quotes.get(secid);
+    const currentTrend = currentState.trends.get(secid);
+    if (currentQuote && currentTrend && isCompleteStockSnapshot(currentQuote, currentTrend, tradingDate)) {
+      quotes.set(secid, currentQuote);
+      trends.set(secid, currentTrend);
+      continue;
+    }
+
+    const historyQuote = historyQuotes.get(secid);
+    const historyTrend = historyTrends.get(secid);
+    if (historyQuote && historyTrend && isCompleteStockSnapshot(historyQuote, historyTrend, tradingDate)) {
+      quotes.set(secid, historyQuote);
+      trends.set(secid, historyTrend);
+      continue;
+    }
+
+    if (incomingQuote) {
+      quotes.set(secid, incomingQuote);
+    }
+    if (incomingTrend) {
+      trends.set(secid, incomingTrend);
+    }
+  }
+
+  return {
+    quotes,
+    trends,
+    marketHistory: marketData.history ?? currentMarketDataAsHistory(marketData)
+  };
+}
+
+function isCompleteStockSnapshot(
+  quote: StockQuote,
+  trend: StockTrend,
+  tradingDate: string | undefined
+): boolean {
+  return quote.changePercent !== undefined &&
+    !quote.errorMessage &&
+    trend.tradingDate === tradingDate &&
+    trend.points.length > 0 &&
+    !trend.errorMessage;
 }
 
 export function summarizeMarketErrors(marketQuotes: StockQuote[], marketTrends: StockTrend[] = []): string {

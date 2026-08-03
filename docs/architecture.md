@@ -824,7 +824,7 @@ shell-controller activates watch
 
 如果缓存中的分时价格有波动、但所有分时涨跌幅都是 `0`，说明 provider 标准化失败，这类缓存会被判为不可用并重新拉取。如果缓存写入时间处于同一交易日交易时段、但走势曲线已经包含写入时间之后的分时点，说明历史完整曲线被当作实时曲线处理过，也会判为不可用并重新拉取。
 
-当 provider 返回的数据没有任何可用分时走势时，即使 quote 快照里有涨跌幅，也不能写入 `watch-quotes-cache.json`。盯盘脑图的走势绘制以完整可靠的 trend 为准，quote-only 数据只允许作为本次请求的错误/临时状态返回，不能污染最近 5 个交易日缓存。Renderer 收到完全不可绘图的新行情时，如果当前展示区已经有上一帧可用行情，会保留原有 quotes/trends/strength 展示，只在顶部错误区提示本次失败，避免网络或接口临时故障把界面清成“暂无行情”。
+当 provider 返回的数据没有任何可用分时走势时，即使 quote 快照里有涨跌幅，也不能写入 `watch-quotes-cache.json`。盯盘脑图以股票为单位，把 quote 与同交易日 trend 视为一个完整行情快照：只有 quote 含有效涨跌幅且 trend 含有效分时点时，新快照才能替换旧快照。部分股票请求失败时，`WatchMarketCacheStore.write()` 按 `secid` 合并同交易日数据，失败或缺失的股票保留原有完整快照；不同展示区分批写入同一交易日缓存时也保留其他展示区股票，不能整日覆盖。Renderer 使用相同规则合并当前帧、返回的同日历史缓存和本次行情；优先级依次为本次完整快照、当前同日完整快照、历史同日完整快照。错误仍显示在顶部错误区，但瞬时 `ERR_EMPTY_RESPONSE`、超时或部分失败不能把已展示的股票清成“暂无行情”。该回退严格限制在同一 `tradingDate`，不能用旧交易日走势冒充当前交易日。
 
 `WatchMarketData.history` 返回最近 5 个交易日的 `WatchMarketCache[]`。Renderer 不持久化派生指标，而是在渲染分类节点时用 `categoryStrengthHistory()` 从历史 quote 即时计算每日板块强度指数，并用 sparkline 展示最近几天强度走势。当前曲线基于 `watch-quotes-cache.json` 中已保存的最近 5 个交易日行情。
 
@@ -991,6 +991,8 @@ interface WatchMarketHistoryCache {
 - `trends`
 
 每条 `StockTrend.tradingDate` 必须与所在 `WatchMarketCache.tradingDate` 一致。旧测试数据不作为长期兼容目标。读取到非 `version: 2` 或 trend 缺少交易日标签的缓存时，会按空历史处理；下一次成功刷新会写入新格式。
+
+同一交易日可能由定时刷新、手动刷新或多个展示区分批写入。`WatchMarketCacheStore.write()` 不做整日替换，而是按 `secid` 合并 quote/trend 原子快照：完整的新快照更新对应股票，失败、空结果或本批次未包含的股票保留原有完整快照。`replaceHistory()` 仅用于导入完整历史数据，仍执行整份替换和格式校验。
 
 ### watch-news.json
 

@@ -188,7 +188,7 @@ describe("watch workspace tabs", () => {
         return defaultRefreshCount === 1
           ? marketDataWithQuote("1.600001", 1.23)
           : {
-              ...marketData("2026-07-07"),
+              ...marketData("2026-07-03"),
               quotes: [{
                 secid: "1.600001",
                 fetchedAt: "2026-07-07T03:38:00.000Z",
@@ -196,7 +196,7 @@ describe("watch workspace tabs", () => {
               }],
               trends: [{
                 secid: "1.600001",
-                tradingDate: "2026-07-07",
+                tradingDate: "2026-07-03",
                 fetchedAt: "2026-07-07T03:38:00.000Z",
                 points: [],
                 errorMessage: "net::ERR_EMPTY_RESPONSE"
@@ -214,6 +214,100 @@ describe("watch workspace tabs", () => {
       elements.refreshWatchQuotes.emit("click");
       await vi.waitFor(() => expect(elements.watchMarketError.textContent).toContain("行情服务请求失败"));
 
+      expect(elements.watchTree.innerHTML).toContain("+1.23%");
+      expect(elements.watchTree.innerHTML).not.toContain("暂无行情");
+    });
+
+    it("keeps each failed stock's previous same-day snapshot during a partially successful refresh", async () => {
+      let refreshCount = 0;
+      const refreshWatchMarketData = vi.fn(async () => {
+        refreshCount += 1;
+        return refreshCount === 1
+          ? marketDataWithQuotes([
+              ["1.600001", 1.23],
+              ["1.600002", 2.34]
+            ])
+          : {
+              ...marketDataWithQuotes([["1.600001", 3.45]]),
+              quotes: [
+                marketDataWithQuote("1.600001", 3.45).quotes[0],
+                {
+                  secid: "1.600002",
+                  fetchedAt: "2026-07-04T00:00:00.000Z",
+                  errorMessage: "行情服务请求失败"
+                }
+              ],
+              trends: [
+                marketDataWithQuote("1.600001", 3.45).trends[0],
+                {
+                  secid: "1.600002",
+                  tradingDate: "2026-07-03",
+                  fetchedAt: "2026-07-04T00:00:00.000Z",
+                  points: [],
+                  errorMessage: "net::ERR_EMPTY_RESPONSE"
+                }
+              ]
+            };
+      });
+      const { elements } = createFixture(twoStockWorkspaceConfig(), {
+        isActive: true,
+        refreshWatchMarketData
+      });
+
+      elements.refreshWatchQuotes.emit("click");
+      await vi.waitFor(() => expect(elements.watchTree.innerHTML).toContain("+2.34%"));
+
+      elements.refreshWatchQuotes.emit("click");
+      await vi.waitFor(() => expect(elements.watchTree.innerHTML).toContain("+3.45%"));
+
+      expect(elements.watchTree.innerHTML).toContain("+2.34%");
+      expect(elements.watchTree.innerHTML).not.toContain("暂无行情");
+      expect(elements.watchMarketError.textContent).toContain("行情服务请求失败");
+    });
+
+    it("uses a same-day history snapshot when the first live refresh is temporarily unavailable", async () => {
+      const cached = marketDataWithQuote("1.600001", 1.23);
+      const refreshWatchMarketData = vi.fn(async (): Promise<WatchMarketData> => ({
+        ...marketData("2026-07-03"),
+        quotes: [{
+          secid: "1.600001",
+          fetchedAt: "2026-07-04T00:00:00.000Z",
+          errorMessage: "行情服务请求失败"
+        }],
+        trends: [{
+          secid: "1.600001",
+          tradingDate: "2026-07-03",
+          fetchedAt: "2026-07-04T00:00:00.000Z",
+          points: [],
+          errorMessage: "net::ERR_EMPTY_RESPONSE"
+        }],
+        history: [{
+          tradingDate: "2026-07-03",
+          updatedAt: cached.updatedAt,
+          quotes: cached.quotes,
+          trends: cached.trends
+        }]
+      }));
+      const { elements } = createFixture({
+        activeWorkspaceId: "default",
+        workspaces: [{
+          id: "default",
+          name: "默认",
+          root: {
+            id: "root-a",
+            type: "category",
+            name: "第一组",
+            children: [{ id: "stock-a", type: "stock", name: "股票A", secid: "1.600001" }]
+          }
+        }]
+      }, {
+        isActive: true,
+        refreshWatchMarketData
+      });
+
+      elements.refreshWatchQuotes.emit("click");
+
+      await vi.waitFor(() => expect(elements.watchMarketError.textContent).toContain("行情服务请求失败"));
       expect(elements.watchTree.innerHTML).toContain("+1.23%");
       expect(elements.watchTree.innerHTML).not.toContain("暂无行情");
     });
@@ -593,6 +687,25 @@ function workspaceConfig(activeWorkspaceId: string): WatchTreeConfig {
   };
 }
 
+function twoStockWorkspaceConfig(): WatchTreeConfig {
+  return {
+    activeWorkspaceId: "default",
+    workspaces: [{
+      id: "default",
+      name: "默认",
+      root: {
+        id: "root-a",
+        type: "category",
+        name: "第一组",
+        children: [
+          { id: "stock-a", type: "stock", name: "股票A", secid: "1.600001" },
+          { id: "stock-b", type: "stock", name: "股票B", secid: "1.600002" }
+        ]
+      }
+    }]
+  };
+}
+
 function marketData(tradingDate: string): WatchMarketData {
   return {
     tradingDate,
@@ -628,5 +741,14 @@ function marketDataWithQuote(secid: string, changePercent: number): WatchMarketD
         { time: "15:00", changePercent }
       ]
     }]
+  };
+}
+
+function marketDataWithQuotes(values: Array<[string, number]>): WatchMarketData {
+  const data = values.map(([secid, changePercent]) => marketDataWithQuote(secid, changePercent));
+  return {
+    ...marketData("2026-07-03"),
+    quotes: data.flatMap((item) => item.quotes),
+    trends: data.flatMap((item) => item.trends)
   };
 }

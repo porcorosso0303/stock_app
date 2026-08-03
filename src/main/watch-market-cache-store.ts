@@ -18,7 +18,13 @@ export class WatchMarketCacheStore {
   async write(cache: WatchMarketCache): Promise<void> {
     const history = await this.getHistory();
     const daysByDate = new Map(history.days.map((day) => [day.tradingDate, day]));
-    daysByDate.set(cache.tradingDate, cache);
+    const existing = daysByDate.get(cache.tradingDate);
+    daysByDate.set(cache.tradingDate, mergeCacheDay(existing ?? {
+      tradingDate: cache.tradingDate,
+      updatedAt: cache.updatedAt,
+      quotes: [],
+      trends: []
+    }, cache));
     await this.replaceHistory({
       version: 2,
       days: sortAndLimitDays([...daysByDate.values()])
@@ -45,6 +51,59 @@ export class WatchMarketCacheStore {
     await this.store.write(normalized);
     return normalized;
   }
+}
+
+function mergeCacheDay(existing: WatchMarketCache, incoming: WatchMarketCache): WatchMarketCache {
+  const existingQuotes = new Map(existing.quotes.map((quote) => [quote.secid, quote]));
+  const existingTrends = new Map(existing.trends.map((trend) => [trend.secid, trend]));
+  const incomingQuotes = new Map(incoming.quotes.map((quote) => [quote.secid, quote]));
+  const incomingTrends = new Map(incoming.trends.map((trend) => [trend.secid, trend]));
+  const secids = new Set([
+    ...existingQuotes.keys(),
+    ...existingTrends.keys(),
+    ...incomingQuotes.keys(),
+    ...incomingTrends.keys()
+  ]);
+  const quotes: WatchMarketCache["quotes"] = [];
+  const trends: WatchMarketCache["trends"] = [];
+
+  for (const secid of secids) {
+    const incomingQuote = incomingQuotes.get(secid);
+    const incomingTrend = incomingTrends.get(secid);
+    if (incomingQuote && incomingTrend && isCompleteCacheSnapshot(incomingQuote, incomingTrend, incoming.tradingDate)) {
+      quotes.push(incomingQuote);
+      trends.push(incomingTrend);
+      continue;
+    }
+
+    const existingQuote = existingQuotes.get(secid);
+    const existingTrend = existingTrends.get(secid);
+    if (existingQuote && existingTrend && isCompleteCacheSnapshot(existingQuote, existingTrend, existing.tradingDate)) {
+      quotes.push(existingQuote);
+      trends.push(existingTrend);
+      continue;
+    }
+
+  }
+
+  return {
+    tradingDate: incoming.tradingDate,
+    updatedAt: incoming.updatedAt,
+    quotes,
+    trends
+  };
+}
+
+function isCompleteCacheSnapshot(
+  quote: WatchMarketCache["quotes"][number],
+  trend: StockTrend,
+  tradingDate: string
+): boolean {
+  return quote.changePercent !== undefined &&
+    !quote.errorMessage &&
+    trend.tradingDate === tradingDate &&
+    trend.points.length > 0 &&
+    !trend.errorMessage;
 }
 
 function sortAndLimitDays(days: WatchMarketCache[]): WatchMarketCache[] {
