@@ -14,6 +14,7 @@ import {
   appendWatchWorkspace,
   appendWatchTreeChild,
   collectStockSecids,
+  collectStockSecidsFromRoots,
   deleteWatchWorkspace,
   ensureWatchWorkspaceConfig,
   findWatchTreeNode,
@@ -135,9 +136,9 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     return getActiveWatchRoot(config);
   }
 
-  function workspaceRoot(workspaceId: string | undefined): WatchTreeConfig["root"] {
+  function workspaceRoots(workspaceId: string | undefined) {
     config = ensureWatchWorkspaceConfig(config);
-    return config.workspaces?.find((workspace) => workspace.id === workspaceId)?.root;
+    return config.workspaces?.find((workspace) => workspace.id === workspaceId)?.roots ?? [];
   }
 
   function activeWorkspaceId(): string | undefined {
@@ -550,7 +551,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     load: (secids: string[]) => ReturnType<typeof api.getWatchMarketData> | undefined
   ): Promise<void> {
     const shouldUpdateVisibleUi = workspaceId === activeWorkspaceId();
-    const secids = collectStockSecids(workspaceRoot(workspaceId));
+    const secids = collectStockSecidsFromRoots(workspaceRoots(workspaceId));
     if (secids.length === 0) {
       setWorkspaceMarketState(workspaceId, emptyWorkspaceMarketState());
       if (shouldUpdateVisibleUi) {

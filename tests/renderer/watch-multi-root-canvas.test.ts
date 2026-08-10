@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { WatchTreeCategoryNode, WatchTreeConfig } from "../../src/shared/types";
 import { renderWatchTree } from "../../src/renderer/features/watch/watch-view";
+import {
+  measureWatchCanvas,
+  watchConnectorPath
+} from "../../src/renderer/features/watch/watch-connectors";
 
 describe("watch multi-root canvas", () => {
   it("renders every root at its persisted logical position", () => {
@@ -34,6 +38,22 @@ describe("watch multi-root canvas", () => {
 
     expect(container.innerHTML).toContain("在空白区域点击鼠标右键创建分类");
     expect(container.innerHTML).not.toContain("watch-canvas-layer");
+  });
+
+  it("measures a logical canvas that contains every positioned root", () => {
+    expect(measureWatchCanvas([
+      { x: 24, y: 32, width: 300, height: 180 },
+      { x: 480, y: 180, width: 420, height: 260 }
+    ], 40)).toEqual({ width: 940, height: 480 });
+  });
+
+  it("converts scaled screen rectangles into a logical connector path", () => {
+    expect(watchConnectorPath(
+      { left: 100, right: 300, top: 80, height: 40 },
+      { left: 500, right: 700, top: 200, height: 40 },
+      { left: 100, top: 40 },
+      2
+    )).toBe("M 100 30 C 155 30, 145 90, 200 90");
   });
 });
 
