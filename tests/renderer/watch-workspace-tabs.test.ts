@@ -342,6 +342,30 @@ describe("watch workspace tabs", () => {
       expect(elements.watchTree.innerHTML).not.toContain("+1.23%");
     });
 
+    it("refreshes every root in active and inactive workspaces regardless of viewport", async () => {
+      const refreshWatchMarketData = vi.fn(async (secids: string[]) => marketDataWithQuotes(
+        secids.map((secid, index) => [secid, index + 1])
+      ));
+      const { elements } = createFixture(multiRootWorkspaceConfig(), {
+        isActive: true,
+        refreshWatchMarketData
+      });
+
+      elements.refreshWatchQuotes.emit("click");
+
+      await vi.waitFor(() => expect(refreshWatchMarketData).toHaveBeenCalledTimes(2));
+      expect(refreshWatchMarketData).toHaveBeenNthCalledWith(
+        1,
+        ["1.600001", "1.600003"],
+        { forceLatest: true }
+      );
+      expect(refreshWatchMarketData).toHaveBeenNthCalledWith(
+        2,
+        ["1.600002", "1.600004"],
+        { forceLatest: true }
+      );
+    });
+
     it("shows the compact refresh indicator only while a market request is in flight", async () => {
       let completeRefresh!: (marketData: WatchMarketData) => void;
       const pendingRefresh = new Promise<WatchMarketData>((resolve) => {
@@ -701,6 +725,49 @@ function twoStockWorkspaceConfig(): WatchTreeConfig {
           { id: "stock-a", type: "stock", name: "股票A", secid: "1.600001" },
           { id: "stock-b", type: "stock", name: "股票B", secid: "1.600002" }
         ]
+      }
+    }]
+  };
+}
+
+function multiRootWorkspaceConfig(): WatchTreeConfig {
+  return {
+    activeWorkspaceId: "default",
+    workspaces: [{
+      id: "default",
+      name: "默认",
+      roots: [{
+        id: "root-a",
+        type: "category",
+        name: "第一组",
+        children: [{ id: "stock-a", type: "stock", name: "股票A", secid: "1.600001" }]
+      }, {
+        id: "root-c",
+        type: "category",
+        name: "第三组",
+        children: [{ id: "stock-c", type: "stock", name: "股票C", secid: "1.600003" }]
+      }],
+      rootPositions: {
+        "root-a": { x: 24, y: 24 },
+        "root-c": { x: 24, y: 900 }
+      }
+    }, {
+      id: "second",
+      name: "展示区 2",
+      roots: [{
+        id: "root-b",
+        type: "category",
+        name: "第二组",
+        children: [{ id: "stock-b", type: "stock", name: "股票B", secid: "1.600002" }]
+      }, {
+        id: "root-d",
+        type: "category",
+        name: "第四组",
+        children: [{ id: "stock-d", type: "stock", name: "股票D", secid: "1.600004" }]
+      }],
+      rootPositions: {
+        "root-b": { x: 24, y: 24 },
+        "root-d": { x: 1800, y: 24 }
       }
     }]
   };
