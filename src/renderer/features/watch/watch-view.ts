@@ -23,6 +23,7 @@ import {
   renderTrendSparklineSvg,
   sortWatchChildrenByChangePercent
 } from "../../../shared/watch-tree";
+import { getActiveWatchWorkspace } from "../../../shared/watch-tree";
 
 export interface WatchViewState {
   config: WatchTreeConfig;
@@ -38,7 +39,9 @@ export function renderWatchTree(
   state: WatchViewState,
   scheduleConnectors: () => void
 ): void {
-  if (!state.config.root) {
+  const workspace = getActiveWatchWorkspace(state.config);
+  const roots = workspace.roots ?? [];
+  if (roots.length === 0) {
     container.innerHTML = `
       <div class="watch-empty">
         <p>在空白区域点击鼠标右键创建分类。</p>
@@ -48,10 +51,27 @@ export function renderWatchTree(
   }
   container.innerHTML = `
     <div class="watch-graph">
-      <svg class="watch-connectors" aria-hidden="true"></svg>
-      <ul class="watch-root">
-        <li class="watch-branch">${renderWatchNode(state.config.root, undefined, 0, state)}</li>
-      </ul>
+      <div class="watch-canvas-spacer" aria-hidden="true"></div>
+      <div class="watch-canvas-layer">
+        <svg class="watch-connectors" aria-hidden="true"></svg>
+        ${roots.map((root, index) => {
+          const position = workspace.rootPositions?.[root.id] ?? {
+            x: 24 + index * 48,
+            y: 24 + index * 48
+          };
+          return `
+            <section
+              class="watch-root-tree"
+              data-watch-root-id="${escapeHtml(root.id)}"
+              style="left: ${position.x}px; top: ${position.y}px;"
+            >
+              <ul class="watch-root">
+                <li class="watch-branch">${renderWatchNode(root, undefined, 0, state, true)}</li>
+              </ul>
+            </section>
+          `;
+        }).join("")}
+      </div>
     </div>
   `;
   scheduleConnectors();
@@ -61,7 +81,8 @@ function renderWatchNode(
   node: WatchTreeNode,
   parentId: string | undefined,
   depth: number,
-  state: WatchViewState
+  state: WatchViewState,
+  isRoot = false
 ): string {
   const isCollapsed = state.collapsedNodes.has(node.id);
   const children = node.type === "category" && !isCollapsed
@@ -82,6 +103,7 @@ function renderWatchNode(
         data-watch-node-id="${escapeHtml(node.id)}"
         data-watch-parent-id="${escapeHtml(parentId ?? "")}"
         data-watch-depth="${depth}"
+        ${isRoot ? 'data-watch-is-root="true"' : ""}
         data-watch-connector-trend="${connectorTrendKind(node, state)}"
         title="${escapeHtml(renderWatchNodeTooltip(node, isCollapsed, state))}"
       >

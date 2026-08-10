@@ -122,7 +122,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     const marketState = getWorkspaceMarketState();
     renderWorkspaceTabs();
     renderWatchTree(elements.watchTree, {
-      config: { root: activeRoot() },
+      config,
       quotes: marketState.quotes,
       trends: marketState.trends,
       marketHistory: marketState.marketHistory,

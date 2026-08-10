@@ -105,10 +105,13 @@ h2 { margin: 0; font-size: 15px; }
 .watch-panel { min-height: 0; overflow: auto; padding: 22px; background: #eef1ed; cursor: grab; }
 .watch-panel.dragging, .watch-panel.dragging * { cursor: grabbing !important; user-select: none; }
 .watch-panel.node-dragging, .watch-panel.node-dragging * { cursor: grabbing !important; user-select: none; }
-.watch-tree { min-width: max-content; }
-.watch-graph { position: relative; width: max-content; min-width: 100%; padding: 16px 20px 26px; }
+.watch-tree { min-width: 100%; min-height: 100%; }
+.watch-graph { position: relative; min-width: 100%; min-height: 100%; }
+.watch-canvas-spacer { width: 100%; min-height: 100%; pointer-events: none; }
+.watch-canvas-layer { position: absolute; top: 0; left: 0; min-width: 100%; min-height: 100%; transform-origin: 0 0; }
+.watch-root-tree { position: absolute; width: max-content; }
 .watch-root, .watch-children { margin: 0; padding: 0; list-style: none; }
-.watch-root { width: max-content; min-width: 100%; }
+.watch-root { width: max-content; }
 .watch-children { display: grid; gap: 12px; }
 .watch-branch { display: flex; align-items: center; gap: 74px; width: max-content; }
 .watch-connectors { position: absolute; z-index: 0; top: 0; left: 0; overflow: visible; pointer-events: none; }
