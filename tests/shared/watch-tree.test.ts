@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { StockQuote, WatchTreeCategoryNode } from "../../src/shared/types";
 import {
+  appendWatchRoot,
   appendWatchTreeChild,
   averageChangePercent,
   collectHoldingStocks,
@@ -8,20 +9,25 @@ import {
   categoryStrengthHistory,
   categoryStrengthIndex,
   collectStockSecids,
+  collectStockSecidsFromRoots,
   countUpDownStocks,
   deleteWatchWorkspace,
   ensureWatchWorkspaceConfig,
   formatTrendPercentClass,
   getActiveWatchRoot,
+  getActiveWatchRoots,
   getActiveWatchWorkspace,
   mergeQuoteIntoTrend,
+  moveWatchForestNode,
   moveWatchTreeNode,
   normalizeTrendSegments,
   renderTrendSparklineSvg,
   removeWatchTreeNode,
+  removeWatchForestNode,
   renameWatchWorkspace,
   sortWatchChildrenByChangePercent,
   switchWatchWorkspace,
+  updateWatchRootPosition,
   updateActiveWatchRoot,
   validateWatchTreeConfig
 } from "../../src/shared/watch-tree";
@@ -665,6 +671,122 @@ describe("watch tree", () => {
         }
       ]
     })).toEqual(["1.600519", "0.300750", "1.603986"]);
+  });
+
+  it("collects stocks from every root in a forest", () => {
+    expect(collectStockSecidsFromRoots([
+      root,
+      {
+        id: "other-root",
+        type: "category",
+        name: "其他",
+        children: [{ id: "three", type: "stock", name: "股票三", secid: "1.603986" }]
+      }
+    ])).toEqual(["1.600519", "0.300750", "1.603986"]);
+  });
+
+  it("appends a root with its initial position", () => {
+    const config = ensureWatchWorkspaceConfig({ root });
+    const second: WatchTreeCategoryNode = {
+      id: "second-root",
+      type: "category",
+      name: "第二棵树",
+      children: []
+    };
+    const next = appendWatchRoot(config, second, { x: 480, y: 180 });
+
+    expect(getActiveWatchRoots(next)).toEqual([root, second]);
+    expect(getActiveWatchWorkspace(next).rootPositions).toEqual({
+      tech: { x: 24, y: 24 },
+      "second-root": { x: 480, y: 180 }
+    });
+  });
+
+  it("moves a root position without changing its descendants", () => {
+    const next = updateWatchRootPosition(
+      ensureWatchWorkspaceConfig({ root }),
+      "tech",
+      { x: 300, y: 240 }
+    );
+
+    expect(getActiveWatchWorkspace(next).rootPositions?.tech).toEqual({ x: 300, y: 240 });
+    expect(getActiveWatchRoots(next)[0]).toEqual(root);
+  });
+
+  it("removes a root and its position without changing other roots", () => {
+    const config = appendWatchRoot(
+      ensureWatchWorkspaceConfig({ root }),
+      { id: "second-root", type: "category", name: "第二棵树", children: [] },
+      { x: 480, y: 180 }
+    );
+    const next = removeWatchForestNode(config, "tech");
+
+    expect(getActiveWatchRoots(next).map((item) => item.id)).toEqual(["second-root"]);
+    expect(getActiveWatchWorkspace(next).rootPositions).toEqual({
+      "second-root": { x: 480, y: 180 }
+    });
+  });
+
+  it("reparents a whole root under a compatible category", () => {
+    const target: WatchTreeCategoryNode = {
+      id: "target-root",
+      type: "category",
+      name: "目标根",
+      children: [{ id: "target", type: "category", name: "目标", children: [] }]
+    };
+    const config = appendWatchRoot(
+      ensureWatchWorkspaceConfig({ root: target }),
+      root,
+      { x: 480, y: 180 }
+    );
+    const next = moveWatchForestNode(config, "tech", "target");
+
+    expect(getActiveWatchRoots(next).map((item) => item.id)).toEqual(["target-root"]);
+    expect(getActiveWatchWorkspace(next).rootPositions).not.toHaveProperty("tech");
+    expect(collectStockSecids(getActiveWatchRoots(next)[0])).toEqual([
+      "1.600519",
+      "0.300750"
+    ]);
+  });
+
+  it("moves a nested category between separate root trees", () => {
+    const target: WatchTreeCategoryNode = {
+      id: "target-root",
+      type: "category",
+      name: "目标根",
+      children: [{ id: "target", type: "category", name: "目标", children: [] }]
+    };
+    const config = appendWatchRoot(
+      ensureWatchWorkspaceConfig({ root }),
+      target,
+      { x: 480, y: 180 }
+    );
+    const next = moveWatchForestNode(config, "software", "target");
+
+    expect(getActiveWatchRoots(next)[0].children.map((item) => item.id)).toEqual(["two"]);
+    expect(collectStockSecids(getActiveWatchRoots(next)[1])).toEqual(["1.600519"]);
+  });
+
+  it("leaves the forest unchanged for cycles and mixed sibling types", () => {
+    const target: WatchTreeCategoryNode = {
+      id: "target-root",
+      type: "category",
+      name: "目标根",
+      children: [{
+        id: "stock-parent",
+        type: "category",
+        name: "股票父节点",
+        children: [{ id: "existing", type: "stock", name: "已有股票", secid: "1.603986" }]
+      }]
+    };
+    const config = appendWatchRoot(
+      ensureWatchWorkspaceConfig({ root }),
+      target,
+      { x: 480, y: 180 }
+    );
+
+    expect(moveWatchForestNode(config, "tech", "software")).toEqual(config);
+    expect(moveWatchForestNode(config, "software", "stock-parent")).toEqual(config);
   });
 
   it("merges the latest quote into a trend without duplicating fetchedAt minutes", () => {

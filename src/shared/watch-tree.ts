@@ -80,6 +80,61 @@ export function getActiveWatchRoot(config: WatchTreeConfig): WatchTreeCategoryNo
   return getActiveWatchWorkspace(config).roots?.[0];
 }
 
+export function getActiveWatchRoots(config: WatchTreeConfig): WatchTreeCategoryNode[] {
+  return getActiveWatchWorkspace(config).roots ?? [];
+}
+
+export function updateActiveWatchWorkspace(
+  config: WatchTreeConfig,
+  update: (workspace: WatchTreeWorkspace) => WatchTreeWorkspace
+): WatchTreeConfig {
+  const normalized = ensureWatchWorkspaceConfig(config);
+  const activeId = normalized.activeWorkspaceId;
+  return canonicalWorkspaceConfig({
+    activeWorkspaceId: activeId,
+    workspaces: normalized.workspaces?.map((workspace) => workspace.id === activeId
+      ? update(workspace)
+      : workspace)
+  });
+}
+
+export function appendWatchRoot(
+  config: WatchTreeConfig,
+  root: WatchTreeCategoryNode,
+  position: WatchRootPosition
+): WatchTreeConfig {
+  const nextPosition = validateRootPosition(position);
+  const next = updateActiveWatchWorkspace(config, (workspace) => ({
+    ...workspace,
+    roots: [...workspace.roots ?? [], root],
+    rootPositions: {
+      ...workspace.rootPositions,
+      [root.id]: nextPosition
+    }
+  }));
+  return validateWatchTreeConfig(next);
+}
+
+export function updateWatchRootPosition(
+  config: WatchTreeConfig,
+  rootId: string,
+  position: WatchRootPosition
+): WatchTreeConfig {
+  const normalized = ensureWatchWorkspaceConfig(config);
+  const workspace = getActiveWatchWorkspace(normalized);
+  if (!workspace.roots?.some((root) => root.id === rootId)) {
+    return normalized;
+  }
+  const nextPosition = validateRootPosition(position);
+  return updateActiveWatchWorkspace(normalized, (active) => ({
+    ...active,
+    rootPositions: {
+      ...active.rootPositions,
+      [rootId]: nextPosition
+    }
+  }));
+}
+
 export function updateActiveWatchRoot(
   config: WatchTreeConfig,
   root: WatchTreeCategoryNode | undefined
@@ -336,6 +391,10 @@ export function collectStockSecids(root?: WatchTreeNode): string[] {
   return root.children.flatMap(collectStockSecids);
 }
 
+export function collectStockSecidsFromRoots(roots: WatchTreeCategoryNode[]): string[] {
+  return roots.flatMap((root) => collectStockSecids(root));
+}
+
 function collectHoldingStocksFromNode(
   root: WatchTreeNode | undefined,
   workspace: WatchTreeWorkspace
@@ -583,6 +642,19 @@ export function findWatchTreeNode(
   return undefined;
 }
 
+export function findWatchNodeInRoots(
+  roots: WatchTreeCategoryNode[],
+  id: string
+): WatchTreeNode | undefined {
+  for (const root of roots) {
+    const found = findWatchTreeNode(root, id);
+    if (found) {
+      return found;
+    }
+  }
+  return undefined;
+}
+
 export function appendWatchTreeChild(
   root: WatchTreeCategoryNode,
   parentId: string,
@@ -621,6 +693,76 @@ export function removeWatchTreeNode(
         ? removeWatchTreeNode(child, id) ?? child
         : child)
   };
+}
+
+export function removeWatchForestNode(
+  config: WatchTreeConfig,
+  id: string
+): WatchTreeConfig {
+  const normalized = ensureWatchWorkspaceConfig(config);
+  const workspace = getActiveWatchWorkspace(normalized);
+  const roots = workspace.roots ?? [];
+  if (!findWatchNodeInRoots(roots, id)) {
+    return normalized;
+  }
+  const nextRoots = roots.flatMap((root) => {
+    const nextRoot = removeWatchTreeNode(root, id);
+    return nextRoot ? [nextRoot] : [];
+  });
+  const nextPositions = Object.fromEntries(Object.entries(workspace.rootPositions ?? {})
+    .filter(([rootId]) => nextRoots.some((root) => root.id === rootId)));
+  return updateActiveWatchWorkspace(normalized, (active) => ({
+    ...active,
+    roots: nextRoots,
+    rootPositions: nextPositions
+  }));
+}
+
+export function moveWatchForestNode(
+  config: WatchTreeConfig,
+  nodeId: string,
+  targetParentId: string
+): WatchTreeConfig {
+  if (nodeId === targetParentId) {
+    return config;
+  }
+  const normalized = ensureWatchWorkspaceConfig(config);
+  const workspace = getActiveWatchWorkspace(normalized);
+  const roots = workspace.roots ?? [];
+  const source = locateWatchForestNode(roots, nodeId);
+  const target = findWatchNodeInRoots(roots, targetParentId);
+  if (!source || !target || target.type !== "category") {
+    return config;
+  }
+  if (source.parent?.id === target.id) {
+    return config;
+  }
+  if (source.node.type === "category" && findWatchTreeNode(source.node, targetParentId)) {
+    return config;
+  }
+  if (target.children.some((child) => child.type !== source.node.type)) {
+    return config;
+  }
+
+  const rootsWithoutSource = roots.flatMap((root) => {
+    const nextRoot = removeWatchTreeNode(root, nodeId);
+    return nextRoot ? [nextRoot] : [];
+  });
+  if (!findWatchNodeInRoots(rootsWithoutSource, targetParentId)) {
+    return config;
+  }
+  const nextRoots = rootsWithoutSource.map((root) => (
+    findWatchTreeNode(root, targetParentId)
+      ? appendWatchTreeChild(root, targetParentId, source.node)
+      : root
+  ));
+  const nextPositions = Object.fromEntries(Object.entries(workspace.rootPositions ?? {})
+    .filter(([rootId]) => nextRoots.some((root) => root.id === rootId)));
+  return updateActiveWatchWorkspace(normalized, (active) => ({
+    ...active,
+    roots: nextRoots,
+    rootPositions: nextPositions
+  }));
 }
 
 export function moveWatchTreeNode(
@@ -674,6 +816,19 @@ function mapCategory(
 interface LocatedWatchTreeNode {
   node: WatchTreeNode;
   parent?: WatchTreeCategoryNode;
+}
+
+function locateWatchForestNode(
+  roots: WatchTreeCategoryNode[],
+  id: string
+): LocatedWatchTreeNode | undefined {
+  for (const root of roots) {
+    const found = locateWatchTreeNode(root, id);
+    if (found) {
+      return found;
+    }
+  }
+  return undefined;
 }
 
 function locateWatchTreeNode(
