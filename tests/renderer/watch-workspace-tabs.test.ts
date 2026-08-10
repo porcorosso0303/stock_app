@@ -72,6 +72,40 @@ describe("watch workspace tabs", () => {
       expect(saveWatchTree.mock.calls[0]?.[0].activeWorkspaceId).toBe("workspace-2");
     });
 
+    it("serializes rapid workspace saves and keeps the newest result active", async () => {
+      let finishFirst!: (config: WatchTreeConfig) => void;
+      let finishSecond!: (config: WatchTreeConfig) => void;
+      const saveImplementation = vi.fn((nextConfig: WatchTreeConfig) => new Promise<WatchTreeConfig>((resolve) => {
+        if (saveImplementation.mock.calls.length === 1) {
+          finishFirst = resolve;
+        } else {
+          finishSecond = resolve;
+        }
+      }));
+      vi.mocked(crypto.randomUUID)
+        .mockReturnValueOnce("00000000-0000-0000-0000-000000000002")
+        .mockReturnValueOnce("00000000-0000-0000-0000-000000000003");
+      const { elements, saveWatchTree } = createFixture({
+        activeWorkspaceId: "default",
+        workspaces: [{ id: "default", name: "默认" }]
+      }, { saveWatchTree: saveImplementation });
+
+      elements.addWatchWorkspace.emit("click");
+      elements.addWatchWorkspace.emit("click");
+
+      await vi.waitFor(() => expect(saveWatchTree).toHaveBeenCalledOnce());
+      const firstSnapshot = saveWatchTree.mock.calls[0]?.[0];
+      finishFirst(firstSnapshot);
+      await vi.waitFor(() => expect(saveWatchTree).toHaveBeenCalledTimes(2));
+      const secondSnapshot = saveWatchTree.mock.calls[1]?.[0];
+      finishSecond(secondSnapshot);
+
+      await vi.waitFor(() => expect(elements.watchWorkspaceTabs.innerHTML).toContain("展示区 3"));
+      expect(elements.watchWorkspaceTabs.innerHTML)
+        .toContain('data-watch-workspace-id="00000000-0000-0000-0000-000000000003"');
+      expect(elements.watchWorkspaceTabs.innerHTML).toContain('aria-selected="true"');
+    });
+
     it("enters inline rename mode when double-clicking a workspace tab", () => {
       const { elements } = createFixture({
         activeWorkspaceId: "default",
@@ -366,6 +400,28 @@ describe("watch workspace tabs", () => {
       );
     });
 
+    it("starts inactive workspace refreshes without waiting for a slow active workspace", async () => {
+      let finishSlowRefresh!: (marketData: WatchMarketData) => void;
+      const slowRefresh = new Promise<WatchMarketData>((resolve) => {
+        finishSlowRefresh = resolve;
+      });
+      const refreshWatchMarketData = vi.fn((secids: string[]) => secids.includes("1.600001")
+        ? slowRefresh
+        : Promise.resolve(marketDataWithQuote("1.600002", 2.34)));
+      const { elements } = createFixture(workspaceConfig("default"), {
+        isActive: true,
+        refreshWatchMarketData
+      });
+
+      elements.refreshWatchQuotes.emit("click");
+
+      await vi.waitFor(() => expect(refreshWatchMarketData).toHaveBeenCalledTimes(2));
+      elements.watchWorkspaceTabs.emit("click", workspaceButton("second", "switch"));
+      await vi.waitFor(() => expect(elements.watchTree.innerHTML).toContain("+2.34%"));
+
+      finishSlowRefresh(marketDataWithQuote("1.600001", 1.23));
+    });
+
     it("shows the compact refresh indicator only while a market request is in flight", async () => {
       let completeRefresh!: (marketData: WatchMarketData) => void;
       const pendingRefresh = new Promise<WatchMarketData>((resolve) => {
@@ -535,6 +591,7 @@ const emptyMarketData: WatchMarketData = {
 
 function createFixture(config: WatchTreeConfig, options: {
   isActive?: boolean;
+  saveWatchTree?: (config: WatchTreeConfig) => Promise<WatchTreeConfig>;
   getWatchMarketData?: StockResearchApi["getWatchMarketData"];
   refreshWatchMarketData?: StockResearchApi["refreshWatchMarketData"];
 } = {}): {
@@ -543,7 +600,7 @@ function createFixture(config: WatchTreeConfig, options: {
   saveWatchTree: ReturnType<typeof vi.fn<(config: WatchTreeConfig) => Promise<WatchTreeConfig>>>;
 } {
   const elements = createElements();
-  const saveWatchTree = vi.fn(async (nextConfig: WatchTreeConfig) => nextConfig);
+  const saveWatchTree = vi.fn(options.saveWatchTree ?? (async (nextConfig: WatchTreeConfig) => nextConfig));
   const controller = createWatchController({
     api: createApi(saveWatchTree, options),
     elements: elements as unknown as RendererElements,

@@ -195,7 +195,23 @@ interface WatchTreeStockNode {
 
 `isHolding: true` 表示持仓股；`false` 或字段缺失均表示非持仓股，并在脑图配置规范化时省略。`validateWatchTreeConfig()` 只接受布尔值，其他类型会作为无效配置拒绝。该字段和节点其他属性一起保存在 `watch-tree.json` 中。
 
-盯盘脑图支持多个展示区标签。新格式使用 `WatchTreeConfig.workspaces` 保存多个独立脑图，每个 `WatchTreeWorkspace` 包含 `id`、`name` 和可选 `root`；`activeWorkspaceId` 只作为运行期当前展示区镜像，不作为用户配置长期语义。旧格式 `{ root }` 仍可读取，renderer 会通过 `ensureWatchWorkspaceConfig()` 提升为单个名为“默认”的展示区。为兼容旧调用，规范化后的配置会把当前展示区的 `root` 镜像到顶层 `root` 字段；新逻辑应优先使用 workspace helper 获取和更新当前展示区。每次启动 renderer 都强制以第一个展示区作为 active，并默认加载最新交易日行情，不持久化上次切到的展示区。
+盯盘脑图支持多个展示区标签，并且每个展示区是由多棵分类树组成的独立逻辑画布。标准数据结构是：
+
+```ts
+interface WatchRootPosition {
+  x: number;
+  y: number;
+}
+
+interface WatchTreeWorkspace {
+  id: string;
+  name: string;
+  roots: WatchTreeCategoryNode[];
+  rootPositions: Record<string, WatchRootPosition>;
+}
+```
+
+`roots` 只能包含分类节点；同一展示区所有根树共享节点 ID 命名空间。`rootPositions` 使用未缩放画布逻辑像素，只能引用当前根节点，坐标必须是有限非负数。缺失位置由规范化逻辑生成错位默认位置。旧顶层 `{ root }` 和旧 `WatchTreeWorkspace.root` 仍可读取，`ensureWatchWorkspaceConfig()` 会把它们迁移为一个根的标准森林；规范化结果、磁盘保存和导出数据不再生成顶层或 workspace 的 `root` 镜像。`activeWorkspaceId` 是业务操作使用的内存字段；`WatchTreeStore.set()` 向 renderer 返回当前值，但磁盘固定写入首个 workspace ID，因此标签切换不会在下次启动恢复。每次启动 renderer 都以第一个展示区作为 active，并默认加载最新交易日行情；标签切换和数据日期选择不持久化。
 
 `StockQuote` 是 provider 返回给上层的标准化行情快照。除价格和涨跌幅外，当前可选包含：
 
@@ -229,8 +245,9 @@ interface AppConfig {
 
 - 节点校验。
 - `secid` 校验。
-- 节点查找、替换、删除、追加、拖拽换父节点。
-- 收集股票 `secid`。
+- 单树节点查找、替换、删除和追加。
+- 跨根森林查找、替换、删除、追加、根位置更新和拖拽换父节点。
+- 按单树、展示区森林或所有展示区收集股票 `secid` 和持仓股。
 - 分类平均涨跌幅计算。
 - 分类上涨/下跌股票数统计。
 - 分类板块强度指数计算入口。
@@ -242,7 +259,7 @@ interface AppConfig {
 
 这些函数不依赖 DOM 或 Electron，可在 main、renderer、测试中复用。
 
-拖拽换父节点由 `moveWatchTreeNode(root, nodeId, targetParentId)` 统一执行并校验。合法规则是：被拖节点和目标节点必须存在；目标节点必须是分类；被拖节点不能是根节点，不能拖到自身或自身后代；分类节点只能整体挂到另一个分类节点下面，保留自身下属层次；股票节点只能作为叶子节点移动；目标分类已有子节点时，所有现有子节点类型必须与被拖节点类型一致。任一规则不满足时函数返回原始 root 引用，调用方不保存配置，界面保持原样。
+跨根拖拽换父节点由 `moveWatchForestNode(config, nodeId, targetParentId)` 统一执行并校验。被拖节点和目标必须存在，目标必须是分类，节点不能拖到自身或自身后代；分类节点整体移动并保留下属结构，股票始终是叶子；目标分类已有子节点时，现有子节点类型必须与被拖节点一致。根分类可以整体挂到另一棵树的合法分类下，此时从 `roots` 和 `rootPositions` 原子移除并成为普通分类；非法移动返回原配置，调用方不保存。根节点拖到空白处不是换父节点，由 `updateWatchRootPosition()` 只更新该根的逻辑坐标。普通分类或股票拖到空白处不产生变化。
 
 `src/shared/data-calc-helper.ts` 放置 provider 无关的通用行情计算：
 
@@ -545,14 +562,17 @@ src/renderer/features/watch/watch-controller.ts
 职责：
 
 - 维护当前脑图配置 `WatchTreeConfig`。
-- 维护顶部展示区标签。每个标签对应一个独立 `WatchTreeWorkspace.root`；创建、删除、重命名会保存到 `watch-tree.json`，切换标签只修改 renderer 内存中的 active 展示区，不持久化。用户点击标签切换展示区，双击标签或右键选择“重命名”进入内联编辑，点击 `+` 会立即创建一个自动命名的展示区，点击标签 `×` 删除展示区；至少保留一个展示区。标签切换只更新当前展示区并重绘脑图，不主动拉取行情，避免切换卡顿；每个展示区在 renderer 内存中保留自己的最近一次 `quotes`、`trends` 和行情历史渲染状态，切换到其他展示区或其他展示区刷新行情都不能覆盖该状态。定时轮询和手动“刷新行情”会遍历所有展示区，按各自股票列表和各自数据日期状态刷新行情；非当前展示区刷新完成时只更新内存状态，不重绘当前画面。用户之后切回该展示区时，应立即看到它在后台持续更新后的最新行情。
+- 维护顶部展示区标签。每个标签对应一个独立 `WatchTreeWorkspace` 多根画布；创建、删除、重命名会保存到 `watch-tree.json`，切换标签只修改 renderer 内存中的 active 展示区，不持久化。用户点击标签切换展示区，双击标签或右键选择“重命名”进入内联编辑，点击 `+` 会立即创建一个自动命名的展示区，点击标签 `×` 删除展示区；至少保留一个展示区。标签切换只使用已经保存在对应 workspace market state 中的数据重绘，不主动等待行情接口。每个展示区独立保留 `quotes`、`trends`、行情历史和数据日期状态。
 - 维护当前行情 `quotes` 和 `trends`。
+- 行情刷新直接遍历配置中的所有 workspace 和所有根树，不读取 DOM 可见性；各 workspace 请求并发启动，慢请求不会阻止其他展示区先完成本轮更新。根树位于滚动视口之外或分类处于折叠状态时，其股票仍继续更新。非当前展示区刷新只更新对应内存 state，不重绘当前画面，切回时立即使用最新 state。分类统计由 view 在渲染当前展示区时根据该展示区行情计算；消息列表按当前展示区股票读取，持仓股后台分析则由 main process 根据完整配置收集全部展示区持仓股。
 - 维护折叠节点集合。
 - 维护股票搜索选择状态。
 - 维护节点编辑弹窗状态。
 - 在股票节点编辑弹窗中管理“持仓股”选项：新增股票默认“否”，编辑时回填已有状态，保存“否”时省略 `isHolding`，保存“是”时写入 `isHolding: true`。该控件只对股票节点显示。
-- 维护面板拖拽平移状态。
-- 维护节点左键拖拽状态。用户按住分类或股票节点拖到另一个节点上松开时，Controller 只负责识别被拖节点和投放目标，然后调用 `moveWatchTreeNode()` 生成新树；合法移动后保存 `watch-tree.json` 并刷新行情，非法移动不修改配置。拖拽过程中 Controller 会从源节点 clone 出一个临时 `.drag-ghost` DOM 副本跟随鼠标移动，源节点仅做半透明视觉反馈；该副本不写入脑图数据，也不参与连接线绘制。
+- 维护原生滚动和空白区拖拽平移状态。普通滚轮纵向滚动，`Shift + 滚轮` 横向滚动；空白区按住左键仍可同时平移两个方向。
+- 维护不持久化的画布缩放状态。`Ctrl + 滚轮` 以 10% 步长在 50%-200% 范围调整缩放，并通过重算 `scrollLeft/scrollTop` 保持光标下的逻辑点稳定。切换展示区或重新启动恢复 100%。
+- 维护节点左键拖拽状态。根节点拖到空白处时按当前缩放把屏幕位移换算成逻辑坐标并保存；根节点拖到合法分类时整棵树重挂；普通分类和股票只能拖到合法分类，空白落点无效。拖拽过程中 Controller 从源节点 clone 临时 `.drag-ghost` 跟随鼠标，源节点半透明显示；ghost 不写入脑图数据，也不参与连接线。
+- 在任意画布空白位置右键可创建新的根分类。Controller 把指针位置转换为未缩放逻辑坐标，并基于现有根树矩形向右下偏移，避免新根覆盖已有树。
 - 维护顶部数据日期下拉框。下拉框显示最近 30 个自然日内的工作日，并合并本地缓存历史中的交易日；用户选择日期后，Controller 调用 `getWatchMarketData(secids, { tradingDate })` 加载该日行情。所选日期是按展示区标签隔离的 renderer 内存态，不写入 `watch-tree.json`；切换到另一个展示区时恢复该展示区自己的日期状态，未手动选择过日期的展示区默认使用当前已知最新交易日。
 - 绑定 `Ctrl+A` 和 `Ctrl+D` 快捷键，在盯盘页面激活且焦点不在输入控件内时，分别切换到左侧和右侧展示区标签。
 - 绑定盯盘相关 DOM 事件。
@@ -561,7 +581,8 @@ src/renderer/features/watch/watch-controller.ts
 - 同一时刻只允许一轮行情加载或刷新在途；定时器、手动刷新或数据源切换遇到未完成请求时直接跳过，避免轮询叠加。
 - 行情请求在途时只切换工具栏固定标题行中的 `watch-refresh-indicator`，以紧凑的“⏳ 刷新中..”提示状态；标题行保持固定最小高度，不能再把“正在刷新行情...”写入独立布局行。通用 `watch-status` 保留在原有位置并预留固定单行高度，行情失败信息继续写入数据日期旁的 `watch-market-error`，从而避免状态切换改变工具栏高度并推动脑图。
 - 离开盯盘时停止轮询。
-- 保存脑图后重新加载行情。
+- 保存操作通过 renderer 队列和递增 revision 串行提交，只有最新 revision 可以回写内存，避免快速连续拖动或编辑被较早响应覆盖；main process 的脑图 Store 也串行落盘。
+- 结构中股票集合发生变化后重新加载行情；只移动根坐标或调整父子关系时不重新请求行情。
 - 触发盯盘数据导出。
 - 导入盯盘数据前请求用户确认，导入成功后重新 hydrate 脑图并加载行情。
 
@@ -578,6 +599,9 @@ src/renderer/features/watch/watch-view.ts
 职责：
 
 - 渲染空状态提示。
+- 在一个 `.watch-canvas-layer` 中渲染当前展示区全部根树；每棵树使用 `rootPositions` 绝对定位，并用 `data-watch-root-id` 标记。
+- 画布使用 `.watch-canvas-spacer` 提供缩放后的原生滚动范围；节点、文字、连接线、图标和走势 SVG 位于同一缩放层。
+- 当前展示区全部节点保持在 DOM 中，不使用可视区域虚拟化；视口只决定用户看到哪一部分，不参与行情订阅或刷新决策。
 - 渲染分类节点和股票节点 HTML。
 - 渲染分类节点平均涨跌幅、上涨/下跌股票数。
 - 渲染分类子节点时按涨跌幅降序排序；股票节点使用自身涨跌幅，分类节点使用递归平均涨跌幅，无行情节点排在有行情节点后面。排序只影响展示，不写回 `watch-tree.json`。
@@ -590,6 +614,7 @@ src/renderer/features/watch/watch-view.ts
 - 股票 tooltip 显示价格、涨跌幅、TTM 市盈率、换手率、流通市值和持仓状态。
 - 渲染 tooltip 文案。
 - 格式化涨跌幅。
+- 股票 sparkline 始终使用 provider 返回的全部一分钟分时点。放大只扩大统一 SVG 显示层、增加点间可见距离，不重新拉取数据、不抽样丢点，也不伪造更高频数据。
 
 `watch-view.ts` 只根据输入的 view state 生成 DOM 内容，不负责事件绑定、行情加载、保存脑图或轮询。
 
@@ -604,8 +629,10 @@ src/renderer/features/watch/watch-connectors.ts
 职责：
 
 - 在节点 DOM 渲染完成后读取布局坐标。
+- 根据所有根树的逻辑位置和缩放后的实际尺寸计算逻辑画布边界，并同步更新缩放占位层，保证右侧和下方离屏树可通过滚动到达。
 - 计算父子节点之间的贝塞尔曲线路径。
 - 更新 `.watch-connectors` SVG。
+- 把缩放后的 DOM 屏幕坐标除以当前缩放比例，还原到 SVG 逻辑坐标；不同根树之间没有连接线。
 - 读取目标节点的 `data-watch-connector-trend` 决定连接线颜色：上涨红色、下跌绿色、平盘或无行情灰色。连接线模块不重新计算行情指标。
 - 通过 `requestAnimationFrame` 调度重绘。
 
@@ -654,8 +681,9 @@ src/main/watch-tree-store.ts
 职责：
 
 - 读写 `watch-tree.json`。
-- 保存前校验脑图结构。
-- 维护用户自定义分类树和股票叶子节点。
+- 读取后立即把旧单根格式迁移为标准多根格式，保存时只写 `roots` 和 `rootPositions`。
+- 保存前校验根节点类型、展示区内节点 ID 唯一性、根位置引用和有限非负坐标。
+- 维护用户自定义展示区、分类森林、根位置和股票叶子节点。
 
 ### WatchMarketService
 
@@ -693,7 +721,7 @@ src/main/watch-data-transfer-service.ts
 - 导入时校验脑图结构和行情历史结构。
 - 导入成功后覆盖本机盯盘脑图和行情历史缓存。
 
-持仓状态属于 `watch-tree.json` 股票节点字段，因此会随现有脑图数据包直接导出；导入时经过 `validateWatchTreeConfig()` 校验并规范化，不需要单独的数据迁移或附加文件。
+持仓状态属于 `watch-tree.json` 股票节点字段，因此会随现有脑图数据包直接导出；导入时经过 `ensureWatchWorkspaceConfig()` 校验并规范化，不需要单独的数据迁移或附加文件。旧单根导入包可以读取，重新保存和再次导出后统一成为多根标准格式。
 
 ### WatchNewsService
 
@@ -970,7 +998,7 @@ user_data/runs/<run-id>/.agents/skills/research-a-share-stock/
 
 ### watch-tree.json
 
-由 `WatchTreeStore` 维护。保存用户自定义脑图展示区列表、当前激活展示区，以及每个展示区内的脑图结构和股票节点 `industryPosition`、`isHolding` 等用户属性。所有读写和导入都经过 `validateWatchTreeConfig()`；其中仅 `isHolding: true` 会持久化，`false` 和缺失字段统一表示非持仓。导出盯盘数据时会导出完整 `watch-tree.json`，股票数量按所有展示区中的唯一股票 secid 统计。
+由 `WatchTreeStore` 维护。保存用户自定义脑图展示区列表，以及每个展示区的分类根森林、根逻辑坐标和股票节点 `industryPosition`、`isHolding` 等用户属性。标准 workspace 必须包含 `roots` 和 `rootPositions`；缩放比例、滚动位置和所选数据日期不进入该文件。磁盘中的 `activeWorkspaceId` 固定为第一个 workspace，仅用于维持配置结构完整，不表示上次活动标签。所有读写和导入都经过 `ensureWatchWorkspaceConfig()`；其中仅 `isHolding: true` 会持久化，`false` 和缺失字段统一表示非持仓。导出盯盘数据时会导出完整 `watch-tree.json`，股票数量按所有展示区、所有根树中的唯一股票 secid 统计。
 
 ### watch-quotes-cache.json
 
@@ -992,7 +1020,7 @@ interface WatchMarketHistoryCache {
 
 每条 `StockTrend.tradingDate` 必须与所在 `WatchMarketCache.tradingDate` 一致。旧测试数据不作为长期兼容目标。读取到非 `version: 2` 或 trend 缺少交易日标签的缓存时，会按空历史处理；下一次成功刷新会写入新格式。
 
-同一交易日可能由定时刷新、手动刷新或多个展示区分批写入。`WatchMarketCacheStore.write()` 不做整日替换，而是按 `secid` 合并 quote/trend 原子快照：完整的新快照更新对应股票，失败、空结果或本批次未包含的股票保留原有完整快照。`replaceHistory()` 仅用于导入完整历史数据，仍执行整份替换和格式校验。
+同一交易日可能由定时刷新、手动刷新或多个展示区分批写入。`WatchMarketCacheStore` 用内部队列串行执行 `write()` 和 `replaceHistory()` 的完整读改写过程，避免并发请求互相覆盖。`write()` 不做整日替换，而是按 `secid` 合并 quote/trend 原子快照：完整的新快照更新对应股票，失败、空结果或本批次未包含的股票保留原有完整快照。`replaceHistory()` 仅用于导入完整历史数据，仍执行整份替换和格式校验。
 
 ### watch-news.json
 
@@ -1134,10 +1162,9 @@ tests/fixtures/     测试 fixture
 
 当前代码尚未实现：
 
-- 用户在 UI 中配置自定义 AI provider。
+- 用户动态安装任意第三方 AI provider 插件。
 - main process 主动向 renderer 推送盯盘行情刷新事件。
-- 多棵盯盘脑图。
-- 脑图拖拽排序。
+- 同一父节点下手工拖拽排序；当前兄弟节点顺序按行情涨跌幅自动展示。
 - 交易所认证行情或交易功能。
 
 这些能力应基于现有 provider、controller、store 和 IPC 边界增量实现，不应回退到单文件混合状态。

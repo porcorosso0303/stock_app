@@ -139,4 +139,3 @@ interface WatchTreeWorkspace {
 - 缩放后连接线和根树位置一致。
 - 行情刷新不依赖节点是否处于视口、折叠或激活标签页。
 - 全量单元测试、TypeScript 类型检查、生产构建和 Windows 解压版部署校验。
-

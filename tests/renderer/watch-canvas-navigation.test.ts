@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   anchoredWatchCanvasScroll,
   nextWatchCanvasZoom,
+  watchCanvasLogicalPoint,
   watchCanvasHorizontalWheelDelta
 } from "../../src/renderer/features/watch/watch-controller";
 
@@ -25,6 +26,29 @@ describe("watch canvas navigation", () => {
     })).toEqual({
       scrollLeft: 450,
       scrollTop: 270
+    });
+  });
+
+  it("accounts for the scroll container inset when anchoring zoom", () => {
+    expect(anchoredWatchCanvasScroll({
+      scrollLeft: 200,
+      scrollTop: 100,
+      pointerX: 300,
+      pointerY: 240,
+      contentInsetX: 22,
+      contentInsetY: 22,
+      previousZoom: 1,
+      nextZoom: 1.5
+    })).toEqual({
+      scrollLeft: 439,
+      scrollTop: 259
+    });
+  });
+
+  it("converts a pointer to logical canvas coordinates without including panel padding", () => {
+    expect(watchCanvasLogicalPoint(310, 250, { left: 90, top: 50 }, 2)).toEqual({
+      x: 110,
+      y: 100
     });
   });
 

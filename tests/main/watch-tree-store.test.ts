@@ -67,4 +67,29 @@ describe("WatchTreeStore", () => {
     await store.set(migrated);
     expect(JSON.parse(await readFile(path, "utf8"))).not.toHaveProperty("root");
   });
+
+  it("does not persist a runtime workspace switch while saving edits", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "watch-tree-store-"));
+    directories.push(directory);
+    const path = join(directory, "watch-tree.json");
+    const store = new WatchTreeStore(path);
+    const config = {
+      activeWorkspaceId: "second",
+      workspaces: [{
+        id: "first",
+        name: "第一",
+        roots: [],
+        rootPositions: {}
+      }, {
+        id: "second",
+        name: "第二",
+        roots: [{ id: "root", type: "category" as const, name: "分类", children: [] }],
+        rootPositions: { root: { x: 24, y: 24 } }
+      }]
+    };
+
+    await expect(store.set(config)).resolves.toMatchObject({ activeWorkspaceId: "second" });
+    expect(JSON.parse(await readFile(path, "utf8"))).toMatchObject({ activeWorkspaceId: "first" });
+    await expect(new WatchTreeStore(path).get()).resolves.toMatchObject({ activeWorkspaceId: "first" });
+  });
 });

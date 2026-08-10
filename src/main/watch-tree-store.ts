@@ -4,6 +4,7 @@ import { JsonStore } from "./json-store";
 
 export class WatchTreeStore {
   private readonly store: JsonStore<WatchTreeConfig>;
+  private writeQueue: Promise<void> = Promise.resolve();
 
   constructor(path: string) {
     this.store = new JsonStore(path, () => ({}));
@@ -15,7 +16,12 @@ export class WatchTreeStore {
 
   async set(value: unknown): Promise<WatchTreeConfig> {
     const config = ensureWatchWorkspaceConfig(value);
-    await this.store.write(config);
+    const pending = this.writeQueue.then(() => this.store.write({
+      ...config,
+      activeWorkspaceId: config.workspaces?.[0]?.id
+    }));
+    this.writeQueue = pending.then(() => undefined, () => undefined);
+    await pending;
     return config;
   }
 }

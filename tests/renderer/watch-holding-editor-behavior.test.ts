@@ -523,7 +523,7 @@ function savedStock(
   saveWatchTree: ReturnType<typeof vi.fn<(config: WatchTreeConfig) => Promise<WatchTreeConfig>>>
 ): Extract<WatchTreeNode, { type: "stock" }> {
   const savedConfig = saveWatchTree.mock.calls[0]?.[0];
-  const node = savedConfig?.root?.children[0];
+  const node = savedConfig?.workspaces?.[0].roots?.[0].children[0];
   if (node?.type !== "stock") {
     throw new Error("Expected saveWatchTree to receive a stock child");
   }

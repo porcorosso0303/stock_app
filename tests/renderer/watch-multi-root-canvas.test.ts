@@ -5,6 +5,7 @@ import {
   measureWatchCanvas,
   watchConnectorPath
 } from "../../src/renderer/features/watch/watch-connectors";
+import { resolveAvailableWatchRootPosition } from "../../src/renderer/features/watch/watch-controller";
 
 describe("watch multi-root canvas", () => {
   it("renders every root at its persisted logical position", () => {
@@ -54,6 +55,13 @@ describe("watch multi-root canvas", () => {
       { left: 100, top: 40 },
       2
     )).toBe("M 100 30 C 155 30, 145 90, 200 90");
+  });
+
+  it("offsets a new root until it no longer overlaps an existing tree", () => {
+    expect(resolveAvailableWatchRootPosition(
+      { x: 250, y: 160 },
+      [{ x: 24, y: 24, width: 400, height: 300 }]
+    )).toEqual({ x: 442, y: 352 });
   });
 });
 

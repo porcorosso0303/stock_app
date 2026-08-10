@@ -832,4 +832,3 @@ npm run deploy:win-unpacked
 `dist:win` may produce the unpacked application and then fail at the NSIS installer stage if Wine is unavailable. In that specific case, verify the unpacked output exists and continue with `deploy:win-unpacked`; report the installer limitation accurately.
 
 Verify the deployed package contains the current application archive and do not launch it. Notify the user that deployment is complete so they can open and test it themselves.
-

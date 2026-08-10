@@ -117,6 +117,9 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   let newsDebugSecid: string | undefined;
   let newsDebugRefreshInFlight = false;
   let pendingRootPosition: WatchRootPosition | undefined;
+  let watchTreeSaveQueue: Promise<void> = Promise.resolve();
+  let watchTreeSaveRevision = 0;
+  let pendingMarketReload = false;
   const newsBySecid = new Map<string, WatchNewsMessage[]>();
   const workspaceDateStates = new Map<string, WorkspaceDateState>();
   const workspaceMarketStates = new Map<string, WorkspaceMarketState>();
@@ -136,10 +139,18 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       newsBySecid,
       collapsedNodes
     }, connectors.schedule);
+    applyCanvasZoom();
     window.requestAnimationFrame(() => {
       elements.watchPanel.scrollLeft = previousScrollLeft;
       elements.watchPanel.scrollTop = previousScrollTop;
     });
+  }
+
+  function applyCanvasZoom(): void {
+    const layer = elements.watchTree.querySelector<HTMLElement>(".watch-canvas-layer");
+    if (layer) {
+      layer.style.transform = `scale(${watchCanvasZoom})`;
+    }
   }
 
   function activeRoots() {
@@ -541,12 +552,12 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     setMarketRefreshing(true);
     elements.watchMarketError.textContent = "";
     try {
-      for (const workspaceId of workspaceIds) {
-        await updateWorkspaceMarketData(
+      await Promise.all(workspaceIds.map((workspaceId) => (
+        updateWorkspaceMarketData(
           workspaceId,
           (secids) => load(secids, workspaceId)
-        );
-      }
+        )
+      )));
       if (activeWorkspaceId()) {
         elements.watchStatus.textContent = "";
       }
@@ -655,6 +666,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
         id: crypto.randomUUID(),
         name: nextWorkspaceName()
       });
+      watchCanvasZoom = 1;
       collapsedNodes.clear();
       await persistTree(false);
     } catch (error) {
@@ -725,7 +737,11 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     if (!workspace || !confirm(`确定删除展示区「${workspace.name}」吗？`)) {
       return;
     }
+    const previousWorkspaceId = activeWorkspaceId();
     config = deleteWatchWorkspace(config, workspaceId);
+    if (activeWorkspaceId() !== previousWorkspaceId) {
+      watchCanvasZoom = 1;
+    }
     collapsedNodes.clear();
     await persistTree(false);
   }
@@ -941,16 +957,20 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       if (nextZoom === watchCanvasZoom) {
         return;
       }
-      const rect = elements.watchPanel.getBoundingClientRect();
+      const panelRect = elements.watchPanel.getBoundingClientRect();
+      const treeRect = elements.watchTree.getBoundingClientRect();
       const nextScroll = anchoredWatchCanvasScroll({
         scrollLeft: elements.watchPanel.scrollLeft,
         scrollTop: elements.watchPanel.scrollTop,
-        pointerX: event.clientX - rect.left,
-        pointerY: event.clientY - rect.top,
+        pointerX: event.clientX - panelRect.left,
+        pointerY: event.clientY - panelRect.top,
+        contentInsetX: treeRect.left + elements.watchPanel.scrollLeft - panelRect.left,
+        contentInsetY: treeRect.top + elements.watchPanel.scrollTop - panelRect.top,
         previousZoom: watchCanvasZoom,
         nextZoom
       });
       watchCanvasZoom = nextZoom;
+      applyCanvasZoom();
       connectors.schedule();
       window.requestAnimationFrame(() => {
         elements.watchPanel.scrollLeft = nextScroll.scrollLeft;
@@ -1133,19 +1153,35 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   }
 
   function rootPositionFromPointer(clientX: number, clientY: number): WatchRootPosition {
-    const rect = elements.watchPanel.getBoundingClientRect();
-    const candidate = {
-      x: Math.max(0, (elements.watchPanel.scrollLeft + clientX - rect.left) / watchCanvasZoom),
-      y: Math.max(0, (elements.watchPanel.scrollTop + clientY - rect.top) / watchCanvasZoom)
-    };
-    const occupied = Object.values(getActiveWatchWorkspace(config).rootPositions ?? {});
-    while (occupied.some((position) => (
-      Math.abs(position.x - candidate.x) < 80 && Math.abs(position.y - candidate.y) < 80
-    ))) {
-      candidate.x += 48;
-      candidate.y += 48;
-    }
-    return candidate;
+    const candidate = watchCanvasLogicalPoint(
+      clientX,
+      clientY,
+      elements.watchTree.getBoundingClientRect(),
+      watchCanvasZoom
+    );
+    return resolveAvailableWatchRootPosition(candidate, activeRootBounds());
+  }
+
+  function activeRootBounds(): WatchRootBounds[] {
+    const workspace = getActiveWatchWorkspace(config);
+    const renderedById = new Map(
+      [...elements.watchTree.querySelectorAll<HTMLElement>(".watch-root-tree[data-watch-root-id]")]
+        .map((element) => {
+          const id = element.dataset.watchRootId ?? "";
+          const position = workspace.rootPositions?.[id];
+          const rect = element.getBoundingClientRect();
+          return [id, position ? {
+            ...position,
+            width: rect.width / watchCanvasZoom,
+            height: rect.height / watchCanvasZoom
+          } : undefined] as const;
+        })
+    );
+    return (workspace.roots ?? []).map((root) => renderedById.get(root.id) ?? {
+      ...(workspace.rootPositions?.[root.id] ?? { x: 24, y: 24 }),
+      width: 220,
+      height: 100
+    });
   }
 
   function beginPan(event: PointerEvent): void {
@@ -1351,9 +1387,20 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   }
 
   async function persistTree(reloadMarketData = true): Promise<void> {
-    config = ensureWatchWorkspaceConfig(await api.saveWatchTree(ensureWatchWorkspaceConfig(config)));
+    const revision = ++watchTreeSaveRevision;
+    const snapshot = ensureWatchWorkspaceConfig(config);
+    pendingMarketReload ||= reloadMarketData;
+    const pending = watchTreeSaveQueue.then(() => api.saveWatchTree(snapshot));
+    watchTreeSaveQueue = pending.then(() => undefined, () => undefined);
+    const saved = await pending;
+    if (revision !== watchTreeSaveRevision) {
+      return;
+    }
+    config = ensureWatchWorkspaceConfig(saved);
     render();
-    if (reloadMarketData) {
+    const shouldReloadMarket = pendingMarketReload;
+    pendingMarketReload = false;
+    if (shouldReloadMarket) {
       await loadMarketData();
     }
   }
@@ -1447,6 +1494,8 @@ interface WatchCanvasAnchorInput {
   scrollTop: number;
   pointerX: number;
   pointerY: number;
+  contentInsetX?: number;
+  contentInsetY?: number;
   previousZoom: number;
   nextZoom: number;
 }
@@ -1455,16 +1504,59 @@ export function anchoredWatchCanvasScroll(input: WatchCanvasAnchorInput): {
   scrollLeft: number;
   scrollTop: number;
 } {
-  const logicalX = (input.scrollLeft + input.pointerX) / input.previousZoom;
-  const logicalY = (input.scrollTop + input.pointerY) / input.previousZoom;
+  const contentInsetX = input.contentInsetX ?? 0;
+  const contentInsetY = input.contentInsetY ?? 0;
+  const logicalX = (input.scrollLeft + input.pointerX - contentInsetX) / input.previousZoom;
+  const logicalY = (input.scrollTop + input.pointerY - contentInsetY) / input.previousZoom;
   return {
-    scrollLeft: logicalX * input.nextZoom - input.pointerX,
-    scrollTop: logicalY * input.nextZoom - input.pointerY
+    scrollLeft: logicalX * input.nextZoom - input.pointerX + contentInsetX,
+    scrollTop: logicalY * input.nextZoom - input.pointerY + contentInsetY
+  };
+}
+
+export function watchCanvasLogicalPoint(
+  clientX: number,
+  clientY: number,
+  canvasRect: Pick<DOMRect, "left" | "top">,
+  zoom: number
+): WatchRootPosition {
+  const scale = Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
+  return {
+    x: Math.max(0, (clientX - canvasRect.left) / scale),
+    y: Math.max(0, (clientY - canvasRect.top) / scale)
   };
 }
 
 export function watchCanvasHorizontalWheelDelta(deltaX: number, deltaY: number): number {
   return Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : deltaY;
+}
+
+export interface WatchRootBounds extends WatchRootPosition {
+  width: number;
+  height: number;
+}
+
+export function resolveAvailableWatchRootPosition(
+  requested: WatchRootPosition,
+  occupied: WatchRootBounds[]
+): WatchRootPosition {
+  const candidate = { ...requested };
+  const newRootSize = { width: 220, height: 100 };
+  const gap = 24;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const overlaps = occupied.some((root) => (
+      candidate.x < root.x + root.width + gap &&
+      candidate.x + newRootSize.width + gap > root.x &&
+      candidate.y < root.y + root.height + gap &&
+      candidate.y + newRootSize.height + gap > root.y
+    ));
+    if (!overlaps) {
+      return candidate;
+    }
+    candidate.x += 48;
+    candidate.y += 48;
+  }
+  return candidate;
 }
 
 function formatNewsAnalysisStatus(result: Awaited<ReturnType<StockResearchApi["analyzeHoldingWatchNews"]>>): string {

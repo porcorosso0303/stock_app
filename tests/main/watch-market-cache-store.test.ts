@@ -182,6 +182,50 @@ describe("WatchMarketCacheStore", () => {
     }
   });
 
+  it("serializes concurrent workspace writes without dropping either stock", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "watch-market-cache-"));
+    try {
+      const store = new WatchMarketCacheStore(join(directory, "watch-quotes-cache.json"));
+      await Promise.all([
+        store.write({
+          tradingDate: "2026-08-03",
+          updatedAt: "2026-08-03T01:31:00.000Z",
+          quotes: [{ secid: "1.600001", fetchedAt: "2026-08-03T01:31:00.000Z", changePercent: 1.2 }],
+          trends: [{
+            secid: "1.600001",
+            tradingDate: "2026-08-03",
+            fetchedAt: "2026-08-03T01:31:00.000Z",
+            points: [{ time: "09:31", changePercent: 1.2 }]
+          }]
+        }),
+        store.write({
+          tradingDate: "2026-08-03",
+          updatedAt: "2026-08-03T01:31:01.000Z",
+          quotes: [{ secid: "1.600002", fetchedAt: "2026-08-03T01:31:01.000Z", changePercent: -0.8 }],
+          trends: [{
+            secid: "1.600002",
+            tradingDate: "2026-08-03",
+            fetchedAt: "2026-08-03T01:31:01.000Z",
+            points: [{ time: "09:31", changePercent: -0.8 }]
+          }]
+        })
+      ]);
+
+      await expect(store.getForDate("2026-08-03")).resolves.toMatchObject({
+        quotes: expect.arrayContaining([
+          expect.objectContaining({ secid: "1.600001" }),
+          expect.objectContaining({ secid: "1.600002" })
+        ]),
+        trends: expect.arrayContaining([
+          expect.objectContaining({ secid: "1.600001" }),
+          expect.objectContaining({ secid: "1.600002" })
+        ])
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("never combines quote and trend from different incomplete writes", async () => {
     const directory = await mkdtemp(join(tmpdir(), "watch-market-cache-"));
     try {

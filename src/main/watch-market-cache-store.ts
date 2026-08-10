@@ -5,6 +5,7 @@ const MAX_TRADING_DAYS = 5;
 
 export class WatchMarketCacheStore {
   private readonly store: JsonStore<WatchMarketHistoryCache>;
+  private writeQueue: Promise<void> = Promise.resolve();
 
   constructor(path: string) {
     this.store = new JsonStore(path, () => ({ version: 2, days: [] }));
@@ -16,18 +17,20 @@ export class WatchMarketCacheStore {
   }
 
   async write(cache: WatchMarketCache): Promise<void> {
-    const history = await this.getHistory();
-    const daysByDate = new Map(history.days.map((day) => [day.tradingDate, day]));
-    const existing = daysByDate.get(cache.tradingDate);
-    daysByDate.set(cache.tradingDate, mergeCacheDay(existing ?? {
-      tradingDate: cache.tradingDate,
-      updatedAt: cache.updatedAt,
-      quotes: [],
-      trends: []
-    }, cache));
-    await this.replaceHistory({
-      version: 2,
-      days: sortAndLimitDays([...daysByDate.values()])
+    await this.enqueueWrite(async () => {
+      const history = await this.getHistory();
+      const daysByDate = new Map(history.days.map((day) => [day.tradingDate, day]));
+      const existing = daysByDate.get(cache.tradingDate);
+      daysByDate.set(cache.tradingDate, mergeCacheDay(existing ?? {
+        tradingDate: cache.tradingDate,
+        updatedAt: cache.updatedAt,
+        quotes: [],
+        trends: []
+      }, cache));
+      await this.writeHistory({
+        version: 2,
+        days: sortAndLimitDays([...daysByDate.values()])
+      });
     });
   }
 
@@ -48,8 +51,18 @@ export class WatchMarketCacheStore {
       version: 2 as const,
       days: sortAndLimitDays(history.days)
     };
-    await this.store.write(normalized);
+    await this.enqueueWrite(() => this.writeHistory(normalized));
     return normalized;
+  }
+
+  private async writeHistory(normalized: WatchMarketHistoryCache): Promise<void> {
+    await this.store.write(normalized);
+  }
+
+  private enqueueWrite<T>(operation: () => Promise<T>): Promise<T> {
+    const pending = this.writeQueue.then(operation);
+    this.writeQueue = pending.then(() => undefined, () => undefined);
+    return pending;
   }
 }
 

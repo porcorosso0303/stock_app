@@ -19,7 +19,7 @@ const DEFAULT_WATCH_WORKSPACE_ID = "default";
 const DEFAULT_WATCH_WORKSPACE_NAME = "默认";
 const DEFAULT_ROOT_X = 24;
 const DEFAULT_ROOT_Y = 24;
-const DEFAULT_ROOT_OFFSET = 48;
+const DEFAULT_ROOT_OFFSET = 360;
 
 export interface WatchHoldingStock {
   secid: string;
