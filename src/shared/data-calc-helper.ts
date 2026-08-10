@@ -82,6 +82,16 @@ export function normalizeIntradayTrendPoints(
     .sort((left, right) => trendMinute(left.time) - trendMinute(right.time));
 }
 
+export function hasCompleteIntradayCoverage(
+  points: Pick<StockTrendPoint, "time">[],
+  tradingDate: string,
+  now: Date = new Date()
+): boolean {
+  const requiredMinute = requiredIntradayCoverageMinute(tradingDate, now);
+  const pointTimes = new Set(points.map((point) => point.time));
+  return requiredTradingMinutes(requiredMinute).every((time) => pointTimes.has(time));
+}
+
 export function calculateSectorStrengthIndex(
   quotes: SectorStrengthQuoteInput[]
 ): SectorStrengthIndex {
@@ -266,6 +276,67 @@ function inferStockLimitRate(secid: string): number {
 function trendMinute(time: string): number {
   const [hour = "0", minute = "0"] = time.split(":");
   return Number(hour) * 60 + Number(minute);
+}
+
+function requiredIntradayCoverageMinute(tradingDate: string, now: Date): string {
+  const currentDate = formatChinaDate(now);
+  if (tradingDate !== currentDate) {
+    return "15:00";
+  }
+  const currentMinute = formatChinaMinute(now);
+  if (currentMinute < "09:30") {
+    return "15:00";
+  }
+  if (currentMinute <= "11:30") {
+    return currentMinute;
+  }
+  if (currentMinute < "13:00") {
+    return "11:30";
+  }
+  if (currentMinute <= "15:00") {
+    return currentMinute;
+  }
+  return "15:00";
+}
+
+function requiredTradingMinutes(endTime: string): string[] {
+  const endMinute = trendMinute(endTime);
+  return [
+    ...tradingSessionMinutes("09:30", "11:30"),
+    ...tradingSessionMinutes("13:01", "15:00")
+  ].filter((time) => trendMinute(time) <= endMinute);
+}
+
+function tradingSessionMinutes(startTime: string, endTime: string): string[] {
+  const minutes: string[] = [];
+  for (let minute = trendMinute(startTime); minute <= trendMinute(endTime); minute += 1) {
+    const hour = Math.floor(minute / 60);
+    const minuteWithinHour = minute % 60;
+    minutes.push(`${String(hour).padStart(2, "0")}:${String(minuteWithinHour).padStart(2, "0")}`);
+  }
+  return minutes;
+}
+
+function formatChinaDate(date: Date): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+  const byType = new Map(parts.map((part) => [part.type, part.value]));
+  return `${byType.get("year")}-${byType.get("month")}-${byType.get("day")}`;
+}
+
+function formatChinaMinute(date: Date): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Shanghai",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).formatToParts(date);
+  const byType = new Map(parts.map((part) => [part.type, part.value]));
+  return `${byType.get("hour")}:${byType.get("minute")}`;
 }
 
 function roundPercentDelta(value: number): number {

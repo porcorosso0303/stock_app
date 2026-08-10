@@ -30,6 +30,7 @@ import {
   validateSecid
 } from "../../../shared/watch-tree";
 import type { RendererElements } from "../../app/dom";
+import { hasCompleteIntradayCoverage } from "../../../shared/data-calc-helper";
 import {
   closeWatchContextMenu,
   openEmptyWatchContextMenu,
@@ -1699,7 +1700,7 @@ function isCompleteStockSnapshot(
   return quote.changePercent !== undefined &&
     !quote.errorMessage &&
     trend.tradingDate === tradingDate &&
-    trend.points.length > 0 &&
+    hasCompleteIntradayCoverage(trend.points, trend.tradingDate) &&
     !trend.errorMessage;
 }
 

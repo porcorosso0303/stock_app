@@ -1,4 +1,10 @@
-import type { StockQuote, StockSearchResult, StockTrend, WatchMarketRequestOptions } from "../shared/types";
+import type {
+  StockQuote,
+  StockSearchResult,
+  StockTrend,
+  StockTrendErrorKind,
+  WatchMarketRequestOptions
+} from "../shared/types";
 import { validateSecid } from "../shared/watch-tree";
 import {
   calculateChangePercent,
@@ -110,7 +116,8 @@ export class EastMoneyQuoteService {
         fetchedAt,
         tradingDate: trendData.tradingDate,
         points: trendData.points,
-        errorMessage: trendData.errorMessage
+        errorMessage: trendData.errorMessage,
+        ...(trendData.errorMessage ? { errorKind: "incomplete" as const } : {})
       };
     } catch (error) {
       return {
@@ -118,7 +125,8 @@ export class EastMoneyQuoteService {
         tradingDate: formatChinaDate(this.now()),
         fetchedAt,
         points: [],
-        errorMessage: error instanceof Error ? error.message : String(error)
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorKind: classifyTrendError(error)
       };
     }
   }
@@ -145,7 +153,8 @@ export class EastMoneyQuoteService {
         fetchedAt,
         tradingDate: trendData.tradingDate,
         points: trendData.points,
-        errorMessage: trendData.errorMessage
+        errorMessage: trendData.errorMessage,
+        ...(trendData.errorMessage ? { errorKind: "incomplete" as const } : {})
       };
     } catch (error) {
       return {
@@ -153,7 +162,8 @@ export class EastMoneyQuoteService {
         tradingDate,
         fetchedAt,
         points: [],
-        errorMessage: error instanceof Error ? error.message : String(error)
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorKind: classifyTrendError(error)
       };
     }
   }
@@ -179,6 +189,11 @@ export class EastMoneyQuoteService {
       clearTimeout(timeout);
     }
   }
+}
+
+function classifyTrendError(error: unknown): StockTrendErrorKind {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("未找到") ? "not-found" : "request-failed";
 }
 
 async function mapWithConcurrency<T, U>(

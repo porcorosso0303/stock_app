@@ -159,12 +159,15 @@ export interface StockTrendPoint {
   changePercent: number;
 }
 
+export type StockTrendErrorKind = "not-found" | "request-failed" | "incomplete";
+
 export interface StockTrend {
   secid: string;
   tradingDate: string;
   points: StockTrendPoint[];
   fetchedAt: string;
   errorMessage?: string;
+  errorKind?: StockTrendErrorKind;
 }
 
 export interface WatchMarketData {

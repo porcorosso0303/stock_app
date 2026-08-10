@@ -265,6 +265,7 @@ interface AppConfig {
 
 - `calculateChangePercent`: 用价格和昨收价计算涨跌幅。
 - `normalizeIntradayTrendPoints`: 把 provider 解析出的分时价格标准化为 `StockTrendPoint`。
+- `hasCompleteIntradayCoverage`: 按中国时区和目标交易日判断一分钟分时是否覆盖当前应有区间。交易中要求从 `09:30` 连续覆盖到当前分钟，午休要求覆盖到 `11:30`，收盘后或历史交易日要求覆盖到 `15:00`；东财历史分钟数据不固定提供 `13:00`，下午完整性从 `13:01` 开始校验。
 - `calculateSectorStrengthIndex`: 板块强度指数算法。
 - `calculateSuddenStockMove`: 股票分时异动判定算法。
 
@@ -564,6 +565,7 @@ src/renderer/features/watch/watch-controller.ts
 - 维护当前脑图配置 `WatchTreeConfig`。
 - 维护顶部展示区标签。每个标签对应一个独立 `WatchTreeWorkspace` 多根画布；创建、删除、重命名会保存到 `watch-tree.json`，切换标签只修改 renderer 内存中的 active 展示区，不持久化。用户点击标签切换展示区，双击标签或右键选择“重命名”进入内联编辑，点击 `+` 会立即创建一个自动命名的展示区，点击标签 `×` 删除展示区；至少保留一个展示区。标签切换只使用已经保存在对应 workspace market state 中的数据重绘，不主动等待行情接口。每个展示区独立保留 `quotes`、`trends`、行情历史和数据日期状态。
 - 维护当前行情 `quotes` 和 `trends`。
+- 合并刷新结果时只把通过 `hasCompleteIntradayCoverage()` 的同日 quote/trend 组合视为可保留快照。实时或历史请求失败时可以继续显示此前已经完整的同日快照，但不能把只覆盖上午或缺少分钟点的缓存误当作完整行情绘图。
 - 行情刷新直接遍历配置中的所有 workspace 和所有根树，不读取 DOM 可见性；各 workspace 请求并发启动，慢请求不会阻止其他展示区先完成本轮更新。根树位于滚动视口之外或分类处于折叠状态时，其股票仍继续更新。非当前展示区刷新只更新对应内存 state，不重绘当前画面，切回时立即使用最新 state。分类统计由 view 在渲染当前展示区时根据该展示区行情计算；消息列表按当前展示区股票读取，持仓股后台分析则由 main process 根据完整配置收集全部展示区持仓股。
 - 维护折叠节点集合。
 - 维护股票搜索选择状态。
@@ -697,8 +699,11 @@ src/main/watch-market-service.ts
 
 - 根据中国时区日期判断同日缓存。
 - 同日缓存完整时直接返回缓存。
-- 缓存缺失、缺字段或走势点异常时调用 `MarketDataProvider` 重新获取。
+- 缓存缺失、缺字段、缺少应有分钟或走势点异常时调用 `MarketDataProvider` 重新获取。缓存完整性和 renderer 快照完整性共用 `data-calc-helper.ts` 的 `hasCompleteIntradayCoverage()`，避免主进程拒绝残缺缓存后 renderer 又从历史列表中重新采用它。
+- 交易时段使用 provider 的无日期实时分时接口；午休、收盘后、开盘前和周末使用 `MarketDataProvider.listTrends(secids, { tradingDate })` 拉取应展示交易日的完整一分钟历史数据。强制刷新只表示绕过现有完整缓存，不会在收盘后改走实时分时接口。
 - 支持按指定 `tradingDate` 读取行情。服务先查 `watch-quotes-cache.json` 中同日期完整缓存；没有或不完整时调用 `MarketDataProvider.listTrends(secids, { tradingDate })` 拉取指定日期分时，并用每只股票最后一个分时点生成该日期的展示 quote。
+- 自动确定最近交易日时，若 provider 对全部目标股票都明确返回 `errorKind: "not-found"`，服务按工作日向前查找，最多检查 10 个候选工作日以跨越长假；一旦返回行情、残缺响应或 `request-failed` 就停止回查。网络故障不能被误判为休市并静默展示更早的旧行情。
+- 自动加载最近交易日历史数据时并发获取最新 quote 元数据与指定日期分时：价格和涨跌幅采用该日期最后一个分时点，TTM 市盈率、换手率、流通市值等附加字段沿用 quote provider 的标准化结果，避免数据日期与涨跌幅不一致。
 - 将走势点价格归一化为相对昨收的涨跌幅。
 - 当 quote 接口不可用但 trend 有最新点时，用 trend 最新点兜底生成可展示 quote，避免有走势数据时仍显示“暂无行情”。
 - 刷新时把最新 quote 合并进同日 trend。
@@ -780,7 +785,7 @@ interface MarketDataProvider {
   readonly label: string;
   readonly cacheBehavior?: "standard" | "ephemeral";
   listQuotes(secids: string[]): Promise<StockQuote[]>;
-  listTrends(secids: string[]): Promise<StockTrend[]>;
+  listTrends(secids: string[], options?: WatchMarketRequestOptions): Promise<StockTrend[]>;
   searchStocks(query: string): Promise<StockSearchResult[]>;
 }
 ```
@@ -795,7 +800,7 @@ src/shared/data-calc-helper.ts
 src/main/east-money-quote-service.ts
 ```
 
-`SelectableMarketDataProvider` 是运行时代理 provider。`WatchMarketService`、IPC 和 renderer 始终依赖同一个 `MarketDataProvider` 接口；数据源设置弹窗保存后只改变代理内部当前 provider。选择 mock provider 时会调用其 `reset()`，让模拟回放从最近真实交易日第一个分时点重新开始。
+`SelectableMarketDataProvider` 是运行时代理 provider。`WatchMarketService`、IPC 和 renderer 始终依赖同一个 `MarketDataProvider` 接口；数据源设置弹窗保存后只改变代理内部当前 provider。代理必须把 `WatchMarketRequestOptions` 原样传给当前 provider，尤其不能丢失收盘后和历史日期请求使用的 `tradingDate`。选择 mock provider 时会调用其 `reset()`，让模拟回放从最近真实交易日第一个分时点重新开始。
 
 `EastMoneyMarketDataProvider` 是 provider 适配器。`EastMoneyQuoteService` 负责东方财富公开接口：
 
@@ -804,7 +809,7 @@ src/main/east-money-quote-service.ts
 - 当日分时走势。分时请求必须包含完整 `fields1=f1...f13`，确保返回中带有 `prePrice` 昨收价；适配器用每个分时价格相对昨收价计算 `StockTrendPoint.changePercent`。
 - 指定交易日历史 1 分钟走势。适配器使用 `push2his.eastmoney.com/api/qt/stock/kline/get?klt=1&beg=YYYYMMDD&end=YYYYMMDD`，用返回的 `preKPrice` 作为昨收价计算涨跌幅。该接口的第一根 1 分钟 K 线通常从 `09:31` 开始，适配器会用第一根 K 线开盘价补一个 `09:30` 点，保证缓存完整性校验仍从开盘时间开始。
 - 东方财富返回格式解析。
-- 失败时返回可展示的 error message。
+- 失败时返回可展示的 error message，并用 `StockTrend.errorKind` 提供统一错误类别：`not-found` 表示该日期确认无行情，`request-failed` 表示网络或服务请求失败，`incomplete` 表示响应存在但分时不完整。上层只依赖标准类别，不解析各 provider 的原始错误文本。
 
 生产环境在 `src/main/index.ts` 中通过 `createElectronNetFetch(net)` 向 `EastMoneyMarketDataProvider` 注入网络实现。该适配器位于 `east-money-provider.ts`，使用 Electron `net.request` 和 Chromium 网络栈读取 Windows 系统代理，把响应转换为 `EastMoneyQuoteService` 依赖的 fetch-like 结构。收到 `AbortSignal` 时，适配器必须立即 reject 并调用 `ClientRequest.abort()` 释放底层代理连接，不能依赖 `net.fetch` 在代理链路中的 abort 行为。
 

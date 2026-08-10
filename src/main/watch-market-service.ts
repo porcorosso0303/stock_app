@@ -7,7 +7,10 @@ import type {
   WatchMarketData
 } from "../shared/types";
 import type { WatchMarketRefreshOptions } from "../shared/ipc";
+import { hasCompleteIntradayCoverage } from "../shared/data-calc-helper";
 import type { MarketDataProvider } from "./modules/watch/market-data/market-data-provider";
+
+const MAX_LATEST_TRADING_DATE_LOOKBACK_WEEKDAYS = 10;
 
 interface WatchMarketCacheStoreLike {
   getForDate(date: string): Promise<WatchMarketCache | undefined>;
@@ -42,13 +45,18 @@ export class WatchMarketService {
       }
     }
 
-    return await this.fetchFresh(secids, currentDate);
+    return this.shouldUseLiveTrends(now)
+      ? await this.fetchFresh(secids, currentDate)
+      : await this.fetchLatestTradingDate(secids, requiredLatestCacheTradingDate(now));
   }
 
   async refresh(secids: string[], options: WatchMarketRefreshOptions = {}): Promise<WatchMarketData> {
     const now = this.now();
-    if (options.forceLatest || isTradingSession(now)) {
+    if (this.shouldUseLiveTrends(now)) {
       return await this.fetchFresh(secids, formatChinaDate(now));
+    }
+    if (options.forceLatest) {
+      return await this.fetchLatestTradingDate(secids, requiredLatestCacheTradingDate(now));
     }
     return await this.get(secids);
   }
@@ -121,8 +129,55 @@ export class WatchMarketService {
     };
   }
 
+  private async fetchLatestTradingDate(secids: string[], tradingDate: string): Promise<WatchMarketData> {
+    const [rawQuotes, initialTrends] = await Promise.all([
+      this.marketDataProvider.listQuotes(secids),
+      this.marketDataProvider.listTrends(secids, { tradingDate })
+    ]);
+    let resolvedTradingDate = tradingDate;
+    let providerTrends = initialTrends;
+    let candidateDate = tradingDate;
+    for (
+      let attempt = 0;
+      attempt < MAX_LATEST_TRADING_DATE_LOOKBACK_WEEKDAYS && isConfirmedNonTradingDate(secids, providerTrends);
+      attempt += 1
+    ) {
+      candidateDate = previousChinaWeekday(candidateDate);
+      const candidateTrends = await this.marketDataProvider.listTrends(secids, { tradingDate: candidateDate });
+      if (!isConfirmedNonTradingDate(secids, candidateTrends)) {
+        resolvedTradingDate = candidateDate;
+        providerTrends = candidateTrends;
+        break;
+      }
+    }
+    const updatedAt = this.now().toISOString();
+    const trends = normalizeSelectedDateTrends(secids, providerTrends, resolvedTradingDate, updatedAt);
+    const quotes = mergeQuoteMetadata(rawQuotes, quotesFromTrends(secids, trends, updatedAt));
+    const cache = {
+      tradingDate: resolvedTradingDate,
+      quotes,
+      trends,
+      updatedAt
+    };
+    if (!this.usesEphemeralProvider() && hasAnyUsableMarketData(cache)) {
+      await this.cacheStore.write(cache);
+    }
+    return {
+      tradingDate: resolvedTradingDate,
+      quotes,
+      trends,
+      history: await this.historyWith(cache),
+      updatedAt,
+      fromCache: false
+    };
+  }
+
   private usesEphemeralProvider(): boolean {
     return this.marketDataProvider.cacheBehavior === "ephemeral";
+  }
+
+  private shouldUseLiveTrends(now: Date): boolean {
+    return this.usesEphemeralProvider() || isTradingSession(now);
   }
 
   private async findUsableCache(
@@ -186,19 +241,40 @@ function normalizeSelectedDateTrends(
   fetchedAt: string
 ): StockTrend[] {
   const trendsBySecid = new Map(trends.map((trend) => [trend.secid, trend]));
+  const coverageTime = new Date(fetchedAt);
   return secids.map((secid) => {
     const trend = trendsBySecid.get(secid);
-    if (trend?.tradingDate === tradingDate && trend.points.length > 0 && !trend.errorMessage) {
+    const hasMatchingUsableTrend = trend?.tradingDate === tradingDate &&
+      trend.points.length > 0 &&
+      !trend.errorMessage;
+    if (
+      hasMatchingUsableTrend &&
+      hasCompleteIntradayCoverage(trend.points, tradingDate, coverageTime)
+    ) {
       return trend;
     }
+    const hasIncompletePoints = hasMatchingUsableTrend && trend.points.length > 0;
     return {
       secid,
       tradingDate,
       fetchedAt: trend?.fetchedAt ?? fetchedAt,
       points: [],
-      errorMessage: trend?.errorMessage ?? `未找到 ${tradingDate} 行情`
+      errorMessage: trend?.errorMessage ?? (
+        hasIncompletePoints
+          ? `${tradingDate} 行情数据不完整`
+          : `未找到 ${tradingDate} 行情`
+      ),
+      errorKind: trend?.errorKind ?? (hasIncompletePoints ? "incomplete" : "not-found")
     };
   });
+}
+
+function isConfirmedNonTradingDate(secids: string[], trends: StockTrend[]): boolean {
+  if (secids.length === 0) {
+    return false;
+  }
+  const trendsBySecid = new Map(trends.map((trend) => [trend.secid, trend]));
+  return secids.every((secid) => trendsBySecid.get(secid)?.errorKind === "not-found");
 }
 
 function coversSecids(cache: WatchMarketCache, secids: string[], now: Date): boolean {
@@ -210,7 +286,7 @@ function coversSecids(cache: WatchMarketCache, secids: string[], now: Date): boo
       .filter((trend) => hasOrderedTrendPoints(trend))
       .filter((trend) => hasUsableTrendChangePercents(trend))
       .filter((trend) => hasNoFutureTrendPointsAtUpdate(trend, cache.tradingDate, cache.updatedAt))
-      .filter((trend) => hasRequiredCoverage(trend, cache.tradingDate, now))
+      .filter((trend) => hasCompleteIntradayCoverage(trend.points, cache.tradingDate, now))
       .map((trend) => trend.secid)
   );
   return secids.every((secid) => quoteSecids.has(secid) && trendSecids.has(secid));
@@ -276,33 +352,6 @@ function hasNoFutureTrendPointsAtUpdate(
   return trend.points.every((point) => trendMinute(point.time) <= updateTrendMinute);
 }
 
-function hasRequiredCoverage(trend: StockTrend, tradingDate: string, now: Date): boolean {
-  const requiredMinute = requiredCoverageMinute(tradingDate, now);
-  const pointTimes = new Set(trend.points.map((point) => point.time));
-  return requiredTradingMinutes(requiredMinute).every((time) => pointTimes.has(time));
-}
-
-function requiredCoverageMinute(tradingDate: string, now: Date): string {
-  const currentDate = formatChinaDate(now);
-  if (tradingDate !== currentDate) {
-    return "15:00";
-  }
-  const currentMinute = formatChinaMinute(now.toISOString());
-  if (currentMinute < "09:30") {
-    return "15:00";
-  }
-  if (currentMinute <= "11:30") {
-    return currentMinute;
-  }
-  if (currentMinute < "13:00") {
-    return "11:30";
-  }
-  if (currentMinute <= "15:00") {
-    return currentMinute;
-  }
-  return "15:00";
-}
-
 function fillUnavailableQuotesFromTrends(
   quotes: StockQuote[],
   trends: StockTrend[]
@@ -324,6 +373,14 @@ function fillUnavailableQuotesFromTrends(
       errorMessage: undefined
     };
   });
+}
+
+function mergeQuoteMetadata(rawQuotes: StockQuote[], datedQuotes: StockQuote[]): StockQuote[] {
+  const rawQuotesBySecid = new Map(rawQuotes.map((quote) => [quote.secid, quote]));
+  return datedQuotes.map((quote) => ({
+    ...rawQuotesBySecid.get(quote.secid),
+    ...quote
+  }));
 }
 
 function quotesFromTrends(
@@ -350,36 +407,6 @@ function quotesFromTrends(
       errorMessage: trend.errorMessage
     };
   });
-}
-
-function requiredTradingMinutes(endTime: string): string[] {
-  const endMinute = trendMinute(endTime);
-  const minutes: string[] = [];
-  for (const time of tradingSessionMinutes("09:30", "11:30")) {
-    if (trendMinute(time) <= endMinute) {
-      minutes.push(time);
-    }
-  }
-  for (const time of tradingSessionMinutes("13:01", "15:00")) {
-    if (trendMinute(time) <= endMinute) {
-      minutes.push(time);
-    }
-  }
-  return minutes;
-}
-
-function tradingSessionMinutes(startTime: string, endTime: string): string[] {
-  const minutes: string[] = [];
-  for (let minute = trendMinute(startTime); minute <= trendMinute(endTime); minute += 1) {
-    minutes.push(formatMinute(minute));
-  }
-  return minutes;
-}
-
-function formatMinute(value: number): string {
-  const hour = Math.floor(value / 60);
-  const minute = value % 60;
-  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
 function latestTrendPoint(trend: StockTrend | undefined): StockTrend["points"][number] | undefined {

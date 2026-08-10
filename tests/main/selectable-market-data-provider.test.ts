@@ -18,6 +18,18 @@ describe("SelectableMarketDataProvider", () => {
     expect(selector.id).toBe("mock-cache");
     expect(selector.label).toBe("模拟数据");
   });
+
+  it("forwards requested trading dates to the selected provider", async () => {
+    const eastMoney = provider("east-money", "东方财富");
+    const selector = new SelectableMarketDataProvider([eastMoney], "east-money");
+
+    await selector.listTrends(["1.600001"], { tradingDate: "2026-08-10" });
+
+    expect(eastMoney.listTrends).toHaveBeenCalledWith(
+      ["1.600001"],
+      { tradingDate: "2026-08-10" }
+    );
+  });
 });
 
 function provider(id: MarketDataProvider["id"], label: string): MarketDataProvider {

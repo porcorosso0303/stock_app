@@ -2,6 +2,7 @@ import type {
   StockQuote,
   StockSearchResult,
   StockTrend,
+  WatchMarketRequestOptions,
   WatchMarketProviderId
 } from "../../../../shared/types";
 import type { MarketDataProvider } from "./market-data-provider";
@@ -51,8 +52,10 @@ export class SelectableMarketDataProvider implements MarketDataProvider {
     return this.currentProvider.listQuotes(secids);
   }
 
-  listTrends(secids: string[]): Promise<StockTrend[]> {
-    return this.currentProvider.listTrends(secids);
+  listTrends(secids: string[], options?: WatchMarketRequestOptions): Promise<StockTrend[]> {
+    return options
+      ? this.currentProvider.listTrends(secids, options)
+      : this.currentProvider.listTrends(secids);
   }
 
   searchStocks(query: string): Promise<StockSearchResult[]> {

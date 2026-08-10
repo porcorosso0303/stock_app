@@ -346,6 +346,57 @@ describe("watch workspace tabs", () => {
       expect(elements.watchTree.innerHTML).not.toContain("暂无行情");
     });
 
+    it("does not render an incomplete morning history snapshot after the trading day has closed", async () => {
+      const partial = marketDataWithQuote("1.600001", 1.23);
+      partial.trends[0].points = [
+        { time: "09:30", changePercent: 0 },
+        { time: "10:40", changePercent: 1.23 }
+      ];
+      const refreshWatchMarketData = vi.fn(async (): Promise<WatchMarketData> => ({
+        ...marketData("2026-07-03"),
+        quotes: [{
+          secid: "1.600001",
+          fetchedAt: "2026-07-04T00:00:00.000Z",
+          errorMessage: "行情服务请求失败"
+        }],
+        trends: [{
+          secid: "1.600001",
+          tradingDate: "2026-07-03",
+          fetchedAt: "2026-07-04T00:00:00.000Z",
+          points: [],
+          errorMessage: "net::ERR_EMPTY_RESPONSE"
+        }],
+        history: [{
+          tradingDate: "2026-07-03",
+          updatedAt: partial.updatedAt,
+          quotes: partial.quotes,
+          trends: partial.trends
+        }]
+      }));
+      const { elements } = createFixture({
+        activeWorkspaceId: "default",
+        workspaces: [{
+          id: "default",
+          name: "默认",
+          root: {
+            id: "root-a",
+            type: "category",
+            name: "第一组",
+            children: [{ id: "stock-a", type: "stock", name: "股票A", secid: "1.600001" }]
+          }
+        }]
+      }, {
+        isActive: true,
+        refreshWatchMarketData
+      });
+
+      elements.refreshWatchQuotes.emit("click");
+
+      await vi.waitFor(() => expect(elements.watchMarketError.textContent).toContain("行情服务请求失败"));
+      expect(elements.watchTree.innerHTML).toContain("暂无行情");
+      expect(elements.watchTree.innerHTML).not.toContain("+1.23%");
+    });
+
     it("continues refreshing inactive workspace market data", async () => {
       let defaultRefreshCount = 0;
       const refreshWatchMarketData = vi.fn(async (secids: string[]) => {
@@ -860,12 +911,32 @@ function marketDataWithQuote(secid: string, changePercent: number): WatchMarketD
       secid,
       tradingDate: "2026-07-03",
       fetchedAt: "2026-07-04T00:00:00.000Z",
-      points: [
-        { time: "09:30", changePercent: 0 },
-        { time: "15:00", changePercent }
-      ]
+      points: completeTrendPoints(changePercent)
     }]
   };
+}
+
+function completeTrendPoints(changePercent: number) {
+  const minutes = [
+    ...testMinuteRange("09:30", "11:30"),
+    ...testMinuteRange("13:01", "15:00")
+  ];
+  return minutes.map((time, index) => ({
+    time,
+    changePercent: changePercent * index / (minutes.length - 1)
+  }));
+}
+
+function testMinuteRange(startTime: string, endTime: string): string[] {
+  const toMinute = (time: string) => {
+    const [hour = "0", minute = "0"] = time.split(":");
+    return Number(hour) * 60 + Number(minute);
+  };
+  const times: string[] = [];
+  for (let minute = toMinute(startTime); minute <= toMinute(endTime); minute += 1) {
+    times.push(`${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`);
+  }
+  return times;
 }
 
 function marketDataWithQuotes(values: Array<[string, number]>): WatchMarketData {

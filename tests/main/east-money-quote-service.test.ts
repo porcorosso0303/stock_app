@@ -194,6 +194,38 @@ describe("EastMoneyQuoteService", () => {
     expect(trend.points[2].changePercent).toBeCloseTo(-2.452, 3);
   });
 
+  it("classifies a requested date without historical data as not found", async () => {
+    const service = new EastMoneyQuoteService(
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ data: null })
+      }),
+      () => new Date("2026-10-01T08:00:00.000Z")
+    );
+
+    await expect(service.listTrends(["1.603986"], { tradingDate: "2026-10-01" })).resolves.toMatchObject([{
+      secid: "1.603986",
+      tradingDate: "2026-10-01",
+      points: [],
+      errorKind: "not-found"
+    }]);
+  });
+
+  it("classifies historical trend request failures separately from missing dates", async () => {
+    const service = new EastMoneyQuoteService(
+      vi.fn().mockRejectedValue(new Error("network unavailable")),
+      () => new Date("2026-07-04T04:01:00.000Z")
+    );
+
+    await expect(service.listTrends(["1.603986"], { tradingDate: "2026-07-03" })).resolves.toMatchObject([{
+      secid: "1.603986",
+      tradingDate: "2026-07-03",
+      points: [],
+      errorMessage: "network unavailable",
+      errorKind: "request-failed"
+    }]);
+  });
+
   it("searches A-share stocks by name and maps the standard secid", async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,
