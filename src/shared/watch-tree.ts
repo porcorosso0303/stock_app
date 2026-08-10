@@ -665,6 +665,26 @@ export function appendWatchTreeChild(
     : node);
 }
 
+export function appendWatchForestChild(
+  config: WatchTreeConfig,
+  parentId: string,
+  child: WatchTreeNode
+): WatchTreeConfig {
+  const normalized = ensureWatchWorkspaceConfig(config);
+  const roots = getActiveWatchRoots(normalized);
+  const parent = findWatchNodeInRoots(roots, parentId);
+  if (!parent || parent.type !== "category") {
+    return normalized;
+  }
+  const nextRoots = roots.map((root) => findWatchTreeNode(root, parentId)
+    ? appendWatchTreeChild(root, parentId, child)
+    : root);
+  return updateActiveWatchWorkspace(normalized, (workspace) => ({
+    ...workspace,
+    roots: nextRoots
+  }));
+}
+
 export function replaceWatchTreeNode(
   root: WatchTreeCategoryNode,
   replacement: WatchTreeNode
@@ -676,6 +696,25 @@ export function replaceWatchTreeNode(
     return replacement;
   }
   return mapCategory(root, (node) => node, replacement);
+}
+
+export function replaceWatchForestNode(
+  config: WatchTreeConfig,
+  replacement: WatchTreeNode
+): WatchTreeConfig {
+  const normalized = ensureWatchWorkspaceConfig(config);
+  const roots = getActiveWatchRoots(normalized);
+  const existing = findWatchNodeInRoots(roots, replacement.id);
+  if (!existing) {
+    return normalized;
+  }
+  const nextRoots = roots.map((root) => findWatchTreeNode(root, replacement.id)
+    ? replaceWatchTreeNode(root, replacement)
+    : root);
+  return updateActiveWatchWorkspace(normalized, (workspace) => ({
+    ...workspace,
+    roots: nextRoots
+  }));
 }
 
 export function removeWatchTreeNode(

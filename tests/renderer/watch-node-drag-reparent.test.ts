@@ -7,6 +7,7 @@ import type {
   WatchTreeCategoryNode,
   WatchTreeConfig
 } from "../../src/shared/types";
+import { findWatchNodeInRoots } from "../../src/shared/watch-tree";
 
 interface TestPointerEvent {
   button: number;
@@ -65,7 +66,24 @@ class TestElement {
     if (selector === ".watch-node" && this.dataset.watchNodeId) {
       return this as unknown as T;
     }
+    if (selector === "button[data-watch-menu-action]" && this.dataset.watchMenuAction) {
+      return this as unknown as T;
+    }
     return null;
+  }
+
+  getBoundingClientRect(): DOMRect {
+    return {
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 1000,
+      bottom: 800,
+      width: 1000,
+      height: 800,
+      toJSON: () => ({})
+    } as DOMRect;
   }
 
   querySelector<T>(): T | null {
@@ -141,7 +159,7 @@ describe("watch node drag reparent", () => {
     dragNode(elements.watchPanel, sourceStock, targetCategory);
 
     await vi.waitFor(() => expect(saveWatchTree).toHaveBeenCalledOnce());
-    const savedRoot = saveWatchTree.mock.calls[0]?.[0].root;
+    const savedRoot = saveWatchTree.mock.calls[0]?.[0].workspaces?.[0].roots?.[0];
     expect((savedRoot?.children[0] as WatchTreeCategoryNode).children).toEqual([]);
     expect((savedRoot?.children[1] as WatchTreeCategoryNode).children.map((child) => child.id))
       .toEqual(["stock"]);
@@ -187,6 +205,70 @@ describe("watch node drag reparent", () => {
     await Promise.resolve();
     expect(saveWatchTree).not.toHaveBeenCalled();
   });
+
+  it("moves a root tree to a new logical position when dropped on blank canvas", async () => {
+    const sourceRoot = watchNodeElement("source-root", true);
+    const { elements, saveWatchTree } = createFixture(rootMoveConfig());
+    vi.mocked(document.elementFromPoint).mockReturnValue(elements.watchPanel as unknown as Element);
+
+    elements.watchPanel.emitPointer("pointerdown", sourceRoot, { clientX: 10, clientY: 10 });
+    elements.watchPanel.emitPointer("pointermove", sourceRoot, { clientX: 110, clientY: 60 });
+    elements.watchPanel.emitPointer("pointerup", elements.watchPanel, { clientX: 110, clientY: 60 });
+
+    await vi.waitFor(() => expect(saveWatchTree).toHaveBeenCalledOnce());
+    expect(saveWatchTree.mock.calls[0]?.[0].workspaces?.[0].rootPositions?.["source-root"])
+      .toEqual({ x: 124, y: 74 });
+    expect(findWatchNodeInRoots(
+      saveWatchTree.mock.calls[0]?.[0].workspaces?.[0].roots ?? [],
+      "source-stock"
+    )).toBeDefined();
+  });
+
+  it("reparents a whole root tree when dropped on a compatible category", async () => {
+    const sourceRoot = watchNodeElement("source-root", true);
+    const targetCategory = watchNodeElement("target");
+    const { elements, saveWatchTree } = createFixture(rootMoveConfig());
+    vi.mocked(document.elementFromPoint).mockReturnValue(targetCategory as unknown as Element);
+
+    dragNode(elements.watchPanel, sourceRoot, targetCategory);
+
+    await vi.waitFor(() => expect(saveWatchTree).toHaveBeenCalledOnce());
+    const workspace = saveWatchTree.mock.calls[0]?.[0].workspaces?.[0];
+    expect(workspace?.roots?.map((item) => item.id)).toEqual(["target-root"]);
+    expect(workspace?.rootPositions).not.toHaveProperty("source-root");
+    expect(findWatchNodeInRoots(workspace?.roots ?? [], "source-stock")).toBeDefined();
+  });
+
+  it("does not save when a nested node is dropped on blank canvas", async () => {
+    const sourceStock = watchNodeElement("stock");
+    const { elements, saveWatchTree } = createFixture(stockMoveConfig());
+    vi.mocked(document.elementFromPoint).mockReturnValue(elements.watchPanel as unknown as Element);
+
+    dragNode(elements.watchPanel, sourceStock, elements.watchPanel);
+
+    await Promise.resolve();
+    expect(saveWatchTree).not.toHaveBeenCalled();
+  });
+
+  it("creates an additional root at the blank-canvas context position", async () => {
+    const { elements, saveWatchTree } = createFixture(stockMoveConfig());
+    elements.watchPanel.emitPointer("contextmenu", elements.watchPanel, {
+      clientX: 250,
+      clientY: 160
+    });
+    const createButton = new TestElement();
+    createButton.dataset.watchMenuAction = "create-category";
+    elements.watchContextMenu.emitPointer("click", createButton);
+    elements.watchNodeName.value = "新增根";
+
+    elements.watchNodeForm.emitPointer("submit", elements.watchNodeForm);
+
+    await vi.waitFor(() => expect(saveWatchTree).toHaveBeenCalledOnce());
+    const workspace = saveWatchTree.mock.calls[0]?.[0].workspaces?.[0];
+    const created = workspace?.roots?.find((item) => item.name === "新增根");
+    expect(workspace?.roots).toHaveLength(2);
+    expect(workspace?.rootPositions?.[created?.id ?? ""]).toEqual({ x: 250, y: 160 });
+  });
 });
 
 function dragNode(
@@ -199,9 +281,12 @@ function dragNode(
   panel.emitPointer("pointerup", target, { clientX: 18, clientY: 10 });
 }
 
-function watchNodeElement(id: string): TestElement {
+function watchNodeElement(id: string, isRoot = false): TestElement {
   const element = new TestElement();
   element.dataset.watchNodeId = id;
+  if (isRoot) {
+    element.dataset.watchIsRoot = "true";
+  }
   return element;
 }
 
@@ -363,5 +448,35 @@ function stockMoveConfig(targetChildren: WatchTreeCategoryNode["children"] = [])
         }
       ]
     }
+  };
+}
+
+function rootMoveConfig(): WatchTreeConfig {
+  return {
+    activeWorkspaceId: "default",
+    workspaces: [{
+      id: "default",
+      name: "默认",
+      roots: [{
+        id: "source-root",
+        type: "category",
+        name: "来源根",
+        children: [{
+          id: "source-stock",
+          type: "stock",
+          name: "来源股票",
+          secid: "1.600001"
+        }]
+      }, {
+        id: "target-root",
+        type: "category",
+        name: "目标根",
+        children: [{ id: "target", type: "category", name: "目标", children: [] }]
+      }],
+      rootPositions: {
+        "source-root": { x: 24, y: 24 },
+        "target-root": { x: 480, y: 180 }
+      }
+    }]
   };
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { StockQuote, WatchTreeCategoryNode } from "../../src/shared/types";
 import {
+  appendWatchForestChild,
   appendWatchRoot,
   appendWatchTreeChild,
   averageChangePercent,
@@ -14,6 +15,7 @@ import {
   deleteWatchWorkspace,
   ensureWatchWorkspaceConfig,
   formatTrendPercentClass,
+  findWatchNodeInRoots,
   getActiveWatchRoot,
   getActiveWatchRoots,
   getActiveWatchWorkspace,
@@ -22,6 +24,7 @@ import {
   moveWatchTreeNode,
   normalizeTrendSegments,
   renderTrendSparklineSvg,
+  replaceWatchForestNode,
   removeWatchTreeNode,
   removeWatchForestNode,
   renameWatchWorkspace,
@@ -765,6 +768,37 @@ describe("watch tree", () => {
 
     expect(getActiveWatchRoots(next)[0].children.map((item) => item.id)).toEqual(["two"]);
     expect(collectStockSecids(getActiveWatchRoots(next)[1])).toEqual(["1.600519"]);
+  });
+
+  it("appends and replaces nodes anywhere in the active forest", () => {
+    const second: WatchTreeCategoryNode = {
+      id: "second-root",
+      type: "category",
+      name: "第二棵树",
+      children: [{ id: "target", type: "category", name: "目标", children: [] }]
+    };
+    const config = appendWatchRoot(
+      ensureWatchWorkspaceConfig({ root }),
+      second,
+      { x: 480, y: 180 }
+    );
+    const appended = appendWatchForestChild(config, "target", {
+      id: "new-stock",
+      type: "stock",
+      name: "新股票",
+      secid: "1.603986"
+    });
+    const replaced = replaceWatchForestNode(appended, {
+      id: "new-stock",
+      type: "stock",
+      name: "已编辑股票",
+      secid: "1.603986"
+    });
+
+    expect(findWatchNodeInRoots(getActiveWatchRoots(replaced), "new-stock")).toMatchObject({
+      name: "已编辑股票"
+    });
+    expect(getActiveWatchRoots(replaced)[0]).toEqual(root);
   });
 
   it("leaves the forest unchanged for cycles and mixed sibling types", () => {

@@ -7,25 +7,26 @@ import type {
   WatchMarketCache,
   WatchNewsDebugRun,
   WatchNewsMessage,
+  WatchRootPosition,
   WatchTreeConfig,
   WatchTreeNode
 } from "../../../shared/types";
 import {
+  appendWatchForestChild,
+  appendWatchRoot,
   appendWatchWorkspace,
-  appendWatchTreeChild,
-  collectStockSecids,
   collectStockSecidsFromRoots,
   deleteWatchWorkspace,
   ensureWatchWorkspaceConfig,
-  findWatchTreeNode,
-  getActiveWatchRoot,
+  findWatchNodeInRoots,
+  getActiveWatchRoots,
   getActiveWatchWorkspace,
-  moveWatchTreeNode,
+  moveWatchForestNode,
   renameWatchWorkspace,
-  removeWatchTreeNode,
-  replaceWatchTreeNode,
+  removeWatchForestNode,
+  replaceWatchForestNode,
   switchWatchWorkspace,
-  updateActiveWatchRoot,
+  updateWatchRootPosition,
   validateSecid
 } from "../../../shared/watch-tree";
 import type { RendererElements } from "../../app/dom";
@@ -72,6 +73,7 @@ interface WatchNodeDragState {
   startX: number;
   startY: number;
   dragged: boolean;
+  rootStartPosition?: WatchRootPosition;
   sourceElement: HTMLElement;
   targetElement?: HTMLElement;
   ghostElement?: HTMLElement;
@@ -97,7 +99,8 @@ interface WatchNewsPanelDragState {
 
 export function createWatchController(options: WatchControllerOptions): WatchController {
   const { api, elements, isActive } = options;
-  const connectors = createWatchConnectors(elements.watchTree);
+  let watchCanvasZoom = 1;
+  const connectors = createWatchConnectors(elements.watchTree, () => watchCanvasZoom);
   let config: WatchTreeConfig = {};
   let loaded = false;
   let quoteTimer: number | undefined;
@@ -113,6 +116,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   let newsDebugTimer: number | undefined;
   let newsDebugSecid: string | undefined;
   let newsDebugRefreshInFlight = false;
+  let pendingRootPosition: WatchRootPosition | undefined;
   const newsBySecid = new Map<string, WatchNewsMessage[]>();
   const workspaceDateStates = new Map<string, WorkspaceDateState>();
   const workspaceMarketStates = new Map<string, WorkspaceMarketState>();
@@ -132,8 +136,12 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     }, connectors.schedule);
   }
 
-  function activeRoot(): WatchTreeConfig["root"] {
-    return getActiveWatchRoot(config);
+  function activeRoots() {
+    return getActiveWatchRoots(config);
+  }
+
+  function findActiveNode(nodeId: string): WatchTreeNode | undefined {
+    return findWatchNodeInRoots(activeRoots(), nodeId);
   }
 
   function workspaceRoots(workspaceId: string | undefined) {
@@ -293,7 +301,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   }
 
   async function refreshNewsState(): Promise<void> {
-    const secids = collectStockSecids(activeRoot());
+    const secids = collectStockSecidsFromRoots(activeRoots());
     if (secids.length === 0) {
       newsBySecid.clear();
       render();
@@ -321,7 +329,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   }
 
   async function refreshStockNews(nodeId: string): Promise<void> {
-    const node = findWatchTreeNode(activeRoot(), nodeId);
+    const node = findActiveNode(nodeId);
     if (!node || node.type !== "stock") {
       return;
     }
@@ -341,7 +349,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   }
 
   async function showStockNewsHistory(nodeId: string): Promise<void> {
-    const node = findWatchTreeNode(activeRoot(), nodeId);
+    const node = findActiveNode(nodeId);
     if (!node || node.type !== "stock") {
       return;
     }
@@ -355,7 +363,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   }
 
   async function showWatchNewsDebug(nodeId?: string): Promise<void> {
-    const node = nodeId ? findWatchTreeNode(activeRoot(), nodeId) : undefined;
+    const node = nodeId ? findActiveNode(nodeId) : undefined;
     const secid = node?.type === "stock" ? node.secid : undefined;
     stopWatchNewsDebugPolling();
     newsDebugSecid = secid;
@@ -813,7 +821,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     const element = event.target instanceof Element
       ? event.target.closest<HTMLElement>(".watch-node")
       : undefined;
-    const node = findWatchTreeNode(activeRoot(), element?.dataset.watchNodeId ?? "");
+    const node = findActiveNode(element?.dataset.watchNodeId ?? "");
     if (node?.type === "category" && node.children.length > 0) {
       toggleCollapsedNode(node.id);
     }
@@ -823,7 +831,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     const element = event.target instanceof Element
       ? event.target.closest<HTMLElement>(".watch-node")
       : undefined;
-    const node = findWatchTreeNode(activeRoot(), element?.dataset.watchNodeId ?? "");
+    const node = findActiveNode(element?.dataset.watchNodeId ?? "");
     if (!node) {
       return;
     }
@@ -832,13 +840,11 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   }
 
   function handlePanelContextMenu(event: MouseEvent): void {
-    if (activeRoot()) {
-      return;
-    }
     if (event.target instanceof Element && event.target.closest(".watch-node")) {
       return;
     }
     event.preventDefault();
+    pendingRootPosition = rootPositionFromPointer(event.clientX, event.clientY);
     openEmptyWatchContextMenu(elements.watchContextMenu, event);
   }
 
@@ -969,9 +975,11 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       ? event.target.closest<HTMLElement>(".watch-node")
       : undefined;
     const nodeId = element?.dataset.watchNodeId ?? "";
-    if (!nodeId || !findWatchTreeNode(activeRoot(), nodeId) || !element) {
+    if (!nodeId || !findActiveNode(nodeId) || !element) {
       return false;
     }
+    const workspace = getActiveWatchWorkspace(config);
+    const isRoot = activeRoots().some((root) => root.id === nodeId);
     closeWatchContextMenu(elements.watchContextMenu);
     nodeDrag = {
       pointerId: event.pointerId,
@@ -979,6 +987,9 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       startX: event.clientX,
       startY: event.clientY,
       dragged: false,
+      rootStartPosition: isRoot
+        ? workspace.rootPositions?.[nodeId] ?? { x: 24, y: 24 }
+        : undefined,
       sourceElement: element
     };
     return true;
@@ -1016,16 +1027,21 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     if (elements.watchPanel.hasPointerCapture(event.pointerId)) {
       elements.watchPanel.releasePointerCapture(event.pointerId);
     }
-    const root = activeRoot();
-    if (drag.dragged && shouldDrop && root) {
+    if (drag.dragged && shouldDrop) {
       const target = findDropTarget(event.clientX, event.clientY);
       const targetId = target?.dataset.watchNodeId ?? "";
-      const nextRoot = targetId
-        ? moveWatchTreeNode(root, drag.nodeId, targetId)
-        : root;
-      if (nextRoot !== root) {
-        config = updateActiveWatchRoot(config, nextRoot);
-        await persistTree();
+      if (targetId) {
+        const nextConfig = moveWatchForestNode(config, drag.nodeId, targetId);
+        if (nextConfig !== config) {
+          config = nextConfig;
+          await persistTree(false);
+        }
+      } else if (drag.rootStartPosition) {
+        config = updateWatchRootPosition(config, drag.nodeId, {
+          x: Math.max(0, drag.rootStartPosition.x + (event.clientX - drag.startX) / watchCanvasZoom),
+          y: Math.max(0, drag.rootStartPosition.y + (event.clientY - drag.startY) / watchCanvasZoom)
+        });
+        await persistTree(false);
       }
     }
     window.setTimeout(() => {
@@ -1079,6 +1095,22 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     ghost.style.top = `${clientY}px`;
   }
 
+  function rootPositionFromPointer(clientX: number, clientY: number): WatchRootPosition {
+    const rect = elements.watchPanel.getBoundingClientRect();
+    const candidate = {
+      x: Math.max(0, (elements.watchPanel.scrollLeft + clientX - rect.left) / watchCanvasZoom),
+      y: Math.max(0, (elements.watchPanel.scrollTop + clientY - rect.top) / watchCanvasZoom)
+    };
+    const occupied = Object.values(getActiveWatchWorkspace(config).rootPositions ?? {});
+    while (occupied.some((position) => (
+      Math.abs(position.x - candidate.x) < 80 && Math.abs(position.y - candidate.y) < 80
+    ))) {
+      candidate.x += 48;
+      candidate.y += 48;
+    }
+    return candidate;
+  }
+
   function beginPan(event: PointerEvent): void {
     if (event.button !== 0) {
       return;
@@ -1127,7 +1159,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
 
   function openNodeDialog(action: WatchDialogAction): void {
     const existing = action.kind === "edit"
-      ? findWatchTreeNode(activeRoot(), action.nodeId)
+      ? findActiveNode(action.nodeId)
       : undefined;
     dialogAction = action;
     elements.watchNodeDialogTitle.textContent = action.kind === "edit"
@@ -1227,7 +1259,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     try {
       const type = elements.watchNodeType.value === "stock" ? "stock" : "category";
       const existing = dialogAction.kind === "edit"
-        ? findWatchTreeNode(activeRoot(), dialogAction.nodeId)
+        ? findActiveNode(dialogAction.nodeId)
         : undefined;
       const node: WatchTreeNode = type === "stock"
         ? {
@@ -1248,19 +1280,22 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
         if (node.type !== "category") {
           throw new Error("请创建分类节点");
         }
-        config = updateActiveWatchRoot(config, node);
+        config = appendWatchRoot(
+          config,
+          node,
+          pendingRootPosition ?? rootPositionFromPointer(24, 24)
+        );
+        pendingRootPosition = undefined;
       } else if (dialogAction.kind === "add") {
-        const root = activeRoot();
-        if (!root) {
+        if (activeRoots().length === 0) {
           throw new Error("请先创建分类");
         }
-        config = updateActiveWatchRoot(config, appendWatchTreeChild(root, dialogAction.parentId, node));
+        config = appendWatchForestChild(config, dialogAction.parentId, node);
       } else {
-        const root = activeRoot();
-        if (!root) {
+        if (activeRoots().length === 0) {
           throw new Error("盯盘脑图尚未配置");
         }
-        config = updateActiveWatchRoot(config, replaceWatchTreeNode(root, node));
+        config = replaceWatchForestNode(config, node);
       }
       await persistTree();
       elements.watchNodeDialog.close();
@@ -1270,11 +1305,10 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   }
 
   async function deleteNode(id: string): Promise<void> {
-    const root = activeRoot();
-    if (!root || !confirm("确定删除该节点及其所有子节点吗？")) {
+    if (!findActiveNode(id) || !confirm("确定删除该节点及其所有子节点吗？")) {
       return;
     }
-    config = updateActiveWatchRoot(config, removeWatchTreeNode(root, id));
+    config = removeWatchForestNode(config, id);
     collapsedNodes.delete(id);
     await persistTree();
   }
