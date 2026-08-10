@@ -45,6 +45,7 @@ export function createWatchConnectors(
     }
 
     const zoom = normalizeZoom(getZoom());
+    layer.style.transform = `scale(${zoom})`;
     const rootBounds = [...layer.querySelectorAll<HTMLElement>(".watch-root-tree[data-watch-root-id]")]
       .map((root) => {
         const rect = root.getBoundingClientRect();
@@ -60,7 +61,6 @@ export function createWatchConnectors(
     const height = Math.max(measured.height, watchTree.clientHeight / zoom);
     layer.style.width = `${width}px`;
     layer.style.height = `${height}px`;
-    layer.style.transform = `scale(${zoom})`;
     spacer.style.width = `${width * zoom}px`;
     spacer.style.height = `${height * zoom}px`;
     svg.setAttribute("width", String(width));

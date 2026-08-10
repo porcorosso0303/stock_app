@@ -125,6 +125,8 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
   function render(): void {
     config = ensureWatchWorkspaceConfig(config);
     const marketState = getWorkspaceMarketState();
+    const previousScrollLeft = elements.watchPanel.scrollLeft;
+    const previousScrollTop = elements.watchPanel.scrollTop;
     renderWorkspaceTabs();
     renderWatchTree(elements.watchTree, {
       config,
@@ -134,6 +136,10 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       newsBySecid,
       collapsedNodes
     }, connectors.schedule);
+    window.requestAnimationFrame(() => {
+      elements.watchPanel.scrollLeft = previousScrollLeft;
+      elements.watchPanel.scrollTop = previousScrollTop;
+    });
   }
 
   function activeRoots() {
@@ -671,6 +677,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       return;
     }
     config = switchWatchWorkspace(config, workspaceId);
+    watchCanvasZoom = 1;
     collapsedNodes.clear();
     render();
     syncTradingDateOptions(undefined, workspaceId);
@@ -925,6 +932,36 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       return;
     }
     endPan(event);
+  }
+
+  function handleCanvasWheel(event: WheelEvent): void {
+    if (event.ctrlKey) {
+      event.preventDefault();
+      const nextZoom = nextWatchCanvasZoom(watchCanvasZoom, event.deltaY);
+      if (nextZoom === watchCanvasZoom) {
+        return;
+      }
+      const rect = elements.watchPanel.getBoundingClientRect();
+      const nextScroll = anchoredWatchCanvasScroll({
+        scrollLeft: elements.watchPanel.scrollLeft,
+        scrollTop: elements.watchPanel.scrollTop,
+        pointerX: event.clientX - rect.left,
+        pointerY: event.clientY - rect.top,
+        previousZoom: watchCanvasZoom,
+        nextZoom
+      });
+      watchCanvasZoom = nextZoom;
+      connectors.schedule();
+      window.requestAnimationFrame(() => {
+        elements.watchPanel.scrollLeft = nextScroll.scrollLeft;
+        elements.watchPanel.scrollTop = nextScroll.scrollTop;
+      });
+      return;
+    }
+    if (event.shiftKey) {
+      event.preventDefault();
+      elements.watchPanel.scrollLeft += watchCanvasHorizontalWheelDelta(event.deltaX, event.deltaY);
+    }
   }
 
   function handleNewsAlertMouseOver(event: MouseEvent): void {
@@ -1360,6 +1397,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       elements.watchPanel.addEventListener("pointermove", handlePointerMove);
       elements.watchPanel.addEventListener("pointerup", handlePointerUp);
       elements.watchPanel.addEventListener("pointercancel", handlePointerCancel);
+      elements.watchPanel.addEventListener("wheel", handleCanvasWheel, { passive: false });
       elements.watchPanel.addEventListener("scroll", () => closeWatchContextMenu(elements.watchContextMenu));
       document.addEventListener("click", () => closeWatchContextMenu(elements.watchContextMenu));
       document.addEventListener("keydown", handleWorkspaceShortcut);
@@ -1372,6 +1410,7 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
     },
     hydrate: (nextConfig) => {
       config = useFirstWorkspace(nextConfig);
+      watchCanvasZoom = 1;
       workspaceDateStates.clear();
       workspaceMarketStates.clear();
       newsBySecid.clear();
@@ -1395,6 +1434,37 @@ export function createWatchController(options: WatchControllerOptions): WatchCon
       elements.watchNewsTooltip.hidden = true;
     }
   };
+}
+
+export function nextWatchCanvasZoom(currentZoom: number, deltaY: number): number {
+  const direction = deltaY < 0 ? 1 : deltaY > 0 ? -1 : 0;
+  const next = Math.round((currentZoom + direction * 0.1) * 10) / 10;
+  return Math.min(2, Math.max(0.5, next));
+}
+
+interface WatchCanvasAnchorInput {
+  scrollLeft: number;
+  scrollTop: number;
+  pointerX: number;
+  pointerY: number;
+  previousZoom: number;
+  nextZoom: number;
+}
+
+export function anchoredWatchCanvasScroll(input: WatchCanvasAnchorInput): {
+  scrollLeft: number;
+  scrollTop: number;
+} {
+  const logicalX = (input.scrollLeft + input.pointerX) / input.previousZoom;
+  const logicalY = (input.scrollTop + input.pointerY) / input.previousZoom;
+  return {
+    scrollLeft: logicalX * input.nextZoom - input.pointerX,
+    scrollTop: logicalY * input.nextZoom - input.pointerY
+  };
+}
+
+export function watchCanvasHorizontalWheelDelta(deltaX: number, deltaY: number): number {
+  return Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : deltaY;
 }
 
 function formatNewsAnalysisStatus(result: Awaited<ReturnType<StockResearchApi["analyzeHoldingWatchNews"]>>): string {
