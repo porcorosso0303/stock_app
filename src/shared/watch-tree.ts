@@ -3,6 +3,7 @@ import type {
   StockTrend,
   StockTrendPoint,
   WatchMarketCache,
+  WatchRootPosition,
   WatchTreeCategoryNode,
   WatchTreeConfig,
   WatchTreeNode,
@@ -16,6 +17,9 @@ import {
 const SECID_PATTERN = /^[01]\.\d{6}$/;
 const DEFAULT_WATCH_WORKSPACE_ID = "default";
 const DEFAULT_WATCH_WORKSPACE_NAME = "默认";
+const DEFAULT_ROOT_X = 24;
+const DEFAULT_ROOT_Y = 24;
+const DEFAULT_ROOT_OFFSET = 48;
 
 export interface WatchHoldingStock {
   secid: string;
@@ -47,12 +51,14 @@ export function ensureWatchWorkspaceConfig(value: WatchTreeConfig): WatchTreeCon
   if (config.workspaces && config.workspaces.length > 0) {
     return config;
   }
+  const roots = config.root ? [config.root] : [];
   const workspace: WatchTreeWorkspace = {
     id: DEFAULT_WATCH_WORKSPACE_ID,
     name: DEFAULT_WATCH_WORKSPACE_NAME,
-    ...(config.root ? { root: config.root } : {})
+    roots,
+    rootPositions: defaultRootPositions(roots)
   };
-  return mirrorActiveWorkspaceRoot({
+  return canonicalWorkspaceConfig({
     activeWorkspaceId: workspace.id,
     workspaces: [workspace]
   });
@@ -62,11 +68,16 @@ export function getActiveWatchWorkspace(config: WatchTreeConfig): WatchTreeWorks
   const normalized = ensureWatchWorkspaceConfig(config);
   return normalized.workspaces?.find((workspace) => workspace.id === normalized.activeWorkspaceId) ??
     normalized.workspaces?.[0] ??
-    { id: DEFAULT_WATCH_WORKSPACE_ID, name: DEFAULT_WATCH_WORKSPACE_NAME };
+    {
+      id: DEFAULT_WATCH_WORKSPACE_ID,
+      name: DEFAULT_WATCH_WORKSPACE_NAME,
+      roots: [],
+      rootPositions: {}
+    };
 }
 
 export function getActiveWatchRoot(config: WatchTreeConfig): WatchTreeCategoryNode | undefined {
-  return getActiveWatchWorkspace(config).root;
+  return getActiveWatchWorkspace(config).roots?.[0];
 }
 
 export function updateActiveWatchRoot(
@@ -75,10 +86,18 @@ export function updateActiveWatchRoot(
 ): WatchTreeConfig {
   const normalized = ensureWatchWorkspaceConfig(config);
   const activeId = normalized.activeWorkspaceId;
-  return mirrorActiveWorkspaceRoot({
+  const roots = root ? [root] : [];
+  return canonicalWorkspaceConfig({
     activeWorkspaceId: activeId,
     workspaces: normalized.workspaces?.map((workspace) => workspace.id === activeId
-      ? { id: workspace.id, name: workspace.name, ...(root ? { root } : {}) }
+      ? {
+          id: workspace.id,
+          name: workspace.name,
+          roots,
+          rootPositions: root
+            ? { [root.id]: workspace.rootPositions?.[root.id] ?? defaultRootPosition(0) }
+            : {}
+        }
       : workspace)
   });
 }
@@ -88,7 +107,7 @@ export function switchWatchWorkspace(config: WatchTreeConfig, workspaceId: strin
   if (!normalized.workspaces?.some((workspace) => workspace.id === workspaceId)) {
     return normalized;
   }
-  return mirrorActiveWorkspaceRoot({
+  return canonicalWorkspaceConfig({
     ...normalized,
     activeWorkspaceId: workspaceId
   });
@@ -104,7 +123,7 @@ export function renameWatchWorkspace(
   if (!nextName) {
     throw new Error("展示区名称不能为空");
   }
-  return mirrorActiveWorkspaceRoot({
+  return canonicalWorkspaceConfig({
     ...normalized,
     workspaces: normalized.workspaces?.map((workspace) => workspace.id === workspaceId
       ? { ...workspace, name: nextName }
@@ -128,11 +147,17 @@ export function appendWatchWorkspace(
   if (normalized.workspaces?.some((item) => item.id === id)) {
     throw new Error("展示区 id 重复");
   }
-  return mirrorActiveWorkspaceRoot({
+  const roots = workspace.roots ?? (workspace.root ? [workspace.root] : []);
+  return canonicalWorkspaceConfig({
     activeWorkspaceId: id,
     workspaces: [
       ...normalized.workspaces ?? [],
-      { id, name, ...(workspace.root ? { root: workspace.root } : {}) }
+      {
+        id,
+        name,
+        roots,
+        rootPositions: normalizeRootPositions(roots, workspace.rootPositions)
+      }
     ]
   });
 }
@@ -141,23 +166,30 @@ export function deleteWatchWorkspace(config: WatchTreeConfig, workspaceId: strin
   const normalized = ensureWatchWorkspaceConfig(config);
   const remaining = normalized.workspaces?.filter((workspace) => workspace.id !== workspaceId) ?? [];
   if (remaining.length === 0) {
-    return mirrorActiveWorkspaceRoot({
+    return canonicalWorkspaceConfig({
       activeWorkspaceId: DEFAULT_WATCH_WORKSPACE_ID,
-      workspaces: [{ id: DEFAULT_WATCH_WORKSPACE_ID, name: DEFAULT_WATCH_WORKSPACE_NAME }]
+      workspaces: [{
+        id: DEFAULT_WATCH_WORKSPACE_ID,
+        name: DEFAULT_WATCH_WORKSPACE_NAME,
+        roots: [],
+        rootPositions: {}
+      }]
     });
   }
   const activeWorkspaceId = normalized.activeWorkspaceId === workspaceId
     ? remaining[0].id
     : normalized.activeWorkspaceId ?? remaining[0].id;
-  return mirrorActiveWorkspaceRoot({ activeWorkspaceId, workspaces: remaining });
+  return canonicalWorkspaceConfig({ activeWorkspaceId, workspaces: remaining });
 }
 
 export function collectWatchTreeConfigSecids(config: WatchTreeConfig): string[] {
   const normalized = ensureWatchWorkspaceConfig(config);
   const secids = new Set<string>();
   for (const workspace of normalized.workspaces ?? []) {
-    for (const secid of collectStockSecids(workspace.root)) {
-      secids.add(secid);
+    for (const root of workspace.roots ?? []) {
+      for (const secid of collectStockSecids(root)) {
+        secids.add(secid);
+      }
     }
   }
   return [...secids];
@@ -167,9 +199,11 @@ export function collectHoldingStocks(config: WatchTreeConfig): WatchHoldingStock
   const normalized = ensureWatchWorkspaceConfig(config);
   const bySecid = new Map<string, WatchHoldingStock>();
   for (const workspace of normalized.workspaces ?? []) {
-    for (const stock of collectHoldingStocksFromNode(workspace.root, workspace)) {
-      if (!bySecid.has(stock.secid)) {
-        bySecid.set(stock.secid, stock);
+    for (const root of workspace.roots ?? []) {
+      for (const stock of collectHoldingStocksFromNode(root, workspace)) {
+        if (!bySecid.has(stock.secid)) {
+          bySecid.set(stock.secid, stock);
+        }
       }
     }
   }
@@ -188,9 +222,14 @@ function validateWorkspaceConfig(config: Record<string, unknown>): WatchTreeConf
   const ids = new Set<string>();
   const workspaces = (config.workspaces as unknown[]).map((value) => validateWorkspace(value, ids));
   if (workspaces.length === 0) {
-    return mirrorActiveWorkspaceRoot({
+    return canonicalWorkspaceConfig({
       activeWorkspaceId: DEFAULT_WATCH_WORKSPACE_ID,
-      workspaces: [{ id: DEFAULT_WATCH_WORKSPACE_ID, name: DEFAULT_WATCH_WORKSPACE_NAME }]
+      workspaces: [{
+        id: DEFAULT_WATCH_WORKSPACE_ID,
+        name: DEFAULT_WATCH_WORKSPACE_NAME,
+        roots: [],
+        rootPositions: {}
+      }]
     });
   }
   const requestedActiveId = typeof config.activeWorkspaceId === "string"
@@ -199,7 +238,7 @@ function validateWorkspaceConfig(config: Record<string, unknown>): WatchTreeConf
   const activeWorkspaceId = workspaces.some((workspace) => workspace.id === requestedActiveId)
     ? requestedActiveId
     : workspaces[0].id;
-  return mirrorActiveWorkspaceRoot({ activeWorkspaceId, workspaces });
+  return canonicalWorkspaceConfig({ activeWorkspaceId, workspaces });
 }
 
 function validateWorkspace(value: unknown, workspaceIds: Set<string>): WatchTreeWorkspace {
@@ -210,25 +249,81 @@ function validateWorkspace(value: unknown, workspaceIds: Set<string>): WatchTree
   }
   workspaceIds.add(id);
   const name = requireNonEmptyString(workspace.name, "展示区名称");
-  if (workspace.root === undefined) {
-    return { id, name };
-  }
+  const rawRoots = Array.isArray(workspace.roots)
+    ? workspace.roots
+    : workspace.root === undefined ? [] : [workspace.root];
   const nodeIds = new Set<string>();
-  const root = validateNode(workspace.root, nodeIds);
-  if (root.type !== "category") {
-    throw new Error("盯盘脑图顶层节点必须是分类");
+  const roots = rawRoots.map((rawRoot) => {
+    const root = validateNode(rawRoot, nodeIds);
+    if (root.type !== "category") {
+      throw new Error("盯盘脑图顶层节点必须是分类");
+    }
+    return root;
+  });
+  const rawPositions = workspace.rootPositions === undefined
+    ? undefined
+    : requireObject(workspace.rootPositions, "根节点位置");
+  if (rawPositions) {
+    const rootIds = new Set(roots.map((root) => root.id));
+    for (const rootId of Object.keys(rawPositions)) {
+      if (!rootIds.has(rootId)) {
+        throw new Error(`根节点位置引用不存在：${rootId}`);
+      }
+    }
   }
-  return { id, name, root };
+  return {
+    id,
+    name,
+    roots,
+    rootPositions: normalizeRootPositions(roots, rawPositions)
+  };
 }
 
-function mirrorActiveWorkspaceRoot(config: WatchTreeConfig): WatchTreeConfig {
+function canonicalWorkspaceConfig(config: WatchTreeConfig): WatchTreeConfig {
   const active = config.workspaces?.find((workspace) => workspace.id === config.activeWorkspaceId) ??
     config.workspaces?.[0];
   return {
     activeWorkspaceId: active?.id,
-    workspaces: config.workspaces ?? [],
-    ...(active?.root ? { root: active.root } : {})
+    workspaces: config.workspaces ?? []
   };
+}
+
+function normalizeRootPositions(
+  roots: WatchTreeCategoryNode[],
+  rawPositions: Record<string, unknown> | undefined
+): Record<string, WatchRootPosition> {
+  return Object.fromEntries(roots.map((root, index) => {
+    const rawPosition = rawPositions?.[root.id];
+    return [root.id, rawPosition === undefined
+      ? defaultRootPosition(index)
+      : validateRootPosition(rawPosition)];
+  }));
+}
+
+function defaultRootPositions(
+  roots: WatchTreeCategoryNode[]
+): Record<string, WatchRootPosition> {
+  return Object.fromEntries(roots.map((root, index) => [root.id, defaultRootPosition(index)]));
+}
+
+function defaultRootPosition(index: number): WatchRootPosition {
+  return {
+    x: DEFAULT_ROOT_X + index * DEFAULT_ROOT_OFFSET,
+    y: DEFAULT_ROOT_Y + index * DEFAULT_ROOT_OFFSET
+  };
+}
+
+function validateRootPosition(value: unknown): WatchRootPosition {
+  const position = requireObject(value, "根节点坐标");
+  const x = position.x;
+  const y = position.y;
+  if (
+    typeof x !== "number" || !Number.isFinite(x) || x < 0 ||
+    typeof y !== "number" || !Number.isFinite(y) || y < 0
+  ) {
+    throw new Error("根节点坐标必须是有限非负数");
+  }
+  return { x, y };
 }
 
 export function collectStockSecids(root?: WatchTreeNode): string[] {

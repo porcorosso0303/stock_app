@@ -109,9 +109,22 @@ export interface WatchTreeStockNode {
 export type WatchTreeNode = WatchTreeCategoryNode | WatchTreeStockNode;
 export type WatchIndustryPosition = "leader1" | "leader2" | "leader3";
 
+export interface WatchRootPosition {
+  x: number;
+  y: number;
+}
+
 export interface WatchTreeWorkspace {
   id: string;
   name: string;
+  /** Canonical validated workspaces always contain this field. */
+  roots?: WatchTreeCategoryNode[];
+  /** Canonical validated workspaces always contain this field. */
+  rootPositions?: Record<string, WatchRootPosition>;
+  /**
+   * Legacy read-only field. Validation migrates it into roots before the
+   * workspace enters application state.
+   */
   root?: WatchTreeCategoryNode;
 }
 
@@ -119,7 +132,7 @@ export interface WatchTreeConfig {
   activeWorkspaceId?: string;
   workspaces?: WatchTreeWorkspace[];
   /**
-   * Legacy single-workspace mirror. New code should use workspaces plus activeWorkspaceId.
+   * Legacy single-workspace input. Normalized configs do not retain this field.
    */
   root?: WatchTreeCategoryNode;
 }

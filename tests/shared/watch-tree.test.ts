@@ -494,19 +494,21 @@ describe("watch tree", () => {
     })).toThrow("持仓股");
   });
 
-  it("promotes a legacy single tree config into one default workspace", () => {
+  it("promotes a legacy single tree config into one canonical default workspace", () => {
     expect(ensureWatchWorkspaceConfig({ root })).toEqual({
       activeWorkspaceId: "default",
       workspaces: [{
         id: "default",
         name: "默认",
-        root
-      }],
-      root
+        roots: [root],
+        rootPositions: {
+          tech: { x: 24, y: 24 }
+        }
+      }]
     });
   });
 
-  it("validates workspace configs and mirrors the active workspace root", () => {
+  it("migrates a legacy workspace root into the canonical forest format", () => {
     const secondRoot: WatchTreeCategoryNode = {
       id: "hardware",
       type: "category",
@@ -523,11 +525,92 @@ describe("watch tree", () => {
     })).toEqual({
       activeWorkspaceId: "second",
       workspaces: [
-        { id: "first", name: "软件", root },
-        { id: "second", name: "硬件", root: secondRoot }
-      ],
-      root: secondRoot
+        {
+          id: "first",
+          name: "软件",
+          roots: [root],
+          rootPositions: { tech: { x: 24, y: 24 } }
+        },
+        {
+          id: "second",
+          name: "硬件",
+          roots: [secondRoot],
+          rootPositions: { hardware: { x: 24, y: 24 } }
+        }
+      ]
     });
+  });
+
+  it("validates multiple category roots with persisted positions", () => {
+    expect(validateWatchTreeConfig({
+      activeWorkspaceId: "default",
+      workspaces: [{
+        id: "default",
+        name: "默认",
+        roots: [
+          root,
+          { id: "second", type: "category", name: "第二棵树", children: [] }
+        ],
+        rootPositions: {
+          tech: { x: 24, y: 24 },
+          second: { x: 480, y: 180 }
+        }
+      }]
+    })).toEqual({
+      activeWorkspaceId: "default",
+      workspaces: [{
+        id: "default",
+        name: "默认",
+        roots: [
+          root,
+          { id: "second", type: "category", name: "第二棵树", children: [] }
+        ],
+        rootPositions: {
+          tech: { x: 24, y: 24 },
+          second: { x: 480, y: 180 }
+        }
+      }]
+    });
+  });
+
+  it("rejects duplicate node ids across separate roots", () => {
+    expect(() => validateWatchTreeConfig({
+      workspaces: [{
+        id: "default",
+        name: "默认",
+        roots: [
+          { id: "duplicate", type: "category", name: "一", children: [] },
+          { id: "duplicate", type: "category", name: "二", children: [] }
+        ],
+        rootPositions: {}
+      }]
+    })).toThrow("节点 id 重复");
+  });
+
+  it.each([
+    { x: -1, y: 0 },
+    { x: Number.NaN, y: 0 },
+    { x: 0, y: Number.POSITIVE_INFINITY }
+  ])("rejects invalid root position $x,$y", (position) => {
+    expect(() => validateWatchTreeConfig({
+      workspaces: [{
+        id: "default",
+        name: "默认",
+        roots: [{ id: "root", type: "category", name: "根", children: [] }],
+        rootPositions: { root: position }
+      }]
+    })).toThrow("根节点坐标");
+  });
+
+  it("rejects dangling root position ids", () => {
+    expect(() => validateWatchTreeConfig({
+      workspaces: [{
+        id: "default",
+        name: "默认",
+        roots: [{ id: "root", type: "category", name: "根", children: [] }],
+        rootPositions: { missing: { x: 10, y: 20 } }
+      }]
+    })).toThrow("根节点位置引用不存在");
   });
 
   it("switches, renames, updates and deletes watch workspaces", () => {
@@ -542,16 +625,23 @@ describe("watch tree", () => {
 
     expect(getActiveWatchWorkspace(withSecond)).toMatchObject({ id: "second", name: "硬件" });
     expect(getActiveWatchRoot(withSecond)).toBeUndefined();
-    expect(updateActiveWatchRoot(withSecond, root)).toMatchObject({ root });
+    expect(getActiveWatchWorkspace(updateActiveWatchRoot(withSecond, root))).toMatchObject({
+      roots: [root],
+      rootPositions: { tech: { x: 24, y: 24 } }
+    });
     expect(renameWatchWorkspace(withSecond, "second", "  存储  ").workspaces?.[1]).toMatchObject({ name: "存储" });
     expect(switchWatchWorkspace(withSecond, "default")).toMatchObject({
-      activeWorkspaceId: "default",
-      root
+      activeWorkspaceId: "default"
     });
+    expect(getActiveWatchRoot(switchWatchWorkspace(withSecond, "default"))).toEqual(root);
     expect(deleteWatchWorkspace(withSecond, "second")).toMatchObject({
       activeWorkspaceId: "default",
-      workspaces: [{ id: "default", name: "默认", root }],
-      root
+      workspaces: [{
+        id: "default",
+        name: "默认",
+        roots: [root],
+        rootPositions: { tech: { x: 24, y: 24 } }
+      }]
     });
   });
 
