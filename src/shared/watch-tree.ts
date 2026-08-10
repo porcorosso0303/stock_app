@@ -46,7 +46,7 @@ export function validateWatchTreeConfig(value: unknown): WatchTreeConfig {
   return { root };
 }
 
-export function ensureWatchWorkspaceConfig(value: WatchTreeConfig): WatchTreeConfig {
+export function ensureWatchWorkspaceConfig(value: unknown): WatchTreeConfig {
   const config = validateWatchTreeConfig(value);
   if (config.workspaces && config.workspaces.length > 0) {
     return config;

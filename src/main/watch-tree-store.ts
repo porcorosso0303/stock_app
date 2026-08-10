@@ -1,5 +1,5 @@
 import type { WatchTreeConfig } from "../shared/types";
-import { validateWatchTreeConfig } from "../shared/watch-tree";
+import { ensureWatchWorkspaceConfig } from "../shared/watch-tree";
 import { JsonStore } from "./json-store";
 
 export class WatchTreeStore {
@@ -10,11 +10,11 @@ export class WatchTreeStore {
   }
 
   async get(): Promise<WatchTreeConfig> {
-    return validateWatchTreeConfig(await this.store.read());
+    return ensureWatchWorkspaceConfig(await this.store.read());
   }
 
   async set(value: unknown): Promise<WatchTreeConfig> {
-    const config = validateWatchTreeConfig(value);
+    const config = ensureWatchWorkspaceConfig(value);
     await this.store.write(config);
     return config;
   }

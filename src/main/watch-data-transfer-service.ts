@@ -5,7 +5,7 @@ import type {
   WatchMarketHistoryCache,
   WatchTreeConfig
 } from "../shared/types";
-import { collectWatchTreeConfigSecids, validateWatchTreeConfig } from "../shared/watch-tree";
+import { collectWatchTreeConfigSecids, ensureWatchWorkspaceConfig } from "../shared/watch-tree";
 
 interface WatchTreeStoreLike {
   get(): Promise<WatchTreeConfig>;
@@ -47,7 +47,7 @@ export class WatchDataTransferService {
       readJson(join(directory, "watch-tree.json")),
       readJson(join(directory, "watch-market-history.json"))
     ]);
-    const tree = validateWatchTreeConfig(treeContent);
+    const tree = ensureWatchWorkspaceConfig(treeContent);
     const history = validateHistory(historyContent);
     await this.watchTreeStore.set(tree);
     const normalizedHistory = await this.watchMarketCacheStore.replaceHistory(history);

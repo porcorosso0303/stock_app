@@ -25,7 +25,7 @@ describe("WatchDataTransferService", () => {
         stockCount: 1
       });
 
-      await expect(readJson(join(exportDirectory, "watch-tree.json"))).resolves.toEqual(watchTree());
+      await expect(readJson(join(exportDirectory, "watch-tree.json"))).resolves.toEqual(canonicalWatchTree());
       await expect(readJson(join(exportDirectory, "watch-market-history.json"))).resolves.toMatchObject({
         version: 2,
         days: [{ tradingDate: "2026-06-05" }]
@@ -60,7 +60,7 @@ describe("WatchDataTransferService", () => {
         stockCount: 1
       });
 
-      await expect(treeStore.get()).resolves.toEqual(watchTree());
+      await expect(treeStore.get()).resolves.toEqual(canonicalWatchTree());
       await expect(cacheStore.getHistory()).resolves.toMatchObject({
         days: [{ tradingDate: "2026-06-05" }, { tradingDate: "2026-06-04" }]
       });
@@ -123,6 +123,19 @@ function watchTree(): WatchTreeConfig {
         secid: "1.603986"
       }]
     }
+  };
+}
+
+function canonicalWatchTree(): WatchTreeConfig {
+  const tree = watchTree().root!;
+  return {
+    activeWorkspaceId: "default",
+    workspaces: [{
+      id: "default",
+      name: "默认",
+      roots: [tree],
+      rootPositions: { root: { x: 24, y: 24 } }
+    }]
   };
 }
 
