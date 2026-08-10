@@ -807,7 +807,7 @@ src/main/east-money-quote-service.ts
 - 股票搜索。
 - 行情快照。快照请求包含最新价、昨收价、涨跌幅、TTM 市盈率、换手率和流通市值；当接口返回的涨跌幅为 0 但最新价和昨收价不一致时，适配器用最新价和昨收价重算涨跌幅。
 - 当日分时走势。分时请求必须包含完整 `fields1=f1...f13`，确保返回中带有 `prePrice` 昨收价；适配器用每个分时价格相对昨收价计算 `StockTrendPoint.changePercent`。
-- 指定交易日历史 1 分钟走势。适配器使用 `push2his.eastmoney.com/api/qt/stock/kline/get?klt=1&beg=YYYYMMDD&end=YYYYMMDD`，用返回的 `preKPrice` 作为昨收价计算涨跌幅。该接口的第一根 1 分钟 K 线通常从 `09:31` 开始，适配器会用第一根 K 线开盘价补一个 `09:30` 点，保证缓存完整性校验仍从开盘时间开始。
+- 指定交易日历史 1 分钟走势。适配器依次尝试 `push2delay.eastmoney.com` 和 `push2his.eastmoney.com` 的 `/api/qt/stock/kline/get?klt=1&beg=YYYYMMDD&end=YYYYMMDD`；首选域名请求失败、返回格式异常或数据不完整时自动切换备用域名。两个域名的响应都必须进入同一套解析和完整性校验，不能把域名差异暴露给上层。适配器用返回的 `preKPrice` 作为昨收价计算涨跌幅。该接口的第一根 1 分钟 K 线通常从 `09:31` 开始，适配器会用第一根 K 线开盘价补一个 `09:30` 点，保证缓存完整性校验仍从开盘时间开始。
 - 东方财富返回格式解析。
 - 失败时返回可展示的 error message，并用 `StockTrend.errorKind` 提供统一错误类别：`not-found` 表示该日期确认无行情，`request-failed` 表示网络或服务请求失败，`incomplete` 表示响应存在但分时不完整。上层只依赖标准类别，不解析各 provider 的原始错误文本。
 

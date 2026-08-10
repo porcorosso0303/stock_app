@@ -8,6 +8,7 @@ import type {
 import { validateSecid } from "../shared/watch-tree";
 import {
   calculateChangePercent,
+  hasCompleteIntradayCoverage,
   normalizeIntradayTrendPoints,
   type RawIntradayTrendPoint
 } from "./modules/watch/market-data/data-calc-helper";
@@ -30,6 +31,10 @@ export type FetchLike = (url: string, init?: FetchOptionsLike) => Promise<FetchR
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 5_000;
 const DEFAULT_MAX_CONCURRENT_REQUESTS = 2;
+const HISTORICAL_TREND_HOSTS = [
+  "push2delay.eastmoney.com",
+  "push2his.eastmoney.com"
+] as const;
 
 export class EastMoneyQuoteService {
   constructor(
@@ -134,38 +139,62 @@ export class EastMoneyQuoteService {
   private async getHistoricalTrend(input: string, tradingDate: string): Promise<StockTrend> {
     const secid = validateSecid(input);
     const fetchedAt = this.now().toISOString();
-    try {
-      const compactDate = tradingDate.replace(/-/g, "");
-      const url = new URL("https://push2his.eastmoney.com/api/qt/stock/kline/get");
-      url.searchParams.set("secid", secid);
-      url.searchParams.set("klt", "1");
-      url.searchParams.set("fqt", "1");
-      url.searchParams.set("beg", compactDate);
-      url.searchParams.set("end", compactDate);
-      url.searchParams.set("fields1", "f1,f2,f3,f4,f5,f6");
-      url.searchParams.set("fields2", "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61");
-      const trendData = readHistoricalTrendData(
-        await this.fetchJson(url, "历史分时走势请求失败"),
-        tradingDate
-      );
+    const errors: unknown[] = [];
+    let incompleteTrend: TrendData | undefined;
+    for (const host of HISTORICAL_TREND_HOSTS) {
+      try {
+        const trendData = readHistoricalTrendData(
+          await this.fetchJson(historicalTrendUrl(host, secid, tradingDate), "历史分时走势请求失败"),
+          tradingDate
+        );
+        if (
+          !trendData.errorMessage &&
+          hasCompleteIntradayCoverage(trendData.points, tradingDate, this.now())
+        ) {
+          return {
+            secid,
+            fetchedAt,
+            tradingDate: trendData.tradingDate,
+            points: trendData.points
+          };
+        }
+        incompleteTrend ??= trendData;
+      } catch (error) {
+        if (classifyTrendError(error) === "not-found") {
+          if (incompleteTrend) {
+            break;
+          }
+          return {
+            secid,
+            tradingDate,
+            fetchedAt,
+            points: [],
+            errorMessage: error instanceof Error ? error.message : String(error),
+            errorKind: "not-found"
+          };
+        }
+        errors.push(error);
+      }
+    }
+    if (incompleteTrend) {
       return {
         secid,
         fetchedAt,
-        tradingDate: trendData.tradingDate,
-        points: trendData.points,
-        errorMessage: trendData.errorMessage,
-        ...(trendData.errorMessage ? { errorKind: "incomplete" as const } : {})
-      };
-    } catch (error) {
-      return {
-        secid,
-        tradingDate,
-        fetchedAt,
-        points: [],
-        errorMessage: error instanceof Error ? error.message : String(error),
-        errorKind: classifyTrendError(error)
+        tradingDate: incompleteTrend.tradingDate,
+        points: incompleteTrend.points,
+        errorMessage: incompleteTrend.errorMessage ?? `${tradingDate} 行情数据不完整`,
+        errorKind: "incomplete"
       };
     }
+    const error = selectHistoricalTrendError(errors);
+    return {
+      secid,
+      tradingDate,
+      fetchedAt,
+      points: [],
+      errorMessage: error instanceof Error ? error.message : String(error),
+      errorKind: classifyTrendError(error)
+    };
   }
 
   private async fetchJson(url: URL, requestErrorMessage: string): Promise<unknown> {
@@ -194,6 +223,25 @@ export class EastMoneyQuoteService {
 function classifyTrendError(error: unknown): StockTrendErrorKind {
   const message = error instanceof Error ? error.message : String(error);
   return message.includes("未找到") ? "not-found" : "request-failed";
+}
+
+function selectHistoricalTrendError(errors: unknown[]): unknown {
+  return errors.find((error) => classifyTrendError(error) === "request-failed")
+    ?? errors.at(-1)
+    ?? new Error("历史分时走势请求失败");
+}
+
+function historicalTrendUrl(host: string, secid: string, tradingDate: string): URL {
+  const compactDate = tradingDate.replace(/-/g, "");
+  const url = new URL(`https://${host}/api/qt/stock/kline/get`);
+  url.searchParams.set("secid", secid);
+  url.searchParams.set("klt", "1");
+  url.searchParams.set("fqt", "1");
+  url.searchParams.set("beg", compactDate);
+  url.searchParams.set("end", compactDate);
+  url.searchParams.set("fields1", "f1,f2,f3,f4,f5,f6");
+  url.searchParams.set("fields2", "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61");
+  return url;
 }
 
 async function mapWithConcurrency<T, U>(
